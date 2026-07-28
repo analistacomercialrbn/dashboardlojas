@@ -197,15 +197,36 @@ def carregar_e_tratar_dados():
       df_merged['Mes_Nome'], categories=ordem_meses, ordered=True
   )
 
-  # 7. Porte do Cliente
-  if 'Porte' not in df_merged.columns:
-    df_merged['Porte'] = 'Médio'
-    df_merged.loc[
-        df_merged['Cod_Cliente'].str.endswith(('0', '1', '2')), 'Porte'
-    ] = 'Pequeno'
-    df_merged.loc[
-        df_merged['Cod_Cliente'].str.endswith(('7', '8', '9')), 'Porte'
-    ] = 'Grande'
+  # 7. Mapeamento Exato do Porte por Código de Cliente (OFICIAL)
+  mapa_portes = {
+      # Grandes
+      '1093': 'Grande',
+      '7938': 'Grande',
+      '9121': 'Grande',
+      '4381': 'Grande',
+      '3665': 'Grande',
+      '782': 'Grande',
+      '10290': 'Grande',
+      '6795': 'Grande',
+      # Médios
+      '2635': 'Médio',
+      '2285': 'Médio',
+      '7610': 'Médio',
+      '8482': 'Médio',
+      '2437': 'Médio',
+      '2306': 'Médio',
+      '4827': 'Médio',
+      '8714': 'Médio',
+      # Pequenos
+      '9157': 'Pequeno',
+      '9677': 'Pequeno',
+      '7045': 'Pequeno',
+      '10524': 'Pequeno',
+      '11076': 'Pequeno',
+      '9957': 'Pequeno',
+  }
+
+  df_merged['Porte'] = df_merged['Cod_Cliente'].map(mapa_portes).fillna('Médio')
 
   return df_merged
 
