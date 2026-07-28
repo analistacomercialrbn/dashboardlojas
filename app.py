@@ -309,7 +309,7 @@ st.plotly_chart(fig, use_container_width=True)
 st.divider()
 
 # 2. TABELA DINÂMICA SUSPENSA / EXPANSÍVEL
-st.subheader('📋 Detalhamento Dinâmico (Estilo Tabela Dinâmica)')
+st.subheader('📋 Detalhamento Dinâmico')
 
 # Opção para escolher o que analisar
 tipo_metrica = st.radio(
