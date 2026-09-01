@@ -1,154 +1,367 @@
 from io import BytesIO
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
 st.set_page_config(page_title='Dashboard de Supervisão', page_icon='📊', layout='wide')
-VENDAS_ID='1ioeKNG2P5HLZpmCTxUa3FaCfI1pfHuyC'
-AUX_ID='1h3XtB-2aMSMGhr5Ws7P-6nijKZc3zeqI'
-BASE_VENDAS_VERSAO='Produto (16)'
+
+VENDAS_ID = '1ioeKNG2P5HLZpmCTxUa3FaCfI1pfHuyC'
+AUX_ID = '1h3XtB-2aMSMGhr5Ws7P-6nijKZc3zeqI'
+BASE_VENDAS_VERSAO = 'Produto (16)'
+
+NAVY = '#1E2655'
+NAVY_2 = '#2D396F'
+BLUE_LIGHT = '#E9EDF7'
+BG = '#F6F7FB'
+TEXT = '#20263A'
+MUTED = '#737A8C'
+GREEN = '#2E8B57'
+RED = '#C94A55'
+AMBER = '#C98A22'
+
+st.markdown(f"""
+<style>
+:root {{ --rebanho: {NAVY}; }}
+[data-testid="stAppViewContainer"] {{ background: {BG}; }}
+[data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
+[data-testid="stSidebar"] {{ background: #FFFFFF; border-right: 1px solid #E6E8EF; }}
+.block-container {{ padding-top: 1.7rem; padding-bottom: 2rem; max-width: 1500px; }}
+h1,h2,h3 {{ color:{NAVY}; letter-spacing:-0.02em; }}
+.brandbar {{ display:flex; align-items:center; justify-content:space-between; gap:18px; background:{NAVY}; padding:18px 24px; border-radius:18px; margin-bottom:18px; box-shadow:0 8px 24px rgba(30,38,85,.14); }}
+.brand-title {{ color:white; font-size:30px; font-weight:750; margin:0; }}
+.brand-sub {{ color:#DDE2F4; font-size:13px; margin-top:5px; }}
+.brand-word {{ color:white; font-size:24px; font-weight:900; letter-spacing:.08em; }}
+.kpi {{ background:#FFFFFF; border:1px solid #E6E8EF; border-radius:16px; padding:16px 18px; min-height:116px; box-shadow:0 4px 14px rgba(30,38,85,.06); }}
+.kpi-label {{ color:{MUTED}; font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; }}
+.kpi-value {{ color:{NAVY}; font-size:26px; font-weight:760; margin-top:7px; white-space:nowrap; }}
+.kpi-note {{ color:{MUTED}; font-size:11px; margin-top:4px; }}
+.section-note {{ color:{MUTED}; font-size:12px; margin-top:-8px; margin-bottom:14px; }}
+[data-baseweb="tab-list"] {{ gap:22px; }}
+[data-baseweb="tab"] {{ padding-left:4px; padding-right:4px; }}
+[data-baseweb="tab-highlight"] {{ background-color:{NAVY}; }}
+div[data-testid="stDataFrame"] {{ border:1px solid #E5E7EF; border-radius:14px; overflow:hidden; }}
+.stMultiSelect [data-baseweb="select"] > div {{ border-radius:10px; }}
+</style>
+""", unsafe_allow_html=True)
+
 
 def drive_bytes(fid):
-    r=requests.get(f'https://drive.google.com/uc?export=download&id={fid}',timeout=180)
+    r = requests.get(f'https://drive.google.com/uc?export=download&id={fid}', timeout=180)
     r.raise_for_status()
     if 'text/html' in r.headers.get('content-type','').lower():
         raise RuntimeError('Confirme o compartilhamento dos arquivos do Drive como leitor por link.')
     return BytesIO(r.content)
 
+
 def cod(s):
-    return pd.to_numeric(s.astype(str).str.extract(r'^\s*(\d+)',expand=False),errors='coerce').astype('Int64')
+    return pd.to_numeric(s.astype(str).str.extract(r'^\s*(\d+)', expand=False), errors='coerce').astype('Int64')
+
 
 def dt(s):
-    if pd.api.types.is_datetime64_any_dtype(s): return pd.to_datetime(s,errors='coerce')
-    n=pd.to_numeric(s,errors='coerce')
-    excel=pd.to_datetime(n,unit='D',origin='1899-12-30',errors='coerce')
-    txt=pd.to_datetime(s.astype(str),dayfirst=True,errors='coerce')
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return pd.to_datetime(s, errors='coerce')
+    n = pd.to_numeric(s, errors='coerce')
+    excel = pd.to_datetime(n, unit='D', origin='1899-12-30', errors='coerce')
+    txt = pd.to_datetime(s.astype(str), dayfirst=True, errors='coerce')
     return txt.fillna(excel)
 
-def brl(v): return '—' if pd.isna(v) else f'R$ {float(v):,.2f}'.replace(',','X').replace('.',',').replace('X','.')
-def pct(v): return '—' if pd.isna(v) else f'{float(v):.1f}%'.replace('.',',')
-def nint(v): return f'{int(round(float(v or 0))):,}'.replace(',','.')
+
+def brl(v, casas=2):
+    if pd.isna(v): return '—'
+    return f'R$ {float(v):,.{casas}f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def brl_compacto(v):
+    v = float(v or 0)
+    if abs(v) >= 1_000_000: return f'R$ {v/1_000_000:.2f} mi'.replace('.', ',')
+    if abs(v) >= 1_000: return f'R$ {v/1_000:.1f} mil'.replace('.', ',')
+    return brl(v)
+
+
+def pct(v):
+    return '—' if pd.isna(v) else f'{float(v):.1f}%'.replace('.', ',')
+
+
+def nint(v):
+    return f'{int(round(float(v or 0))):,}'.replace(',', '.')
+
+
+def dec(v):
+    return '—' if pd.isna(v) else f'{float(v):.2f}'.replace('.', ',')
+
+
 def mes_nome(x):
-    p=pd.Period(x); nomes=['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    p = pd.Period(x)
+    nomes = ['', 'Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
     return f'{nomes[p.month]}/{p.year}'
 
+
 def ler_vendas(buf):
-    previa=pd.read_excel(buf,sheet_name='Sheet1',header=None,nrows=8)
-    header=0
-    for i,row in previa.iterrows():
-        vals=set(row.astype(str).str.strip())
+    previa = pd.read_excel(buf, sheet_name='Sheet1', header=None, nrows=8)
+    header = 0
+    for i, row in previa.iterrows():
+        vals = set(row.astype(str).str.strip())
         if 'Data Faturamento' in vals and 'Pedidos Enviados' in vals:
-            header=i; break
+            header = i
+            break
     buf.seek(0)
-    return pd.read_excel(buf,sheet_name='Sheet1',header=header)
+    return pd.read_excel(buf, sheet_name='Sheet1', header=header)
 
-@st.cache_data(ttl=30,show_spinner='Carregando bases...')
+
+def chart_layout(fig, height=420, legend='h'):
+    fig.update_layout(
+        height=height,
+        margin=dict(l=12, r=12, t=54, b=12),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=TEXT, size=12),
+        title_font=dict(color=NAVY, size=18),
+        legend=dict(orientation=legend, yanchor='bottom', y=1.02, xanchor='left', x=0),
+        hoverlabel=dict(bgcolor='white', font_color=TEXT),
+    )
+    fig.update_xaxes(showgrid=False, linecolor='#E5E7EF')
+    fig.update_yaxes(gridcolor='#ECEEF4', zeroline=False)
+    return fig
+
+
+def kpi(label, value, note=''):
+    return f"""<div class='kpi'><div class='kpi-label'>{label}</div><div class='kpi-value'>{value}</div><div class='kpi-note'>{note}</div></div>"""
+
+
+@st.cache_data(ttl=30, show_spinner='Carregando bases...')
 def load(base_version):
-    vb=drive_bytes(VENDAS_ID)
-    v=ler_vendas(vb)
-    aux=drive_bytes(AUX_ID)
-    cli=pd.read_excel(aux,sheet_name='CLIENTES'); aux.seek(0)
-    rca=pd.read_excel(aux,sheet_name='RCA'); aux.seek(0)
-    met=pd.read_excel(aux,sheet_name='METAS')
+    v = ler_vendas(drive_bytes(VENDAS_ID))
+    aux = drive_bytes(AUX_ID)
+    cli = pd.read_excel(aux, sheet_name='CLIENTES'); aux.seek(0)
+    rca = pd.read_excel(aux, sheet_name='RCA'); aux.seek(0)
+    met = pd.read_excel(aux, sheet_name='METAS')
 
-    v['COD_RCA']=cod(v['Cod/Vend.']); v['CODCLI']=cod(v['Cod/Cliente']); v['CODPROD']=cod(v['Cod/Produto'])
-    v['DATA_PEDIDO']=dt(v['Data Pedido']); v['DATA_FAT']=dt(v['Data Faturamento'])
-    v['VALOR']=pd.to_numeric(v['Pedidos Enviados'],errors='coerce').fillna(0)
-    v['FATURADO']=v['DATA_FAT'].notna() & v['Posição'].astype(str).str.strip().str.upper().eq('FECHADO')
-    v['MES_FAT']=v['DATA_FAT'].dt.to_period('M').astype('string')
+    v['COD_RCA'] = cod(v['Cod/Vend.'])
+    v['CODCLI'] = cod(v['Cod/Cliente'])
+    v['CODPROD'] = cod(v['Cod/Produto'])
+    v['DATA_PEDIDO'] = dt(v['Data Pedido'])
+    v['DATA_FAT'] = dt(v['Data Faturamento'])
+    v['VALOR'] = pd.to_numeric(v['Pedidos Enviados'], errors='coerce').fillna(0)
+    v['FATURADO'] = v['DATA_FAT'].notna() & v['Posição'].astype(str).str.strip().str.upper().eq('FECHADO')
+    v['MES_FAT'] = v['DATA_FAT'].dt.to_period('M').astype('string')
 
-    for d in (cli,rca,met): d['COD_RCA']=pd.to_numeric(d['COD_RCA'],errors='coerce').astype('Int64')
-    cli['CODCLI']=pd.to_numeric(cli['CODCLI'],errors='coerce').astype('Int64')
-    rca['ATIVO']=rca['ATIVO'].astype(str).str.upper().str.strip()
-    met['MES']=met['MES'].astype(str).str[:7]
-    met['META']=pd.to_numeric(met['META'],errors='coerce').fillna(0)
-    h=rca[['COD_RCA','RCA','SUPERVISOR','ATIVO']].drop_duplicates('COD_RCA')
-    v=v.merge(h,on='COD_RCA',how='left')
-    return v,cli,rca,met
+    for d in (cli, rca, met):
+        d['COD_RCA'] = pd.to_numeric(d['COD_RCA'], errors='coerce').astype('Int64')
+    cli['CODCLI'] = pd.to_numeric(cli['CODCLI'], errors='coerce').astype('Int64')
+    rca['ATIVO'] = rca['ATIVO'].astype(str).str.upper().str.strip()
+    met['MES'] = met['MES'].astype(str).str[:7]
+    met['META'] = pd.to_numeric(met['META'], errors='coerce').fillna(0)
 
-try: vendas,clientes,rcas,metas=load(BASE_VENDAS_VERSAO)
-except Exception as e: st.error(str(e)); st.stop()
+    h = rca[['COD_RCA','RCA','SUPERVISOR','ATIVO']].drop_duplicates('COD_RCA')
+    v = v.merge(h, on='COD_RCA', how='left')
+    return v, cli, rca, met
 
-st.title('Dashboard de Supervisão')
-st.caption(f'Venda oficial: {BASE_VENDAS_VERSAO} • O mês é definido pela Data de Faturamento, independentemente da Data do Pedido.')
-ativos=rcas[rcas['ATIVO'].eq('S')].copy()
-meses=sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str))|set(metas.MES.dropna().astype(str)),reverse=True)
-mes=st.sidebar.selectbox('Mês de análise',meses,index=meses.index('2026-09') if '2026-09' in meses else 0,format_func=mes_nome)
 
-sups=sorted(ativos.SUPERVISOR.dropna().unique())
-ss=st.sidebar.multiselect('Supervisor',sups,default=[],placeholder='Todos os supervisores')
-ss_eff=ss or sups
-ro=sorted(ativos.loc[ativos.SUPERVISOR.isin(ss_eff),'RCA'].dropna().unique())
-rs=st.sidebar.multiselect('RCA',ro,default=[],placeholder='Todos os RCAs')
-rs_eff=rs or ro
+try:
+    vendas, clientes, rcas, metas = load(BASE_VENDAS_VERSAO)
+except Exception as e:
+    st.error(str(e)); st.stop()
 
-deps=sorted(set(vendas.loc[vendas.MES_FAT.eq(mes),'DEPARTAMENTO'].dropna().astype(str))|set(metas.loc[metas.MES.eq(mes),'DEPARTAMENTO'].dropna().astype(str)))
-ds=st.sidebar.multiselect('Departamento',deps,default=[],placeholder='Todos os departamentos')
-ds_eff=ds or deps
+st.markdown(f"""
+<div class='brandbar'>
+  <div><div class='brand-title'>Dashboard de Supervisão</div><div class='brand-sub'>Gestão comercial • faturamento, carteira e mix por RCA</div></div>
+  <div class='brand-word'>REBANHO</div>
+</div>
+""", unsafe_allow_html=True)
 
-cods=set(ativos.loc[ativos.SUPERVISOR.isin(ss_eff)&ativos.RCA.isin(rs_eff),'COD_RCA'].dropna())
-fat=vendas[vendas.FATURADO & vendas.MES_FAT.eq(mes) & vendas.COD_RCA.isin(cods) & vendas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
-meta=metas[metas.MES.eq(mes)&metas.COD_RCA.isin(cods)&metas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
-meta=meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA'),on='COD_RCA',how='left')
+ativos = rcas[rcas['ATIVO'].eq('S')].copy()
+meses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)
+mes = st.sidebar.selectbox('Mês de análise', meses, index=meses.index('2026-08') if '2026-08' in meses else 0, format_func=mes_nome)
 
-F=fat.VALOR.sum(); M=meta.META.sum(); P=fat.NUMPED.nunique(); C=fat.CODCLI.nunique(); A=F/M*100 if M else pd.NA
-c1,c2,c3,c4,c5=st.columns(5)
-c1.metric('Faturamento',brl(F)); c2.metric('Meta',brl(M)); c3.metric('Atingimento',pct(A)); c4.metric('Clientes positivados',nint(C)); c5.metric('Ticket médio',brl(F/P if P else 0))
+sups = sorted(ativos.SUPERVISOR.dropna().unique())
+ss = st.sidebar.multiselect('Supervisor', sups, default=[], placeholder='Todos os supervisores')
+ss_eff = ss or sups
+ro = sorted(ativos.loc[ativos.SUPERVISOR.isin(ss_eff), 'RCA'].dropna().unique())
+rs = st.sidebar.multiselect('RCA', ro, default=[], placeholder='Todos os RCAs')
+rs_eff = rs or ro
 
-base=ativos[ativos.SUPERVISOR.isin(ss_eff)&ativos.RCA.isin(rs_eff)][['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA')
-fr=fat.groupby('COD_RCA').agg(FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique'),POSITIVADOS=('CODCLI','nunique')).reset_index()
-mr=meta.groupby('COD_RCA',as_index=False).META.sum()
+deps = sorted(set(vendas.loc[vendas.MES_FAT.eq(mes),'DEPARTAMENTO'].dropna().astype(str)) | set(metas.loc[metas.MES.eq(mes),'DEPARTAMENTO'].dropna().astype(str)))
+ds = st.sidebar.multiselect('Departamento', deps, default=[], placeholder='Todos os departamentos')
+ds_eff = ds or deps
+st.sidebar.caption('Seleções vazias significam “Todos”.')
 
+cods = set(ativos.loc[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff), 'COD_RCA'].dropna())
+fat = vendas[vendas.FATURADO & vendas.MES_FAT.eq(mes) & vendas.COD_RCA.isin(cods) & vendas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = metas[metas.MES.eq(mes) & metas.COD_RCA.isin(cods) & metas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA'), on='COD_RCA', how='left')
+
+F = fat.VALOR.sum(); M = meta.META.sum(); P = fat.NUMPED.nunique(); C = fat.CODCLI.nunique(); A = F/M*100 if M else pd.NA
+
+base = ativos[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff)][['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA')
+fr = fat.groupby('COD_RCA').agg(FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique'), POSITIVADOS=('CODCLI','nunique')).reset_index()
+mr = meta.groupby('COD_RCA', as_index=False).META.sum()
+
+# MIX: média de PRODUTOS DISTINTOS por cliente do RCA no mês.
+# O cliente é consolidado no mês antes da média, portanto vários pedidos não aumentam seu peso.
 if fat.empty:
-    mix=pd.DataFrame(columns=['COD_RCA','MIX_CLIENTE','PRODUTOS_CLIENTE'])
+    mix = pd.DataFrame(columns=['COD_RCA','MIX_PRODUTOS_CLIENTE','DEPTOS_CLIENTE'])
+    mix_geral = 0
 else:
-    pc=fat.groupby(['COD_RCA','CODCLI']).agg(SECOES=('SECAO','nunique'),PRODUTOS=('CODPROD','nunique')).reset_index()
-    mix=pc.groupby('COD_RCA').agg(MIX_CLIENTE=('SECOES','mean'),PRODUTOS_CLIENTE=('PRODUTOS','mean')).reset_index()
+    pc = fat.groupby(['COD_RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'), DEPTOS=('DEPARTAMENTO','nunique')).reset_index()
+    mix = pc.groupby('COD_RCA').agg(MIX_PRODUTOS_CLIENTE=('PRODUTOS','mean'), DEPTOS_CLIENTE=('DEPTOS','mean')).reset_index()
+    mix_geral = pc.PRODUTOS.mean()
 
-r=base.merge(fr,on='COD_RCA',how='left').merge(mr,on='COD_RCA',how='left').merge(mix,on='COD_RCA',how='left').fillna({'FATURAMENTO':0,'PEDIDOS':0,'POSITIVADOS':0,'META':0,'MIX_CLIENTE':0,'PRODUTOS_CLIENTE':0})
-r['ATINGIMENTO']=r.FATURAMENTO.div(r.META.replace(0,pd.NA))*100
-r['TICKET']=r.FATURAMENTO.div(r.PEDIDOS.replace(0,pd.NA))
+r = base.merge(fr, on='COD_RCA', how='left').merge(mr, on='COD_RCA', how='left').merge(mix, on='COD_RCA', how='left').fillna({'FATURAMENTO':0,'PEDIDOS':0,'POSITIVADOS':0,'META':0,'MIX_PRODUTOS_CLIENTE':0,'DEPTOS_CLIENTE':0})
+r['ATINGIMENTO'] = r.FATURAMENTO.div(r.META.replace(0,pd.NA))*100
+r['TICKET'] = r.FATURAMENTO.div(r.PEDIDOS.replace(0,pd.NA))
 
-hist=vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
-primeira=hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
-novos_mes=fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira,on='CODCLI',how='left')
-novos_mes['NOVO']=novos_mes['PRIMEIRA_COMPRA'].dt.to_period('M').astype('string').eq(mes)
-nr=novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
+hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
+primeira = hist.groupby('CODCLI', as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
+novos_mes = fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira, on='CODCLI', how='left')
+novos_mes['NOVO'] = novos_mes['PRIMEIRA_COMPRA'].dt.to_period('M').astype('string').eq(mes)
+nr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
 
-fim=pd.Period(mes).end_time.normalize()
-vida=hist.groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
-car=clientes[clientes.COD_RCA.isin(cods)][['CODCLI','COD_RCA']].drop_duplicates().merge(vida,on='CODCLI',how='left')
-car['INATIVO']=car.ULTIMA.notna() & car.ULTIMA.lt(fim-pd.Timedelta(days=89))
-ir=car.groupby('COD_RCA')['INATIVO'].sum().rename('INATIVADOS').reset_index()
-r=r.merge(nr,on='COD_RCA',how='left').merge(ir,on='COD_RCA',how='left').fillna({'NOVOS':0,'INATIVADOS':0})
+fim = pd.Period(mes).end_time.normalize()
+vida = hist.groupby('CODCLI', as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+car = clientes[clientes.COD_RCA.isin(cods)][['CODCLI','COD_RCA']].drop_duplicates().merge(vida, on='CODCLI', how='left')
+car['INATIVO'] = car.ULTIMA.notna() & car.ULTIMA.lt(fim - pd.Timedelta(days=89))
+ir = car.groupby('COD_RCA')['INATIVO'].sum().rename('INATIVADOS').reset_index()
+r = r.merge(nr, on='COD_RCA', how='left').merge(ir, on='COD_RCA', how='left').fillna({'NOVOS':0,'INATIVADOS':0})
 
-a,b,c=st.tabs(['Indicadores e Resultados','Análise de Carteira','Mix e Oportunidades'])
-with a:
-    st.subheader('Faturamento x Meta — Supervisão')
-    s=r.groupby('SUPERVISOR',as_index=False).agg(FATURAMENTO=('FATURAMENTO','sum'),META=('META','sum'))
-    s['ATINGIMENTO']=s.FATURAMENTO.div(s.META.replace(0,pd.NA))*100
-    st.dataframe(pd.DataFrame({'Supervisor':s.SUPERVISOR,'Faturamento':s.FATURAMENTO.map(brl),'Meta':s.META.map(brl),'Atingimento':s.ATINGIMENTO.map(pct)}),use_container_width=True,hide_index=True)
-    st.subheader('Faturamento x Meta — RCAs')
-    t=pd.DataFrame({'RCA':r.RCA,'Faturamento':r.FATURAMENTO.map(brl),'Meta':r.META.map(brl),'Atingimento':r.ATINGIMENTO.map(pct),'Margem':'—','Descontos':'—','Mix':r.MIX_CLIENTE.map(lambda x:f'{x:.2f}'.replace('.',','))})
-    st.dataframe(t,use_container_width=True,hide_index=True)
-    st.caption('Mix = média de seções distintas compradas por cliente no mês. Cada cliente pesa uma vez, mesmo com vários pedidos.')
-with b:
-    st.subheader('Análise de Carteira por RCA')
-    t=pd.DataFrame({'RCA':r.RCA,'Positivados':r.POSITIVADOS.map(nint),'Novos':r.NOVOS.map(nint),'Inativados':r.INATIVADOS.map(nint),'Ticket médio':r.TICKET.map(brl)})
-    st.dataframe(t,use_container_width=True,hide_index=True)
-    st.caption('Novo = cliente cuja primeira compra faturada disponível na base ocorreu no mês selecionado. Inativado = cliente da carteira atual sem faturamento nos 90 dias anteriores ao fim do mês.')
-with c:
+novos_total = int(r.NOVOS.sum())
+inativos_total = int(r.INATIVADOS.sum())
+
+k1,k2,k3,k4,k5,k6 = st.columns(6)
+k1.markdown(kpi('Faturamento', brl_compacto(F), brl(F)), unsafe_allow_html=True)
+k2.markdown(kpi('Meta', brl_compacto(M), brl(M)), unsafe_allow_html=True)
+k3.markdown(kpi('Atingimento', pct(A), 'Faturamento ÷ meta'), unsafe_allow_html=True)
+k4.markdown(kpi('Clientes positivados', nint(C), 'Clientes únicos no mês'), unsafe_allow_html=True)
+k5.markdown(kpi('Ticket médio', brl_compacto(F/P if P else 0), 'Por pedido faturado'), unsafe_allow_html=True)
+k6.markdown(kpi('Mix médio', dec(mix_geral), 'Produtos distintos por cliente'), unsafe_allow_html=True)
+
+st.caption(f'Fonte de vendas: {BASE_VENDAS_VERSAO} • Competência definida pela Data de Faturamento.')
+
+aba1, aba2, aba3 = st.tabs(['Visão Geral', 'Carteira', 'Mix e Oportunidades'])
+
+with aba1:
+    st.subheader('Resultado por supervisão')
+    s = r.groupby('SUPERVISOR', as_index=False).agg(FATURAMENTO=('FATURAMENTO','sum'), META=('META','sum'))
+    s['ATINGIMENTO'] = s.FATURAMENTO.div(s.META.replace(0,pd.NA))*100
+
+    fig = go.Figure()
+    fig.add_bar(x=s.SUPERVISOR, y=s.META, name='Meta', marker_color='#C8CEE1', hovertemplate='%{x}<br>Meta: R$ %{y:,.2f}<extra></extra>')
+    fig.add_bar(x=s.SUPERVISOR, y=s.FATURAMENTO, name='Faturamento', marker_color=NAVY, hovertemplate='%{x}<br>Faturamento: R$ %{y:,.2f}<extra></extra>')
+    fig.update_layout(barmode='group', title='Faturamento x Meta por supervisão', yaxis_tickprefix='R$ ', yaxis_tickformat='.2s')
+    st.plotly_chart(chart_layout(fig, 390), use_container_width=True)
+
+    c1,c2 = st.columns([1.05, 1])
+    with c1:
+        rr = r.sort_values('ATINGIMENTO', ascending=True).copy()
+        fig2 = px.bar(rr, x='ATINGIMENTO', y='RCA', orientation='h', title='Atingimento de meta por RCA', text=rr.ATINGIMENTO.map(lambda x: pct(x)))
+        fig2.update_traces(marker_color=NAVY, textposition='outside', hovertemplate='<b>%{y}</b><br>Atingimento: %{x:.1f}%<extra></extra>')
+        fig2.add_vline(x=100, line_dash='dash', line_color=GREEN, annotation_text='100%')
+        fig2.update_layout(xaxis_title='Atingimento (%)', yaxis_title='')
+        st.plotly_chart(chart_layout(fig2, max(430, 28*len(rr)+100), legend='v'), use_container_width=True)
+    with c2:
+        dep = fat.groupby('DEPARTAMENTO', as_index=False).VALOR.sum().sort_values('VALOR', ascending=False)
+        fig3 = px.bar(dep, x='VALOR', y='DEPARTAMENTO', orientation='h', title='Faturamento por departamento')
+        fig3.update_traces(marker_color=NAVY_2, hovertemplate='<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>')
+        fig3.update_yaxes(categoryorder='total ascending')
+        fig3.update_layout(xaxis_title='Faturamento', yaxis_title='')
+        st.plotly_chart(chart_layout(fig3, max(430, 32*len(dep)+90), legend='v'), use_container_width=True)
+
+    st.subheader('Painel por RCA')
+    tabela = pd.DataFrame({
+        'RCA': r.RCA,
+        'Supervisor': r.SUPERVISOR,
+        'Faturamento': r.FATURAMENTO.map(brl),
+        'Meta': r.META.map(brl),
+        'Atingimento': r.ATINGIMENTO.map(pct),
+        'Clientes': r.POSITIVADOS.map(nint),
+        'Ticket médio': r.TICKET.map(brl),
+        'Mix prod./cliente': r.MIX_PRODUTOS_CLIENTE.map(dec),
+        'Margem': '—',
+        'Descontos': '—',
+    })
+    st.dataframe(tabela, use_container_width=True, hide_index=True, height=min(620, 40 + 35*len(tabela)))
+
+with aba2:
+    st.subheader('Saúde da carteira')
+    x1,x2,x3,x4 = st.columns(4)
+    x1.markdown(kpi('Positivados', nint(C), 'Clientes que compraram no mês'), unsafe_allow_html=True)
+    x2.markdown(kpi('Novos', nint(novos_total), 'Primeira compra encontrada em 2026'), unsafe_allow_html=True)
+    x3.markdown(kpi('Inativados', nint(inativos_total), 'Sem faturamento há 90+ dias'), unsafe_allow_html=True)
+    x4.markdown(kpi('Ticket médio', brl_compacto(F/P if P else 0), 'Por pedido faturado'), unsafe_allow_html=True)
+
+    c1,c2 = st.columns(2)
+    with c1:
+        cr = r.sort_values('POSITIVADOS', ascending=True)
+        fig = px.bar(cr, x='POSITIVADOS', y='RCA', orientation='h', title='Clientes positivados por RCA', text='POSITIVADOS')
+        fig.update_traces(marker_color=NAVY, textposition='outside')
+        fig.update_layout(xaxis_title='Clientes', yaxis_title='')
+        st.plotly_chart(chart_layout(fig, max(430, 28*len(cr)+100), legend='v'), use_container_width=True)
+    with c2:
+        ci = r[['RCA','NOVOS','INATIVADOS']].copy().sort_values('INATIVADOS', ascending=True)
+        fig = go.Figure()
+        fig.add_bar(y=ci.RCA, x=ci.NOVOS, name='Novos', orientation='h', marker_color=GREEN)
+        fig.add_bar(y=ci.RCA, x=ci.INATIVADOS, name='Inativados', orientation='h', marker_color=RED)
+        fig.update_layout(barmode='group', title='Novos x Inativados por RCA', xaxis_title='Clientes', yaxis_title='')
+        st.plotly_chart(chart_layout(fig, max(430, 28*len(ci)+100)), use_container_width=True)
+
+    ct = pd.DataFrame({
+        'RCA': r.RCA,
+        'Positivados': r.POSITIVADOS.map(nint),
+        'Novos': r.NOVOS.map(nint),
+        'Inativados 90+ dias': r.INATIVADOS.map(nint),
+        'Ticket médio': r.TICKET.map(brl),
+    })
+    st.dataframe(ct, use_container_width=True, hide_index=True)
+    st.caption('Como a base de vendas foi limitada a 2026, “novo” significa primeira compra encontrada dentro do histórico disponível de 2026.')
+
+with aba3:
     st.subheader('Mix por cliente')
-    t=pd.DataFrame({'RCA':r.RCA,'Seções/cliente':r.MIX_CLIENTE.map(lambda x:f'{x:.2f}'.replace('.',',')),'Produtos/cliente':r.PRODUTOS_CLIENTE.map(lambda x:f'{x:.2f}'.replace('.',',')),'Clientes':r.POSITIVADOS.map(nint)})
-    st.dataframe(t,use_container_width=True,hide_index=True)
+    st.markdown("<div class='section-note'>Mix = média de produtos distintos comprados por cada cliente do RCA no mês. O cliente é contado uma única vez, mesmo que faça vários pedidos.</div>", unsafe_allow_html=True)
+
+    m1,m2,m3,m4 = st.columns(4)
+    melhor = r.loc[r.MIX_PRODUTOS_CLIENTE.idxmax()] if len(r) else None
+    m1.markdown(kpi('Mix médio geral', dec(mix_geral), 'Produtos distintos por cliente'), unsafe_allow_html=True)
+    m2.markdown(kpi('Maior mix RCA', dec(melhor.MIX_PRODUTOS_CLIENTE) if melhor is not None else '—', melhor.RCA if melhor is not None else ''), unsafe_allow_html=True)
+    m3.markdown(kpi('Produtos distintos', nint(fat.CODPROD.nunique()), 'No recorte selecionado'), unsafe_allow_html=True)
+    m4.markdown(kpi('Clientes analisados', nint(C), 'Clientes únicos no mês'), unsafe_allow_html=True)
+
+    mixr = r.sort_values('MIX_PRODUTOS_CLIENTE', ascending=True)
+    fig = px.bar(mixr, x='MIX_PRODUTOS_CLIENTE', y='RCA', orientation='h', title='Mix médio de produtos por cliente — RCA', text=mixr.MIX_PRODUTOS_CLIENTE.map(dec))
+    fig.update_traces(marker_color=NAVY, textposition='outside', hovertemplate='<b>%{y}</b><br>Mix: %{x:.2f} produtos/cliente<extra></extra>')
+    fig.update_layout(xaxis_title='Produtos distintos por cliente', yaxis_title='')
+    st.plotly_chart(chart_layout(fig, max(430, 30*len(mixr)+100), legend='v'), use_container_width=True)
+
     if not fat.empty:
-        dep=fat.groupby('DEPARTAMENTO',as_index=False).VALOR.sum().sort_values('VALOR',ascending=False)
-        st.plotly_chart(px.bar(dep,x='DEPARTAMENTO',y='VALOR',title='Faturamento por departamento'),use_container_width=True)
-        rd=st.selectbox('Detalhar RCA',sorted(fat.RCA.dropna().unique()))
-        d=fat[fat.RCA.eq(rd)]
-        q1,q2,q3,q4=st.columns(4)
-        q1.metric('Faturamento',brl(d.VALOR.sum())); q2.metric('Pedidos',nint(d.NUMPED.nunique())); q3.metric('Clientes',nint(d.CODCLI.nunique())); q4.metric('Produtos distintos',nint(d.CODPROD.nunique()))
+        pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'), FATURAMENTO=('VALOR','sum')).reset_index()
+        c1,c2 = st.columns([1.05,1])
+        with c1:
+            fig = px.histogram(pc_det, x='PRODUTOS', nbins=min(20, max(6, int(pc_det.PRODUTOS.max()))), title='Distribuição do mix entre clientes')
+            fig.update_traces(marker_color=NAVY_2)
+            fig.update_layout(xaxis_title='Produtos distintos por cliente', yaxis_title='Quantidade de clientes')
+            st.plotly_chart(chart_layout(fig, 390, legend='v'), use_container_width=True)
+        with c2:
+            faixas = pd.cut(pc_det.PRODUTOS, bins=[0,1,3,5,10,float('inf')], labels=['1 produto','2–3','4–5','6–10','11+'], include_lowest=True)
+            dist = faixas.value_counts(sort=False).reset_index(); dist.columns=['Faixa','Clientes']
+            fig = px.pie(dist, names='Faixa', values='Clientes', hole=.58, title='Clientes por faixa de mix', color_discrete_sequence=[NAVY, NAVY_2, '#59659A', '#8991B7', '#BAC0D8'])
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(chart_layout(fig, 390, legend='v'), use_container_width=True)
+
+        st.subheader('Detalhe do RCA')
+        rd = st.selectbox('Selecionar RCA para aprofundar', sorted(fat.RCA.dropna().unique()))
+        d = fat[fat.RCA.eq(rd)]
+        dcli = d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'), FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique')).reset_index()
+        y1,y2,y3,y4 = st.columns(4)
+        y1.markdown(kpi('Faturamento', brl_compacto(d.VALOR.sum()), brl(d.VALOR.sum())), unsafe_allow_html=True)
+        y2.markdown(kpi('Clientes', nint(d.CODCLI.nunique()), 'Positivados'), unsafe_allow_html=True)
+        y3.markdown(kpi('Mix médio', dec(dcli.PRODUTOS.mean()), 'Produtos distintos/cliente'), unsafe_allow_html=True)
+        y4.markdown(kpi('Pedidos', nint(d.NUMPED.nunique()), 'Pedidos faturados'), unsafe_allow_html=True)
+
+        top = dcli.sort_values('FATURAMENTO', ascending=False).head(15)
+        fig = px.scatter(top, x='PRODUTOS', y='FATURAMENTO', size='PEDIDOS', hover_name='CODCLI', title='Top clientes: faturamento x mix', size_max=34)
+        fig.update_traces(marker_color=NAVY)
+        fig.update_layout(xaxis_title='Produtos distintos comprados', yaxis_title='Faturamento')
+        st.plotly_chart(chart_layout(fig, 430, legend='v'), use_container_width=True)
 
 st.divider()
-st.caption(f'Base de vendas carregada: {len(vendas):,} linhas • Fonte: {BASE_VENDAS_VERSAO}. O período é sempre filtrado pela Data de Faturamento.'.replace(',','.'))
+st.caption(f'Base carregada: {len(vendas):,} linhas • Fonte: {BASE_VENDAS_VERSAO} • Filtro mensal sempre pela Data de Faturamento.'.replace(',','.'))
