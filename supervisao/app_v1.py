@@ -1,4 +1,6 @@
 from io import BytesIO
+import unicodedata
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -10,6 +12,7 @@ st.set_page_config(page_title='Dashboard de Supervisão', page_icon='📊', layo
 VENDAS_ID = '1ioeKNG2P5HLZpmCTxUa3FaCfI1pfHuyC'
 AUX_ID = '1h3XtB-2aMSMGhr5Ws7P-6nijKZc3zeqI'
 BASE_VENDAS_VERSAO = 'Produto (16)'
+MUNICIPIOS_URL = 'https://raw.githubusercontent.com/kelvins/Municipios-Brasileiros/main/csv/municipios.csv'
 
 NAVY = '#1E2655'
 NAVY_2 = '#2D396F'
@@ -20,6 +23,12 @@ MUTED = '#737A8C'
 GREEN = '#2E8B57'
 RED = '#C94A55'
 AMBER = '#C98A22'
+
+UF_CODE = {
+    11:'RO',12:'AC',13:'AM',14:'RR',15:'PA',16:'AP',17:'TO',21:'MA',22:'PI',23:'CE',24:'RN',
+    25:'PB',26:'PE',27:'AL',28:'SE',29:'BA',31:'MG',32:'ES',33:'RJ',35:'SP',41:'PR',42:'SC',
+    43:'RS',50:'MS',51:'MT',52:'GO',53:'DF'
+}
 
 st.markdown(f"""
 <style>
@@ -92,6 +101,12 @@ def dec(v):
     return '—' if pd.isna(v) else f'{float(v):.2f}'.replace('.', ',')
 
 
+def norm(v):
+    if pd.isna(v): return ''
+    s = unicodedata.normalize('NFKD', str(v))
+    return ''.join(c for c in s if not unicodedata.combining(c)).upper().strip()
+
+
 def mes_nome(x):
     p = pd.Period(x)
     nomes = ['', 'Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -159,6 +174,15 @@ def load(base_version):
     return v, cli, rca, met
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_municipios():
+    g = pd.read_csv(MUNICIPIOS_URL)
+    g['UF'] = pd.to_numeric(g['codigo_uf'], errors='coerce').map(UF_CODE)
+    g['CIDADE_N'] = g['nome'].map(norm)
+    g['UF_N'] = g['UF'].map(norm)
+    return g[['nome','UF','CIDADE_N','UF_N','latitude','longitude']].dropna(subset=['latitude','longitude'])
+
+
 try:
     vendas, clientes, rcas, metas = load(BASE_VENDAS_VERSAO)
 except Exception as e:
@@ -166,7 +190,7 @@ except Exception as e:
 
 st.markdown(f"""
 <div class='brandbar'>
-  <div><div class='brand-title'>Dashboard de Supervisão</div><div class='brand-sub'>Gestão comercial • faturamento, carteira e mix por RCA</div></div>
+  <div><div class='brand-title'>Dashboard de Supervisão</div><div class='brand-sub'>Gestão comercial • faturamento, carteira, mix e cobertura por cidade</div></div>
   <div class='brand-word'>REBANHO</div>
 </div>
 """, unsafe_allow_html=True)
@@ -236,7 +260,7 @@ k6.markdown(kpi('Mix médio', dec(mix_geral), 'Produtos distintos por cliente'),
 
 st.caption(f'Fonte de vendas: {BASE_VENDAS_VERSAO} • Competência definida pela Data de Faturamento.')
 
-aba1, aba2, aba3 = st.tabs(['Visão Geral', 'Carteira', 'Mix e Oportunidades'])
+aba1, aba2, aba3, aba4 = st.tabs(['Visão Geral', 'Carteira', 'Mix e Oportunidades', 'Cidades 🗺️'])
 
 with aba1:
     st.subheader('Resultado por supervisão')
@@ -360,6 +384,126 @@ with aba3:
         fig.update_traces(marker_color=NAVY)
         fig.update_layout(xaxis_title='Produtos distintos comprados', yaxis_title='Faturamento')
         st.plotly_chart(chart_layout(fig, 430, legend='v'), use_container_width=True)
+
+with aba4:
+    st.subheader('Cobertura por cidade')
+    st.markdown("<div class='section-note'>Clique em um ponto do mapa para selecionar a cidade. Se o navegador não devolver o clique, use o seletor logo abaixo.</div>", unsafe_allow_html=True)
+
+    if fat.empty:
+        st.info('Sem faturamento para o recorte selecionado.')
+    elif not {'CIDADE','UF'}.issubset(clientes.columns):
+        st.warning('A base de clientes não contém as colunas CIDADE e UF necessárias para o mapa.')
+    else:
+        cols_cli = ['CODCLI','CIDADE','UF'] + (['PRACA'] if 'PRACA' in clientes.columns else [])
+        cli_geo = clientes[cols_cli].drop_duplicates('CODCLI').copy()
+        loc = fat.merge(cli_geo, on='CODCLI', how='left')
+        loc['CIDADE_N'] = loc['CIDADE'].map(norm)
+        loc['UF_N'] = loc['UF'].map(norm)
+        if 'PRACA' in loc.columns:
+            loc['PRACA_N'] = loc['PRACA'].map(norm)
+        else:
+            loc['PRACA_N'] = ''
+
+        city = loc.groupby(['CIDADE','UF','CIDADE_N','UF_N','PRACA_N'], dropna=False).agg(
+            FATURAMENTO=('VALOR','sum'), CLIENTES=('CODCLI','nunique'), PEDIDOS=('NUMPED','nunique')
+        ).reset_index()
+        city_mix = loc.groupby(['CIDADE_N','UF_N','CODCLI']).CODPROD.nunique().rename('MIXCLI').reset_index()
+        city_mix = city_mix.groupby(['CIDADE_N','UF_N']).MIXCLI.mean().rename('MIX').reset_index()
+        city = city.merge(city_mix, on=['CIDADE_N','UF_N'], how='left')
+
+        geo = load_municipios()
+        city = city.merge(geo[['CIDADE_N','UF_N','latitude','longitude']], on=['CIDADE_N','UF_N'], how='left')
+
+        # Fallback pela praça quando o campo CIDADE vier abreviado/truncado.
+        sem_coord = city['latitude'].isna() & city['PRACA_N'].ne('')
+        if sem_coord.any():
+            fallback = city.loc[sem_coord, ['PRACA_N','UF_N']].merge(
+                geo[['CIDADE_N','UF_N','latitude','longitude']],
+                left_on=['PRACA_N','UF_N'], right_on=['CIDADE_N','UF_N'], how='left'
+            )
+            city.loc[sem_coord, 'latitude'] = fallback['latitude'].to_numpy()
+            city.loc[sem_coord, 'longitude'] = fallback['longitude'].to_numpy()
+
+        mapped = city.dropna(subset=['latitude','longitude']).copy()
+        z1,z2,z3,z4 = st.columns(4)
+        z1.markdown(kpi('Cidades positivadas', nint(city.shape[0]), 'Com faturamento no mês'), unsafe_allow_html=True)
+        z2.markdown(kpi('Cidades no mapa', nint(mapped.shape[0]), 'Com coordenadas localizadas'), unsafe_allow_html=True)
+        z3.markdown(kpi('Maior cidade', city.loc[city.FATURAMENTO.idxmax(),'CIDADE'] if len(city) else '—', 'Por faturamento'), unsafe_allow_html=True)
+        z4.markdown(kpi('Faturamento', brl_compacto(city.FATURAMENTO.sum()), 'Recorte atual'), unsafe_allow_html=True)
+
+        selected_label = None
+        if not mapped.empty:
+            mapped['LABEL'] = mapped['CIDADE'].astype(str) + ' - ' + mapped['UF'].astype(str)
+            sizeref = max(mapped['FATURAMENTO'].max() / 1400, 1)
+            fig = go.Figure(go.Scattergeo(
+                lon=mapped['longitude'], lat=mapped['latitude'],
+                text=mapped['LABEL'], customdata=mapped[['LABEL','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy(),
+                mode='markers',
+                marker=dict(
+                    size=(mapped['FATURAMENTO'] / sizeref).clip(lower=7, upper=42),
+                    color=mapped['FATURAMENTO'], colorscale=[[0,'#DDE2F4'],[0.45,'#59659A'],[1,NAVY]],
+                    line=dict(width=1, color='white'), opacity=.88, colorbar=dict(title='Faturamento')
+                ),
+                hovertemplate='<b>%{customdata[0]}</b><br>Faturamento: R$ %{customdata[1]:,.2f}<br>Clientes: %{customdata[2]}<br>Pedidos: %{customdata[3]}<br>Mix: %{customdata[4]:.2f}<extra></extra>'
+            ))
+            fig.update_geos(
+                scope='south america', projection_type='mercator',
+                showland=True, landcolor='#F0F2F8', showcountries=True, countrycolor='#D5D9E6',
+                showcoastlines=True, coastlinecolor='#C8CEE1',
+                lataxis_range=[-35, 6], lonaxis_range=[-75, -32],
+                bgcolor='rgba(0,0,0,0)'
+            )
+            fig.update_layout(height=570, margin=dict(l=0,r=0,t=5,b=0), paper_bgcolor='rgba(0,0,0,0)')
+
+            try:
+                ev = st.plotly_chart(fig, use_container_width=True, on_select='rerun', selection_mode='points', key='mapa_cidades')
+                selection = getattr(ev, 'selection', None)
+                points = getattr(selection, 'points', None) if selection is not None else None
+                if points:
+                    cd = points[0].get('customdata') if isinstance(points[0], dict) else None
+                    if cd is not None:
+                        selected_label = cd[0] if isinstance(cd, (list, tuple)) else str(cd)
+            except Exception:
+                st.plotly_chart(fig, use_container_width=True, key='mapa_cidades_fallback')
+
+        labels = sorted((city['CIDADE'].fillna('').astype(str) + ' - ' + city['UF'].fillna('').astype(str)).unique())
+        labels = [x for x in labels if x.strip(' -')]
+        default_index = labels.index(selected_label) if selected_label in labels else 0
+        choice = st.selectbox('Cidade para detalhar', labels, index=default_index if labels else None)
+
+        if choice:
+            cname, cuf = choice.rsplit(' - ', 1)
+            d = loc[(loc['CIDADE'].fillna('').astype(str) == cname) & (loc['UF'].fillna('').astype(str) == cuf)].copy()
+            dcli = d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'), FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique')).reset_index()
+
+            a1,a2,a3,a4,a5 = st.columns(5)
+            a1.markdown(kpi('Faturamento', brl_compacto(d.VALOR.sum()), brl(d.VALOR.sum())), unsafe_allow_html=True)
+            a2.markdown(kpi('Clientes', nint(d.CODCLI.nunique()), 'Positivados'), unsafe_allow_html=True)
+            a3.markdown(kpi('Pedidos', nint(d.NUMPED.nunique()), 'Faturados'), unsafe_allow_html=True)
+            a4.markdown(kpi('Ticket médio', brl_compacto(d.VALOR.sum()/d.NUMPED.nunique() if d.NUMPED.nunique() else 0), 'Por pedido'), unsafe_allow_html=True)
+            a5.markdown(kpi('Mix médio', dec(dcli.PRODUTOS.mean()), 'Produtos distintos/cliente'), unsafe_allow_html=True)
+
+            c1,c2 = st.columns(2)
+            with c1:
+                rca_city = d.groupby('RCA', as_index=False).VALOR.sum().sort_values('VALOR')
+                fig = px.bar(rca_city, x='VALOR', y='RCA', orientation='h', title=f'Faturamento por RCA — {cname}')
+                fig.update_traces(marker_color=NAVY)
+                st.plotly_chart(chart_layout(fig, max(350, 28*len(rca_city)+100), 'v'), use_container_width=True)
+            with c2:
+                dep_city = d.groupby('DEPARTAMENTO', as_index=False).VALOR.sum().sort_values('VALOR')
+                fig = px.bar(dep_city, x='VALOR', y='DEPARTAMENTO', orientation='h', title=f'Faturamento por departamento — {cname}')
+                fig.update_traces(marker_color=NAVY_2)
+                st.plotly_chart(chart_layout(fig, max(350, 30*len(dep_city)+100), 'v'), use_container_width=True)
+
+            st.subheader('Clientes da cidade')
+            nomes = clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI') if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE'])
+            detail = dcli.merge(nomes, on='CODCLI', how='left').sort_values('FATURAMENTO', ascending=False)
+            detail['Faturamento'] = detail.FATURAMENTO.map(brl)
+            detail['Mix produtos'] = detail.PRODUTOS.map(nint)
+            detail['Pedidos'] = detail.PEDIDOS.map(nint)
+            cols = ['CODCLI'] + (['CLIENTE'] if 'CLIENTE' in detail.columns else []) + ['Faturamento','Mix produtos','Pedidos']
+            ren = {'CODCLI':'Código cliente','CLIENTE':'Cliente'}
+            st.dataframe(detail[cols].rename(columns=ren), use_container_width=True, hide_index=True)
 
 st.divider()
 st.caption(f'Base carregada: {len(vendas):,} linhas • Fonte: {BASE_VENDAS_VERSAO} • Filtro mensal sempre pela Data de Faturamento.'.replace(',','.'))
