@@ -29,6 +29,7 @@ UF_CODE = {
     25:'PB',26:'PE',27:'AL',28:'SE',29:'BA',31:'MG',32:'ES',33:'RJ',35:'SP',41:'PR',42:'SC',
     43:'RS',50:'MS',51:'MT',52:'GO',53:'DF'
 }
+NE_UFS = {'AL','BA','CE','MA','PB','PE','PI','RN','SE'}
 
 st.markdown(f"""
 <style>
@@ -266,128 +267,89 @@ with aba1:
     st.subheader('Resultado por supervisão')
     s = r.groupby('SUPERVISOR', as_index=False).agg(FATURAMENTO=('FATURAMENTO','sum'), META=('META','sum'))
     s['ATINGIMENTO'] = s.FATURAMENTO.div(s.META.replace(0,pd.NA))*100
-
     fig = go.Figure()
-    fig.add_bar(x=s.SUPERVISOR, y=s.META, name='Meta', marker_color='#C8CEE1', hovertemplate='%{x}<br>Meta: R$ %{y:,.2f}<extra></extra>')
-    fig.add_bar(x=s.SUPERVISOR, y=s.FATURAMENTO, name='Faturamento', marker_color=NAVY, hovertemplate='%{x}<br>Faturamento: R$ %{y:,.2f}<extra></extra>')
+    fig.add_bar(x=s.SUPERVISOR, y=s.META, name='Meta', marker_color='#C8CEE1')
+    fig.add_bar(x=s.SUPERVISOR, y=s.FATURAMENTO, name='Faturamento', marker_color=NAVY)
     fig.update_layout(barmode='group', title='Faturamento x Meta por supervisão', yaxis_tickprefix='R$ ', yaxis_tickformat='.2s')
     st.plotly_chart(chart_layout(fig, 390), use_container_width=True)
-
-    c1,c2 = st.columns([1.05, 1])
+    c1,c2 = st.columns([1.05,1])
     with c1:
         rr = r.sort_values('ATINGIMENTO', ascending=True).copy()
-        fig2 = px.bar(rr, x='ATINGIMENTO', y='RCA', orientation='h', title='Atingimento de meta por RCA', text=rr.ATINGIMENTO.map(lambda x: pct(x)))
-        fig2.update_traces(marker_color=NAVY, textposition='outside', hovertemplate='<b>%{y}</b><br>Atingimento: %{x:.1f}%<extra></extra>')
+        fig2 = px.bar(rr, x='ATINGIMENTO', y='RCA', orientation='h', title='Atingimento de meta por RCA', text=rr.ATINGIMENTO.map(pct))
+        fig2.update_traces(marker_color=NAVY, textposition='outside')
         fig2.add_vline(x=100, line_dash='dash', line_color=GREEN, annotation_text='100%')
-        fig2.update_layout(xaxis_title='Atingimento (%)', yaxis_title='')
-        st.plotly_chart(chart_layout(fig2, max(430, 28*len(rr)+100), legend='v'), use_container_width=True)
+        st.plotly_chart(chart_layout(fig2, max(430,28*len(rr)+100), legend='v'), use_container_width=True)
     with c2:
         dep = fat.groupby('DEPARTAMENTO', as_index=False).VALOR.sum().sort_values('VALOR', ascending=False)
         fig3 = px.bar(dep, x='VALOR', y='DEPARTAMENTO', orientation='h', title='Faturamento por departamento')
-        fig3.update_traces(marker_color=NAVY_2, hovertemplate='<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>')
+        fig3.update_traces(marker_color=NAVY_2)
         fig3.update_yaxes(categoryorder='total ascending')
-        fig3.update_layout(xaxis_title='Faturamento', yaxis_title='')
-        st.plotly_chart(chart_layout(fig3, max(430, 32*len(dep)+90), legend='v'), use_container_width=True)
-
+        st.plotly_chart(chart_layout(fig3, max(430,32*len(dep)+90), legend='v'), use_container_width=True)
     st.subheader('Painel por RCA')
-    tabela = pd.DataFrame({
-        'RCA': r.RCA,
-        'Supervisor': r.SUPERVISOR,
-        'Faturamento': r.FATURAMENTO.map(brl),
-        'Meta': r.META.map(brl),
-        'Atingimento': r.ATINGIMENTO.map(pct),
-        'Clientes': r.POSITIVADOS.map(nint),
-        'Ticket médio': r.TICKET.map(brl),
-        'Mix prod./cliente': r.MIX_PRODUTOS_CLIENTE.map(dec),
-        'Margem': '—',
-        'Descontos': '—',
-    })
-    st.dataframe(tabela, use_container_width=True, hide_index=True, height=min(620, 40 + 35*len(tabela)))
+    tabela = pd.DataFrame({'RCA':r.RCA,'Supervisor':r.SUPERVISOR,'Faturamento':r.FATURAMENTO.map(brl),'Meta':r.META.map(brl),'Atingimento':r.ATINGIMENTO.map(pct),'Clientes':r.POSITIVADOS.map(nint),'Ticket médio':r.TICKET.map(brl),'Mix prod./cliente':r.MIX_PRODUTOS_CLIENTE.map(dec),'Margem':'—','Descontos':'—'})
+    st.dataframe(tabela, use_container_width=True, hide_index=True, height=min(620,40+35*len(tabela)))
 
 with aba2:
     st.subheader('Saúde da carteira')
     x1,x2,x3,x4 = st.columns(4)
-    x1.markdown(kpi('Positivados', nint(C), 'Clientes que compraram no mês'), unsafe_allow_html=True)
-    x2.markdown(kpi('Novos', nint(novos_total), 'Primeira compra encontrada em 2026'), unsafe_allow_html=True)
-    x3.markdown(kpi('Inativados', nint(inativos_total), 'Sem faturamento há 90+ dias'), unsafe_allow_html=True)
-    x4.markdown(kpi('Ticket médio', brl_compacto(F/P if P else 0), 'Por pedido faturado'), unsafe_allow_html=True)
-
+    x1.markdown(kpi('Positivados',nint(C),'Clientes que compraram no mês'),unsafe_allow_html=True)
+    x2.markdown(kpi('Novos',nint(novos_total),'Primeira compra encontrada em 2026'),unsafe_allow_html=True)
+    x3.markdown(kpi('Inativados',nint(inativos_total),'Sem faturamento há 90+ dias'),unsafe_allow_html=True)
+    x4.markdown(kpi('Ticket médio',brl_compacto(F/P if P else 0),'Por pedido faturado'),unsafe_allow_html=True)
     c1,c2 = st.columns(2)
     with c1:
         cr = r.sort_values('POSITIVADOS', ascending=True)
         fig = px.bar(cr, x='POSITIVADOS', y='RCA', orientation='h', title='Clientes positivados por RCA', text='POSITIVADOS')
         fig.update_traces(marker_color=NAVY, textposition='outside')
-        fig.update_layout(xaxis_title='Clientes', yaxis_title='')
-        st.plotly_chart(chart_layout(fig, max(430, 28*len(cr)+100), legend='v'), use_container_width=True)
+        st.plotly_chart(chart_layout(fig,max(430,28*len(cr)+100),legend='v'),use_container_width=True)
     with c2:
-        ci = r[['RCA','NOVOS','INATIVADOS']].copy().sort_values('INATIVADOS', ascending=True)
+        ci = r[['RCA','NOVOS','INATIVADOS']].copy().sort_values('INATIVADOS',ascending=True)
         fig = go.Figure()
-        fig.add_bar(y=ci.RCA, x=ci.NOVOS, name='Novos', orientation='h', marker_color=GREEN)
-        fig.add_bar(y=ci.RCA, x=ci.INATIVADOS, name='Inativados', orientation='h', marker_color=RED)
-        fig.update_layout(barmode='group', title='Novos x Inativados por RCA', xaxis_title='Clientes', yaxis_title='')
-        st.plotly_chart(chart_layout(fig, max(430, 28*len(ci)+100)), use_container_width=True)
-
-    ct = pd.DataFrame({
-        'RCA': r.RCA,
-        'Positivados': r.POSITIVADOS.map(nint),
-        'Novos': r.NOVOS.map(nint),
-        'Inativados 90+ dias': r.INATIVADOS.map(nint),
-        'Ticket médio': r.TICKET.map(brl),
-    })
-    st.dataframe(ct, use_container_width=True, hide_index=True)
-    st.caption('Como a base de vendas foi limitada a 2026, “novo” significa primeira compra encontrada dentro do histórico disponível de 2026.')
+        fig.add_bar(y=ci.RCA,x=ci.NOVOS,name='Novos',orientation='h',marker_color=GREEN)
+        fig.add_bar(y=ci.RCA,x=ci.INATIVADOS,name='Inativados',orientation='h',marker_color=RED)
+        fig.update_layout(barmode='group',title='Novos x Inativados por RCA')
+        st.plotly_chart(chart_layout(fig,max(430,28*len(ci)+100)),use_container_width=True)
+    ct = pd.DataFrame({'RCA':r.RCA,'Positivados':r.POSITIVADOS.map(nint),'Novos':r.NOVOS.map(nint),'Inativados 90+ dias':r.INATIVADOS.map(nint),'Ticket médio':r.TICKET.map(brl)})
+    st.dataframe(ct,use_container_width=True,hide_index=True)
 
 with aba3:
     st.subheader('Mix por cliente')
     st.markdown("<div class='section-note'>Mix = média de produtos distintos comprados por cada cliente do RCA no mês. O cliente é contado uma única vez, mesmo que faça vários pedidos.</div>", unsafe_allow_html=True)
-
     m1,m2,m3,m4 = st.columns(4)
     melhor = r.loc[r.MIX_PRODUTOS_CLIENTE.idxmax()] if len(r) else None
-    m1.markdown(kpi('Mix médio geral', dec(mix_geral), 'Produtos distintos por cliente'), unsafe_allow_html=True)
-    m2.markdown(kpi('Maior mix RCA', dec(melhor.MIX_PRODUTOS_CLIENTE) if melhor is not None else '—', melhor.RCA if melhor is not None else ''), unsafe_allow_html=True)
-    m3.markdown(kpi('Produtos distintos', nint(fat.CODPROD.nunique()), 'No recorte selecionado'), unsafe_allow_html=True)
-    m4.markdown(kpi('Clientes analisados', nint(C), 'Clientes únicos no mês'), unsafe_allow_html=True)
-
-    mixr = r.sort_values('MIX_PRODUTOS_CLIENTE', ascending=True)
-    fig = px.bar(mixr, x='MIX_PRODUTOS_CLIENTE', y='RCA', orientation='h', title='Mix médio de produtos por cliente — RCA', text=mixr.MIX_PRODUTOS_CLIENTE.map(dec))
-    fig.update_traces(marker_color=NAVY, textposition='outside', hovertemplate='<b>%{y}</b><br>Mix: %{x:.2f} produtos/cliente<extra></extra>')
-    fig.update_layout(xaxis_title='Produtos distintos por cliente', yaxis_title='')
-    st.plotly_chart(chart_layout(fig, max(430, 30*len(mixr)+100), legend='v'), use_container_width=True)
-
+    m1.markdown(kpi('Mix médio geral',dec(mix_geral),'Produtos distintos por cliente'),unsafe_allow_html=True)
+    m2.markdown(kpi('Maior mix RCA',dec(melhor.MIX_PRODUTOS_CLIENTE) if melhor is not None else '—',melhor.RCA if melhor is not None else ''),unsafe_allow_html=True)
+    m3.markdown(kpi('Produtos distintos',nint(fat.CODPROD.nunique()),'No recorte selecionado'),unsafe_allow_html=True)
+    m4.markdown(kpi('Clientes analisados',nint(C),'Clientes únicos no mês'),unsafe_allow_html=True)
+    mixr = r.sort_values('MIX_PRODUTOS_CLIENTE',ascending=True)
+    fig = px.bar(mixr,x='MIX_PRODUTOS_CLIENTE',y='RCA',orientation='h',title='Mix médio de produtos por cliente — RCA',text=mixr.MIX_PRODUTOS_CLIENTE.map(dec))
+    fig.update_traces(marker_color=NAVY,textposition='outside')
+    st.plotly_chart(chart_layout(fig,max(430,30*len(mixr)+100),legend='v'),use_container_width=True)
     if not fat.empty:
-        pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'), FATURAMENTO=('VALOR','sum')).reset_index()
-        c1,c2 = st.columns([1.05,1])
+        pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
+        c1,c2 = st.columns(2)
         with c1:
-            fig = px.histogram(pc_det, x='PRODUTOS', nbins=min(20, max(6, int(pc_det.PRODUTOS.max()))), title='Distribuição do mix entre clientes')
+            fig = px.histogram(pc_det,x='PRODUTOS',nbins=min(20,max(6,int(pc_det.PRODUTOS.max()))),title='Distribuição do mix entre clientes')
             fig.update_traces(marker_color=NAVY_2)
-            fig.update_layout(xaxis_title='Produtos distintos por cliente', yaxis_title='Quantidade de clientes')
-            st.plotly_chart(chart_layout(fig, 390, legend='v'), use_container_width=True)
+            st.plotly_chart(chart_layout(fig,390,legend='v'),use_container_width=True)
         with c2:
-            faixas = pd.cut(pc_det.PRODUTOS, bins=[0,1,3,5,10,float('inf')], labels=['1 produto','2–3','4–5','6–10','11+'], include_lowest=True)
+            faixas = pd.cut(pc_det.PRODUTOS,bins=[0,1,3,5,10,float('inf')],labels=['1 produto','2–3','4–5','6–10','11+'],include_lowest=True)
             dist = faixas.value_counts(sort=False).reset_index(); dist.columns=['Faixa','Clientes']
-            fig = px.pie(dist, names='Faixa', values='Clientes', hole=.58, title='Clientes por faixa de mix', color_discrete_sequence=[NAVY, NAVY_2, '#59659A', '#8991B7', '#BAC0D8'])
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(chart_layout(fig, 390, legend='v'), use_container_width=True)
-
+            fig = px.pie(dist,names='Faixa',values='Clientes',hole=.58,title='Clientes por faixa de mix',color_discrete_sequence=[NAVY,NAVY_2,'#59659A','#8991B7','#BAC0D8'])
+            st.plotly_chart(chart_layout(fig,390,legend='v'),use_container_width=True)
         st.subheader('Detalhe do RCA')
-        rd = st.selectbox('Selecionar RCA para aprofundar', sorted(fat.RCA.dropna().unique()))
+        rd = st.selectbox('Selecionar RCA para aprofundar',sorted(fat.RCA.dropna().unique()))
         d = fat[fat.RCA.eq(rd)]
-        dcli = d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'), FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique')).reset_index()
+        dcli = d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
         y1,y2,y3,y4 = st.columns(4)
-        y1.markdown(kpi('Faturamento', brl_compacto(d.VALOR.sum()), brl(d.VALOR.sum())), unsafe_allow_html=True)
-        y2.markdown(kpi('Clientes', nint(d.CODCLI.nunique()), 'Positivados'), unsafe_allow_html=True)
-        y3.markdown(kpi('Mix médio', dec(dcli.PRODUTOS.mean()), 'Produtos distintos/cliente'), unsafe_allow_html=True)
-        y4.markdown(kpi('Pedidos', nint(d.NUMPED.nunique()), 'Pedidos faturados'), unsafe_allow_html=True)
-
-        top = dcli.sort_values('FATURAMENTO', ascending=False).head(15)
-        fig = px.scatter(top, x='PRODUTOS', y='FATURAMENTO', size='PEDIDOS', hover_name='CODCLI', title='Top clientes: faturamento x mix', size_max=34)
-        fig.update_traces(marker_color=NAVY)
-        fig.update_layout(xaxis_title='Produtos distintos comprados', yaxis_title='Faturamento')
-        st.plotly_chart(chart_layout(fig, 430, legend='v'), use_container_width=True)
+        y1.markdown(kpi('Faturamento',brl_compacto(d.VALOR.sum()),brl(d.VALOR.sum())),unsafe_allow_html=True)
+        y2.markdown(kpi('Clientes',nint(d.CODCLI.nunique()),'Positivados'),unsafe_allow_html=True)
+        y3.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos distintos/cliente'),unsafe_allow_html=True)
+        y4.markdown(kpi('Pedidos',nint(d.NUMPED.nunique()),'Pedidos faturados'),unsafe_allow_html=True)
 
 with aba4:
-    st.subheader('Cobertura por cidade')
-    st.markdown("<div class='section-note'>Clique em um ponto do mapa para selecionar a cidade. Se o navegador não devolver o clique, use o seletor logo abaixo.</div>", unsafe_allow_html=True)
+    st.subheader('Cobertura por cidade — Nordeste')
+    st.markdown("<div class='section-note'>Mapa restrito aos nove estados do Nordeste. Clique em um ponto para selecionar a cidade; se o navegador não devolver o clique, use o seletor abaixo.</div>", unsafe_allow_html=True)
 
     if fat.empty:
         st.info('Sem faturamento para o recorte selecionado.')
@@ -396,114 +358,93 @@ with aba4:
     else:
         cols_cli = ['CODCLI','CIDADE','UF'] + (['PRACA'] if 'PRACA' in clientes.columns else [])
         cli_geo = clientes[cols_cli].drop_duplicates('CODCLI').copy()
-        loc = fat.merge(cli_geo, on='CODCLI', how='left')
+        loc = fat.merge(cli_geo,on='CODCLI',how='left')
         loc['CIDADE_N'] = loc['CIDADE'].map(norm)
         loc['UF_N'] = loc['UF'].map(norm)
-        if 'PRACA' in loc.columns:
-            loc['PRACA_N'] = loc['PRACA'].map(norm)
-        else:
-            loc['PRACA_N'] = ''
+        loc = loc[loc['UF_N'].isin(NE_UFS)].copy()
+        loc['PRACA_N'] = loc['PRACA'].map(norm) if 'PRACA' in loc.columns else ''
 
-        city = loc.groupby(['CIDADE','UF','CIDADE_N','UF_N','PRACA_N'], dropna=False).agg(
-            FATURAMENTO=('VALOR','sum'), CLIENTES=('CODCLI','nunique'), PEDIDOS=('NUMPED','nunique')
-        ).reset_index()
+        city = loc.groupby(['CIDADE','UF','CIDADE_N','UF_N','PRACA_N'],dropna=False).agg(FATURAMENTO=('VALOR','sum'),CLIENTES=('CODCLI','nunique'),PEDIDOS=('NUMPED','nunique')).reset_index()
         city_mix = loc.groupby(['CIDADE_N','UF_N','CODCLI']).CODPROD.nunique().rename('MIXCLI').reset_index()
         city_mix = city_mix.groupby(['CIDADE_N','UF_N']).MIXCLI.mean().rename('MIX').reset_index()
-        city = city.merge(city_mix, on=['CIDADE_N','UF_N'], how='left')
+        city = city.merge(city_mix,on=['CIDADE_N','UF_N'],how='left')
 
         geo = load_municipios()
-        city = city.merge(geo[['CIDADE_N','UF_N','latitude','longitude']], on=['CIDADE_N','UF_N'], how='left')
-
-        # Fallback pela praça quando o campo CIDADE vier abreviado/truncado.
+        city = city.merge(geo[['CIDADE_N','UF_N','latitude','longitude']],on=['CIDADE_N','UF_N'],how='left')
         sem_coord = city['latitude'].isna() & city['PRACA_N'].ne('')
         if sem_coord.any():
-            fallback = city.loc[sem_coord, ['PRACA_N','UF_N']].merge(
-                geo[['CIDADE_N','UF_N','latitude','longitude']],
-                left_on=['PRACA_N','UF_N'], right_on=['CIDADE_N','UF_N'], how='left'
-            )
-            city.loc[sem_coord, 'latitude'] = fallback['latitude'].to_numpy()
-            city.loc[sem_coord, 'longitude'] = fallback['longitude'].to_numpy()
+            fallback = city.loc[sem_coord,['PRACA_N','UF_N']].merge(geo[['CIDADE_N','UF_N','latitude','longitude']],left_on=['PRACA_N','UF_N'],right_on=['CIDADE_N','UF_N'],how='left')
+            city.loc[sem_coord,'latitude'] = fallback['latitude'].to_numpy()
+            city.loc[sem_coord,'longitude'] = fallback['longitude'].to_numpy()
 
         mapped = city.dropna(subset=['latitude','longitude']).copy()
         z1,z2,z3,z4 = st.columns(4)
-        z1.markdown(kpi('Cidades positivadas', nint(city.shape[0]), 'Com faturamento no mês'), unsafe_allow_html=True)
-        z2.markdown(kpi('Cidades no mapa', nint(mapped.shape[0]), 'Com coordenadas localizadas'), unsafe_allow_html=True)
-        z3.markdown(kpi('Maior cidade', city.loc[city.FATURAMENTO.idxmax(),'CIDADE'] if len(city) else '—', 'Por faturamento'), unsafe_allow_html=True)
-        z4.markdown(kpi('Faturamento', brl_compacto(city.FATURAMENTO.sum()), 'Recorte atual'), unsafe_allow_html=True)
+        z1.markdown(kpi('Cidades positivadas',nint(city.shape[0]),'Nordeste'),unsafe_allow_html=True)
+        z2.markdown(kpi('Cidades no mapa',nint(mapped.shape[0]),'Com coordenadas localizadas'),unsafe_allow_html=True)
+        z3.markdown(kpi('Maior cidade',city.loc[city.FATURAMENTO.idxmax(),'CIDADE'] if len(city) else '—','Por faturamento'),unsafe_allow_html=True)
+        z4.markdown(kpi('Faturamento Nordeste',brl_compacto(city.FATURAMENTO.sum()),'Recorte atual'),unsafe_allow_html=True)
 
         selected_label = None
         if not mapped.empty:
             mapped['LABEL'] = mapped['CIDADE'].astype(str) + ' - ' + mapped['UF'].astype(str)
-            sizeref = max(mapped['FATURAMENTO'].max() / 1400, 1)
+            sizeref = max(mapped['FATURAMENTO'].max()/1400,1)
             fig = go.Figure(go.Scattergeo(
-                lon=mapped['longitude'], lat=mapped['latitude'],
-                text=mapped['LABEL'], customdata=mapped[['LABEL','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy(),
-                mode='markers',
-                marker=dict(
-                    size=(mapped['FATURAMENTO'] / sizeref).clip(lower=7, upper=42),
-                    color=mapped['FATURAMENTO'], colorscale=[[0,'#DDE2F4'],[0.45,'#59659A'],[1,NAVY]],
-                    line=dict(width=1, color='white'), opacity=.88, colorbar=dict(title='Faturamento')
-                ),
+                lon=mapped['longitude'],lat=mapped['latitude'],text=mapped['LABEL'],
+                customdata=mapped[['LABEL','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy(),mode='markers',
+                marker=dict(size=(mapped['FATURAMENTO']/sizeref).clip(lower=7,upper=42),color=mapped['FATURAMENTO'],colorscale=[[0,'#DDE2F4'],[0.45,'#59659A'],[1,NAVY]],line=dict(width=1,color='white'),opacity=.88,colorbar=dict(title='Faturamento')),
                 hovertemplate='<b>%{customdata[0]}</b><br>Faturamento: R$ %{customdata[1]:,.2f}<br>Clientes: %{customdata[2]}<br>Pedidos: %{customdata[3]}<br>Mix: %{customdata[4]:.2f}<extra></extra>'
             ))
             fig.update_geos(
                 scope='south america', projection_type='mercator',
                 showland=True, landcolor='#F0F2F8', showcountries=True, countrycolor='#D5D9E6',
                 showcoastlines=True, coastlinecolor='#C8CEE1',
-                lataxis_range=[-35, 6], lonaxis_range=[-75, -32],
+                lataxis_range=[-19.5,-1.0], lonaxis_range=[-49.5,-33.0],
                 bgcolor='rgba(0,0,0,0)'
             )
-            fig.update_layout(height=570, margin=dict(l=0,r=0,t=5,b=0), paper_bgcolor='rgba(0,0,0,0)')
-
+            fig.update_layout(height=570,margin=dict(l=0,r=0,t=5,b=0),paper_bgcolor='rgba(0,0,0,0)')
             try:
-                ev = st.plotly_chart(fig, use_container_width=True, on_select='rerun', selection_mode='points', key='mapa_cidades')
-                selection = getattr(ev, 'selection', None)
-                points = getattr(selection, 'points', None) if selection is not None else None
+                ev = st.plotly_chart(fig,use_container_width=True,on_select='rerun',selection_mode='points',key='mapa_cidades')
+                selection = getattr(ev,'selection',None)
+                points = getattr(selection,'points',None) if selection is not None else None
                 if points:
-                    cd = points[0].get('customdata') if isinstance(points[0], dict) else None
-                    if cd is not None:
-                        selected_label = cd[0] if isinstance(cd, (list, tuple)) else str(cd)
+                    cd = points[0].get('customdata') if isinstance(points[0],dict) else None
+                    if cd is not None: selected_label = cd[0] if isinstance(cd,(list,tuple)) else str(cd)
             except Exception:
-                st.plotly_chart(fig, use_container_width=True, key='mapa_cidades_fallback')
+                st.plotly_chart(fig,use_container_width=True,key='mapa_cidades_fallback')
 
-        labels = sorted((city['CIDADE'].fillna('').astype(str) + ' - ' + city['UF'].fillna('').astype(str)).unique())
+        labels = sorted((city['CIDADE'].fillna('').astype(str)+' - '+city['UF'].fillna('').astype(str)).unique())
         labels = [x for x in labels if x.strip(' -')]
         default_index = labels.index(selected_label) if selected_label in labels else 0
-        choice = st.selectbox('Cidade para detalhar', labels, index=default_index if labels else None)
-
+        choice = st.selectbox('Cidade para detalhar',labels,index=default_index if labels else None)
         if choice:
-            cname, cuf = choice.rsplit(' - ', 1)
-            d = loc[(loc['CIDADE'].fillna('').astype(str) == cname) & (loc['UF'].fillna('').astype(str) == cuf)].copy()
-            dcli = d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'), FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique')).reset_index()
-
+            cname,cuf = choice.rsplit(' - ',1)
+            d = loc[(loc['CIDADE'].fillna('').astype(str)==cname)&(loc['UF'].fillna('').astype(str)==cuf)].copy()
+            dcli = d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
             a1,a2,a3,a4,a5 = st.columns(5)
-            a1.markdown(kpi('Faturamento', brl_compacto(d.VALOR.sum()), brl(d.VALOR.sum())), unsafe_allow_html=True)
-            a2.markdown(kpi('Clientes', nint(d.CODCLI.nunique()), 'Positivados'), unsafe_allow_html=True)
-            a3.markdown(kpi('Pedidos', nint(d.NUMPED.nunique()), 'Faturados'), unsafe_allow_html=True)
-            a4.markdown(kpi('Ticket médio', brl_compacto(d.VALOR.sum()/d.NUMPED.nunique() if d.NUMPED.nunique() else 0), 'Por pedido'), unsafe_allow_html=True)
-            a5.markdown(kpi('Mix médio', dec(dcli.PRODUTOS.mean()), 'Produtos distintos/cliente'), unsafe_allow_html=True)
-
+            a1.markdown(kpi('Faturamento',brl_compacto(d.VALOR.sum()),brl(d.VALOR.sum())),unsafe_allow_html=True)
+            a2.markdown(kpi('Clientes',nint(d.CODCLI.nunique()),'Positivados'),unsafe_allow_html=True)
+            a3.markdown(kpi('Pedidos',nint(d.NUMPED.nunique()),'Faturados'),unsafe_allow_html=True)
+            a4.markdown(kpi('Ticket médio',brl_compacto(d.VALOR.sum()/d.NUMPED.nunique() if d.NUMPED.nunique() else 0),'Por pedido'),unsafe_allow_html=True)
+            a5.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos distintos/cliente'),unsafe_allow_html=True)
             c1,c2 = st.columns(2)
             with c1:
-                rca_city = d.groupby('RCA', as_index=False).VALOR.sum().sort_values('VALOR')
-                fig = px.bar(rca_city, x='VALOR', y='RCA', orientation='h', title=f'Faturamento por RCA — {cname}')
+                rca_city = d.groupby('RCA',as_index=False).VALOR.sum().sort_values('VALOR')
+                fig = px.bar(rca_city,x='VALOR',y='RCA',orientation='h',title=f'Faturamento por RCA — {cname}')
                 fig.update_traces(marker_color=NAVY)
-                st.plotly_chart(chart_layout(fig, max(350, 28*len(rca_city)+100), 'v'), use_container_width=True)
+                st.plotly_chart(chart_layout(fig,max(350,28*len(rca_city)+100),'v'),use_container_width=True)
             with c2:
-                dep_city = d.groupby('DEPARTAMENTO', as_index=False).VALOR.sum().sort_values('VALOR')
-                fig = px.bar(dep_city, x='VALOR', y='DEPARTAMENTO', orientation='h', title=f'Faturamento por departamento — {cname}')
+                dep_city = d.groupby('DEPARTAMENTO',as_index=False).VALOR.sum().sort_values('VALOR')
+                fig = px.bar(dep_city,x='VALOR',y='DEPARTAMENTO',orientation='h',title=f'Faturamento por departamento — {cname}')
                 fig.update_traces(marker_color=NAVY_2)
-                st.plotly_chart(chart_layout(fig, max(350, 30*len(dep_city)+100), 'v'), use_container_width=True)
-
+                st.plotly_chart(chart_layout(fig,max(350,30*len(dep_city)+100),'v'),use_container_width=True)
             st.subheader('Clientes da cidade')
             nomes = clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI') if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE'])
-            detail = dcli.merge(nomes, on='CODCLI', how='left').sort_values('FATURAMENTO', ascending=False)
+            detail = dcli.merge(nomes,on='CODCLI',how='left').sort_values('FATURAMENTO',ascending=False)
             detail['Faturamento'] = detail.FATURAMENTO.map(brl)
             detail['Mix produtos'] = detail.PRODUTOS.map(nint)
             detail['Pedidos'] = detail.PEDIDOS.map(nint)
             cols = ['CODCLI'] + (['CLIENTE'] if 'CLIENTE' in detail.columns else []) + ['Faturamento','Mix produtos','Pedidos']
-            ren = {'CODCLI':'Código cliente','CLIENTE':'Cliente'}
-            st.dataframe(detail[cols].rename(columns=ren), use_container_width=True, hide_index=True)
+            st.dataframe(detail[cols].rename(columns={'CODCLI':'Código cliente','CLIENTE':'Cliente'}),use_container_width=True,hide_index=True)
 
 st.divider()
 st.caption(f'Base carregada: {len(vendas):,} linhas • Fonte: {BASE_VENDAS_VERSAO} • Filtro mensal sempre pela Data de Faturamento.'.replace(',','.'))
