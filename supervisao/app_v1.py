@@ -7,6 +7,7 @@ import streamlit as st
 st.set_page_config(page_title='Dashboard de Supervisão', page_icon='📊', layout='wide')
 VENDAS_ID='1ioeKNG2P5HLZpmCTxUa3FaCfI1pfHuyC'
 AUX_ID='1h3XtB-2aMSMGhr5Ws7P-6nijKZc3zeqI'
+BASE_VENDAS_VERSAO='Produto (16)'
 
 def drive_bytes(fid):
     r=requests.get(f'https://drive.google.com/uc?export=download&id={fid}',timeout=180)
@@ -42,8 +43,8 @@ def ler_vendas(buf):
     buf.seek(0)
     return pd.read_excel(buf,sheet_name='Sheet1',header=header)
 
-@st.cache_data(ttl=300,show_spinner='Carregando bases...')
-def load():
+@st.cache_data(ttl=30,show_spinner='Carregando bases...')
+def load(base_version):
     vb=drive_bytes(VENDAS_ID)
     v=ler_vendas(vb)
     aux=drive_bytes(AUX_ID)
@@ -66,11 +67,11 @@ def load():
     v=v.merge(h,on='COD_RCA',how='left')
     return v,cli,rca,met
 
-try: vendas,clientes,rcas,metas=load()
+try: vendas,clientes,rcas,metas=load(BASE_VENDAS_VERSAO)
 except Exception as e: st.error(str(e)); st.stop()
 
 st.title('Dashboard de Supervisão')
-st.caption('Venda oficial: Produto (15) • O mês é definido pela Data de Faturamento, independentemente da Data do Pedido.')
+st.caption(f'Venda oficial: {BASE_VENDAS_VERSAO} • O mês é definido pela Data de Faturamento, independentemente da Data do Pedido.')
 ativos=rcas[rcas['ATIVO'].eq('S')].copy()
 meses=sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str))|set(metas.MES.dropna().astype(str)),reverse=True)
 mes=st.sidebar.selectbox('Mês de análise',meses,index=meses.index('2026-09') if '2026-09' in meses else 0,format_func=mes_nome)
@@ -109,7 +110,6 @@ r=base.merge(fr,on='COD_RCA',how='left').merge(mr,on='COD_RCA',how='left').merge
 r['ATINGIMENTO']=r.FATURAMENTO.div(r.META.replace(0,pd.NA))*100
 r['TICKET']=r.FATURAMENTO.div(r.PEDIDOS.replace(0,pd.NA))
 
-# Clientes novos: primeira Data de Faturamento existente na base de vendas, não pela carteira auxiliar.
 hist=vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
 primeira=hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
 novos_mes=fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira,on='CODCLI',how='left')
@@ -151,4 +151,4 @@ with c:
         q1.metric('Faturamento',brl(d.VALOR.sum())); q2.metric('Pedidos',nint(d.NUMPED.nunique())); q3.metric('Clientes',nint(d.CODCLI.nunique())); q4.metric('Produtos distintos',nint(d.CODPROD.nunique()))
 
 st.divider()
-st.caption(f'Base de vendas carregada: {len(vendas):,} linhas. O período é sempre filtrado pela Data de Faturamento.'.replace(',','.'))
+st.caption(f'Base de vendas carregada: {len(vendas):,} linhas • Fonte: {BASE_VENDAS_VERSAO}. O período é sempre filtrado pela Data de Faturamento.'.replace(',','.'))
