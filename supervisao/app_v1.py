@@ -80,35 +80,74 @@ with aba4:
         z3.markdown(kpi('Maior cidade', maior, 'Por faturamento'), unsafe_allow_html=True)
         z4.markdown(kpi(f'Faturamento {estado_uf or "Nordeste"}', brl_compacto(city.FATURAMENTO.sum()), 'Recorte atual'), unsafe_allow_html=True)
 
-        positive = mapa.loc[mapa.FATURAMENTO.gt(0),'FATURAMENTO']
-        zmax = float(positive.quantile(.95)) if len(positive) else 1.0
-        zmax = max(zmax, 1.0)
-        custom = mapa[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy()
+        mapa_sem = mapa[mapa.FATURAMENTO.le(0)].copy()
+        mapa_com = mapa[mapa.FATURAMENTO.gt(0)].copy()
 
-        fig = go.Figure(go.Choropleth(
-            geojson=geojson,
-            locations=mapa.KEY,
-            z=mapa.FATURAMENTO,
-            featureidkey='properties.key',
-            zmin=0,
-            zmax=zmax,
-            colorscale=[
-                [0.00,'#F7F8FB'],
-                [0.01,'#EDF0F8'],
-                [0.18,'#D8DEF0'],
-                [0.40,'#AAB5D9'],
-                [0.65,'#7080B7'],
-                [0.82,'#42548D'],
-                [1.00,NAVY]
-            ],
-            marker_line_color='#9BA5C4',
-            marker_line_width=.55 if estado_uf else .35,
-            customdata=custom,
-            colorbar=dict(title='Faturamento (R$)', thickness=12, len=.42, orientation='h', x=.72, y=.02, xanchor='center', yanchor='bottom'),
-            hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Mix: %{customdata[5]:.2f}<extra></extra>'
-        ))
+        fig = go.Figure()
+
+        if not mapa_sem.empty:
+            custom_sem = mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy()
+            fig.add_trace(go.Choropleth(
+                geojson=geojson,
+                locations=mapa_sem.KEY,
+                z=[0] * len(mapa_sem),
+                featureidkey='properties.key',
+                zmin=0,
+                zmax=1,
+                colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],
+                showscale=False,
+                marker_line_color='#AFA8A0',
+                marker_line_width=.65 if estado_uf else .4,
+                customdata=custom_sem,
+                hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',
+                name='Sem faturamento'
+            ))
+
+        if not mapa_com.empty:
+            zmax = float(mapa_com.FATURAMENTO.quantile(.95)) if len(mapa_com) else 1.0
+            zmax = max(zmax, 1.0)
+            custom_com = mapa_com[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy()
+            fig.add_trace(go.Choropleth(
+                geojson=geojson,
+                locations=mapa_com.KEY,
+                z=mapa_com.FATURAMENTO,
+                featureidkey='properties.key',
+                zmin=0,
+                zmax=zmax,
+                colorscale=[
+                    [0.00,'#E6EAF6'],
+                    [0.18,'#D3DAEE'],
+                    [0.40,'#A8B4D9'],
+                    [0.65,'#7080B7'],
+                    [0.82,'#42548D'],
+                    [1.00,NAVY]
+                ],
+                marker_line_color='#8994B6',
+                marker_line_width=.65 if estado_uf else .4,
+                customdata=custom_com,
+                colorbar=dict(title='Faturamento (R$)', thickness=12, len=.34, orientation='h', x=.72, y=.01, xanchor='center', yanchor='bottom'),
+                hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Mix: %{customdata[5]:.2f}<extra></extra>',
+                name='Com faturamento'
+            ))
+
         fig.update_geos(fitbounds='locations', visible=False, projection_type='mercator', bgcolor='rgba(0,0,0,0)')
-        fig.update_layout(height=650, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', dragmode=False)
+        fig.update_layout(
+            height=980,
+            margin=dict(l=0,r=0,t=0,b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            dragmode=False,
+            showlegend=True,
+            legend=dict(
+                orientation='h',
+                x=.01,
+                y=.01,
+                xanchor='left',
+                yanchor='bottom',
+                bgcolor='rgba(255,255,255,.88)',
+                bordercolor='#E1E3EA',
+                borderwidth=1
+            )
+        )
 
         selected_key = None
         col_map, col_det = st.columns([1.45, 1], gap='large')
