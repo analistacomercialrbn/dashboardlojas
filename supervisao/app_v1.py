@@ -3,17 +3,121 @@ from pathlib import Path
 _app = Path(__file__).with_name('app_v2.py')
 source = _app.read_text(encoding='utf-8')
 
+# Performance: as bases e o GeoJSON são recursos estáveis entre reruns.
+# cache_resource evita desserializar/copiar DataFrames e milhares de polígonos a cada mudança de filtro.
+source = source.replace("@st.cache_data(ttl=30, show_spinner='Carregando bases...')", "@st.cache_resource(show_spinner='Carregando bases...')")
+source = source.replace("@st.cache_data(ttl=86400, show_spinner=False)", "@st.cache_resource(show_spinner=False)")
+
 # Filtro temporal global: Ano -> Mês, ambos com opção "Todos".
 # Isso permite analisar um mês, o acumulado do ano ou todo o histórico disponível.
 source = source.replace(
-"""ativos = rcas[rcas['ATIVO'].eq('S')].copy()\nmeses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)\nmes = st.sidebar.selectbox('Mês de análise', meses, index=meses.index('2026-08') if '2026-08' in meses else 0, format_func=mes_nome)\n\nsups = sorted(ativos.SUPERVISOR.dropna().unique())\nss = st.sidebar.multiselect('Supervisor', sups, default=[], placeholder='Todos os supervisores')\nss_eff = ss or sups\nro = sorted(ativos.loc[ativos.SUPERVISOR.isin(ss_eff),'RCA'].dropna().unique())\nrs = st.sidebar.multiselect('RCA', ro, default=[], placeholder='Todos os RCAs')\nrs_eff = rs or ro\n\ndeps = sorted(set(vendas.loc[vendas.MES_FAT.eq(mes),'DEPARTAMENTO'].dropna().astype(str)) | set(metas.loc[metas.MES.eq(mes),'DEPARTAMENTO'].dropna().astype(str)))\nds = st.sidebar.multiselect('Departamento', deps, default=[], placeholder='Todos os departamentos')\nds_eff = ds or deps\nst.sidebar.caption('Seleções vazias significam “Todos”.')\n\ncods = set(ativos.loc[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff),'COD_RCA'].dropna())\nfat = vendas[vendas.FATURADO & vendas.MES_FAT.eq(mes) & vendas.COD_RCA.isin(cods) & vendas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()\nmeta = metas[metas.MES.eq(mes) & metas.COD_RCA.isin(cods) & metas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()\nmeta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA'), on='COD_RCA', how='left')\n""",
-"""ativos = rcas[rcas['ATIVO'].eq('S')].copy()\n\nvendas['ANO_FAT'] = vendas['DATA_FAT'].dt.year.astype('Int64')\nmetas['ANO'] = pd.to_numeric(metas['MES'].astype(str).str[:4], errors='coerce').astype('Int64')\nmetas['MES_NUM'] = pd.to_numeric(metas['MES'].astype(str).str[5:7], errors='coerce').astype('Int64')\n\nanos_disp = sorted(set(vendas.loc[vendas.FATURADO,'ANO_FAT'].dropna().astype(int)) | set(metas['ANO'].dropna().astype(int)), reverse=True)\nano_opts = ['Todos'] + [str(x) for x in anos_disp]\ndef_ano = ano_opts.index('2026') if '2026' in ano_opts else 0\nano_sel = st.sidebar.selectbox('Ano de análise', ano_opts, index=def_ano)\n\nmeses_nome = {\n    'Todos': None, 'Janeiro':1, 'Fevereiro':2, 'Março':3, 'Abril':4, 'Maio':5, 'Junho':6,\n    'Julho':7, 'Agosto':8, 'Setembro':9, 'Outubro':10, 'Novembro':11, 'Dezembro':12\n}\nmes_opts = list(meses_nome.keys())\nmes_sel = st.sidebar.selectbox('Mês de análise', mes_opts, index=0)\nmes_num = meses_nome[mes_sel]\n\ndef periodo_mask_datas(serie):\n    m = serie.notna()\n    if ano_sel != 'Todos':\n        m &= serie.dt.year.eq(int(ano_sel))\n    if mes_num is not None:\n        m &= serie.dt.month.eq(mes_num)\n    return m\n\ndef periodo_mask_metas(df):\n    m = pd.Series(True, index=df.index)\n    if ano_sel != 'Todos':\n        m &= df['ANO'].eq(int(ano_sel))\n    if mes_num is not None:\n        m &= df['MES_NUM'].eq(mes_num)\n    return m\n\nif ano_sel == 'Todos' and mes_num is None:\n    periodo_label = 'Todo o histórico'\nelif ano_sel != 'Todos' and mes_num is None:\n    periodo_label = f'Ano {ano_sel}'\nelif ano_sel == 'Todos':\n    periodo_label = f'{mes_sel} • todos os anos'\nelse:\n    periodo_label = f'{mes_sel}/{ano_sel}'\n\nsups = sorted(ativos.SUPERVISOR.dropna().unique())\nss = st.sidebar.multiselect('Supervisor', sups, default=[], placeholder='Todos os supervisores')\nss_eff = ss or sups\nro = sorted(ativos.loc[ativos.SUPERVISOR.isin(ss_eff),'RCA'].dropna().unique())\nrs = st.sidebar.multiselect('RCA', ro, default=[], placeholder='Todos os RCAs')\nrs_eff = rs or ro\n\nmask_v_periodo = vendas.FATURADO & periodo_mask_datas(vendas['DATA_FAT'])\nmask_m_periodo = periodo_mask_metas(metas)\ndeps = sorted(set(vendas.loc[mask_v_periodo,'DEPARTAMENTO'].dropna().astype(str)) | set(metas.loc[mask_m_periodo,'DEPARTAMENTO'].dropna().astype(str)))\nds = st.sidebar.multiselect('Departamento', deps, default=[], placeholder='Todos os departamentos')\nds_eff = ds or deps\nst.sidebar.caption('Ano, mês e seleções vazias podem ficar em “Todos”.')\n\ncods = set(ativos.loc[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff),'COD_RCA'].dropna())\nfat = vendas[mask_v_periodo & vendas.COD_RCA.isin(cods) & vendas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()\nmeta = metas[mask_m_periodo & metas.COD_RCA.isin(cods) & metas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()\nmeta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA'), on='COD_RCA', how='left')\n"""
+"""ativos = rcas[rcas['ATIVO'].eq('S')].copy()
+meses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)
+mes = st.sidebar.selectbox('Mês de análise', meses, index=meses.index('2026-08') if '2026-08' in meses else 0, format_func=mes_nome)
+
+sups = sorted(ativos.SUPERVISOR.dropna().unique())
+ss = st.sidebar.multiselect('Supervisor', sups, default=[], placeholder='Todos os supervisores')
+ss_eff = ss or sups
+ro = sorted(ativos.loc[ativos.SUPERVISOR.isin(ss_eff),'RCA'].dropna().unique())
+rs = st.sidebar.multiselect('RCA', ro, default=[], placeholder='Todos os RCAs')
+rs_eff = rs or ro
+
+deps = sorted(set(vendas.loc[vendas.MES_FAT.eq(mes),'DEPARTAMENTO'].dropna().astype(str)) | set(metas.loc[metas.MES.eq(mes),'DEPARTAMENTO'].dropna().astype(str)))
+ds = st.sidebar.multiselect('Departamento', deps, default=[], placeholder='Todos os departamentos')
+ds_eff = ds or deps
+st.sidebar.caption('Seleções vazias significam “Todos”.')
+
+cods = set(ativos.loc[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff),'COD_RCA'].dropna())
+fat = vendas[vendas.FATURADO & vendas.MES_FAT.eq(mes) & vendas.COD_RCA.isin(cods) & vendas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = metas[metas.MES.eq(mes) & metas.COD_RCA.isin(cods) & metas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA'), on='COD_RCA', how='left')
+""",
+"""ativos = rcas[rcas['ATIVO'].eq('S')].copy()
+
+vendas['ANO_FAT'] = vendas['DATA_FAT'].dt.year.astype('Int64')
+metas['ANO'] = pd.to_numeric(metas['MES'].astype(str).str[:4], errors='coerce').astype('Int64')
+metas['MES_NUM'] = pd.to_numeric(metas['MES'].astype(str).str[5:7], errors='coerce').astype('Int64')
+
+anos_disp = sorted(set(vendas.loc[vendas.FATURADO,'ANO_FAT'].dropna().astype(int)) | set(metas['ANO'].dropna().astype(int)), reverse=True)
+ano_opts = ['Todos'] + [str(x) for x in anos_disp]
+def_ano = ano_opts.index('2026') if '2026' in ano_opts else 0
+ano_sel = st.sidebar.selectbox('Ano de análise', ano_opts, index=def_ano)
+
+meses_nome = {
+    'Todos': None, 'Janeiro':1, 'Fevereiro':2, 'Março':3, 'Abril':4, 'Maio':5, 'Junho':6,
+    'Julho':7, 'Agosto':8, 'Setembro':9, 'Outubro':10, 'Novembro':11, 'Dezembro':12
+}
+mes_opts = list(meses_nome.keys())
+mes_sel = st.sidebar.selectbox('Mês de análise', mes_opts, index=0)
+mes_num = meses_nome[mes_sel]
+
+def periodo_mask_datas(serie):
+    m = serie.notna()
+    if ano_sel != 'Todos':
+        m &= serie.dt.year.eq(int(ano_sel))
+    if mes_num is not None:
+        m &= serie.dt.month.eq(mes_num)
+    return m
+
+def periodo_mask_metas(df):
+    m = pd.Series(True, index=df.index)
+    if ano_sel != 'Todos':
+        m &= df['ANO'].eq(int(ano_sel))
+    if mes_num is not None:
+        m &= df['MES_NUM'].eq(mes_num)
+    return m
+
+if ano_sel == 'Todos' and mes_num is None:
+    periodo_label = 'Todo o histórico'
+elif ano_sel != 'Todos' and mes_num is None:
+    periodo_label = f'Ano {ano_sel}'
+elif ano_sel == 'Todos':
+    periodo_label = f'{mes_sel} • todos os anos'
+else:
+    periodo_label = f'{mes_sel}/{ano_sel}'
+
+sups = sorted(ativos.SUPERVISOR.dropna().unique())
+ss = st.sidebar.multiselect('Supervisor', sups, default=[], placeholder='Todos os supervisores')
+ss_eff = ss or sups
+ro = sorted(ativos.loc[ativos.SUPERVISOR.isin(ss_eff),'RCA'].dropna().unique())
+rs = st.sidebar.multiselect('RCA', ro, default=[], placeholder='Todos os RCAs')
+rs_eff = rs or ro
+
+mask_v_periodo = vendas.FATURADO & periodo_mask_datas(vendas['DATA_FAT'])
+mask_m_periodo = periodo_mask_metas(metas)
+deps = sorted(set(vendas.loc[mask_v_periodo,'DEPARTAMENTO'].dropna().astype(str)) | set(metas.loc[mask_m_periodo,'DEPARTAMENTO'].dropna().astype(str)))
+ds = st.sidebar.multiselect('Departamento', deps, default=[], placeholder='Todos os departamentos')
+ds_eff = ds or deps
+st.sidebar.caption('Ano, mês e seleções vazias podem ficar em “Todos”.')
+
+cods = set(ativos.loc[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff),'COD_RCA'].dropna())
+fat = vendas[mask_v_periodo & vendas.COD_RCA.isin(cods) & vendas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = metas[mask_m_periodo & metas.COD_RCA.isin(cods) & metas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA'), on='COD_RCA', how='left')
+"""
 )
 
 # Clientes novos e inativos passam a respeitar o período selecionado, inclusive visão anual.
 source = source.replace(
-"""hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()\nprimeira = hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})\nnovos_mes = fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira,on='CODCLI',how='left')\nnovos_mes['NOVO'] = novos_mes['PRIMEIRA_COMPRA'].dt.to_period('M').astype('string').eq(mes)\nnr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()\n\nfim = pd.Period(mes).end_time.normalize()\nvida = hist.groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})\n""",
-"""hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()\nprimeira = hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})\nnovos_mes = fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira,on='CODCLI',how='left')\nnovos_mes['NOVO'] = periodo_mask_datas(novos_mes['PRIMEIRA_COMPRA'])\nnr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()\n\nhist_periodo = hist[periodo_mask_datas(hist['DATA_FAT'])]\nfim = hist_periodo['DATA_FAT'].max() if not hist_periodo.empty else hist['DATA_FAT'].max()\nvida = hist[hist['DATA_FAT'].le(fim)].groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})\n"""
+"""hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
+primeira = hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
+novos_mes = fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira,on='CODCLI',how='left')
+novos_mes['NOVO'] = novos_mes['PRIMEIRA_COMPRA'].dt.to_period('M').astype('string').eq(mes)
+nr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
+
+fim = pd.Period(mes).end_time.normalize()
+vida = hist.groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+""",
+"""hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
+primeira = hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
+novos_mes = fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira,on='CODCLI',how='left')
+novos_mes['NOVO'] = periodo_mask_datas(novos_mes['PRIMEIRA_COMPRA'])
+nr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
+
+hist_periodo = hist[periodo_mask_datas(hist['DATA_FAT'])]
+fim = hist_periodo['DATA_FAT'].max() if not hist_periodo.empty else hist['DATA_FAT'].max()
+vida = hist[hist['DATA_FAT'].le(fim)].groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+"""
 )
 
 source = source.replace("'Clientes únicos no mês'", "f'Clientes únicos • {periodo_label}'")
