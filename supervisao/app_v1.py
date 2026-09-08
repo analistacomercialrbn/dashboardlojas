@@ -138,6 +138,9 @@ with aba4:
     elif not {'CIDADE','UF'}.issubset(clientes.columns):
         st.warning('A base de clientes não contém as colunas CIDADE e UF necessárias para o mapa.')
     else:
+        from difflib import SequenceMatcher
+        import re
+
         nomes_uf = {
             'Nordeste': None,
             'Alagoas (AL)': 'AL',
@@ -162,8 +165,75 @@ with aba4:
         if estado_uf:
             loc = loc[loc.UF.eq(estado_uf)].copy()
 
-        loc['CIDADE_N'] = loc.CIDADE.map(norm)
-        loc['KEY'] = loc.UF + '|' + loc.CIDADE_N
+        # Correspondência tolerante com o nome oficial do município.
+        # Trata acentos, pontuação, artigos (do/da/de/dos/das), abreviações e nomes truncados.
+        geojson_all = load_nordeste_geojson()
+        all_features = geojson_all['features']
+
+        def cidade_solto(v):
+            s = norm(v)
+            s = re.sub(r'[^A-Z0-9 ]+', ' ', s)
+            toks = [t for t in s.split() if t not in {'DO','DA','DE','DOS','DAS'}]
+            return ' '.join(toks)
+
+        oficiais = {}
+        for ft in all_features:
+            pr = ft.get('properties', {})
+            uf = str(pr.get('uf','')).upper().strip()
+            nome = pr.get('name','')
+            if not uf or not nome:
+                continue
+            oficiais.setdefault(uf, []).append({
+                'nome': nome,
+                'norm': norm(nome),
+                'solto': cidade_solto(nome),
+                'key': pr.get('key', f'{uf}|{norm(nome)}')
+            })
+
+        def resolver_cidade(uf, cidade):
+            uf = str(uf or '').upper().strip()
+            bruto = norm(cidade)
+            solto = cidade_solto(cidade)
+            cands = oficiais.get(uf, [])
+            if not bruto or not cands:
+                return f'{uf}|{bruto}', cidade, 'sem_correspondencia'
+
+            # 1) Nome normalizado exato.
+            ex = [c for c in cands if c['norm'] == bruto]
+            if len(ex) == 1:
+                return ex[0]['key'], ex[0]['nome'], 'exato'
+
+            # 2) Exato ignorando artigos/preposições.
+            ex2 = [c for c in cands if c['solto'] == solto]
+            if len(ex2) == 1:
+                return ex2[0]['key'], ex2[0]['nome'], 'sem_artigos'
+
+            # 3) Nome truncado: aceita apenas quando há um único prefixo plausível.
+            pref = [c for c in cands if min(len(solto), len(c['solto'])) >= 8 and (c['solto'].startswith(solto) or solto.startswith(c['solto']))]
+            if len(pref) == 1:
+                return pref[0]['key'], pref[0]['nome'], 'truncado'
+
+            # 4) Similaridade conservadora, somente dentro do mesmo estado.
+            scores = sorted(
+                ((SequenceMatcher(None, solto, c['solto']).ratio(), c) for c in cands),
+                key=lambda x: x[0], reverse=True
+            )
+            if scores:
+                melhor, cand = scores[0]
+                segundo = scores[1][0] if len(scores) > 1 else 0
+                if melhor >= 0.88 and (melhor - segundo >= 0.04 or melhor >= 0.95):
+                    return cand['key'], cand['nome'], 'aproximado'
+
+            return f'{uf}|{bruto}', cidade, 'sem_correspondencia'
+
+        pares = loc[['UF','CIDADE']].drop_duplicates().copy()
+        resolvidos = pares.apply(lambda x: resolver_cidade(x['UF'], x['CIDADE']), axis=1)
+        pares['KEY'] = [x[0] for x in resolvidos]
+        pares['CIDADE_OFICIAL'] = [x[1] for x in resolvidos]
+        pares['MATCH_CIDADE'] = [x[2] for x in resolvidos]
+        loc = loc.merge(pares, on=['UF','CIDADE'], how='left')
+        loc['CIDADE_ORIGINAL'] = loc['CIDADE']
+        loc['CIDADE'] = loc['CIDADE_OFICIAL'].fillna(loc['CIDADE'])
 
         city = loc.groupby(['KEY','CIDADE','UF'], dropna=False).agg(
             FATURAMENTO=('VALOR','sum'),
@@ -174,8 +244,7 @@ with aba4:
         cmix = cmix.groupby('KEY').MIXCLI.mean().rename('MIX').reset_index()
         city = city.merge(cmix, on='KEY', how='left')
 
-        geojson_all = load_nordeste_geojson()
-        features = geojson_all['features']
+        features = all_features
         if estado_uf:
             features = [ft for ft in features if ft.get('properties',{}).get('uf') == estado_uf]
         geojson = {'type':'FeatureCollection','features':features}
