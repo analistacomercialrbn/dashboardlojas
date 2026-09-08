@@ -223,7 +223,7 @@ with aba4:
 
         labels_df=city[['KEY','CIDADE','UF','FATURAMENTO']].copy(); labels_df['LABEL']=labels_df.CIDADE.astype(str)+' - '+labels_df.UF.astype(str); labels_df=labels_df.sort_values(['UF','CIDADE']); labels=labels_df.LABEL.tolist(); key_to_label=dict(zip(labels_df.KEY,labels_df.LABEL)); default_label=key_to_label.get(selected_key,labels[0] if labels else None)
         with col_det:
-            st.markdown("<div style='font-size:12px;color:#737A8C;margin-bottom:2px;'>Cidade selecionada</div>",unsafe_allow_html=True); idx=labels.index(default_label) if default_label in labels else 0; choice=st.selectbox('Cidade',labels,index=idx if labels else None,label_visibility='collapsed',key=f'cidade_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}')
+            st.markdown("<div style='font-size:12px;color:#737A8C;margin-bottom:2px;'>Cidade selecionada</div>",unsafe_allow_html=True); idx=labels.index(default_label) if default_label in labels else 0; choice=st.selectbox('Cidade',labels,index=idx if labels else None,label_visibility='collapsed',key=f'cidade_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}_{selected_key or "manual"}')
             if choice:
                 row=labels_df.loc[labels_df.LABEL.eq(choice)].iloc[0]; key=row.KEY; d=loc[loc.KEY.eq(key)].copy(); dcli=d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
                 st.markdown(f"<div style='font-size:22px;font-weight:800;color:{NAVY};margin:4px 0 12px 0;'>{row.CIDADE} - {row.UF}</div>",unsafe_allow_html=True)
