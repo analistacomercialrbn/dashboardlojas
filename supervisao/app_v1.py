@@ -4,12 +4,10 @@ _app = Path(__file__).with_name('app_v2.py')
 source = _app.read_text(encoding='utf-8')
 
 # Performance: as bases e o GeoJSON são recursos estáveis entre reruns.
-# cache_resource evita desserializar/copiar DataFrames e milhares de polígonos a cada mudança de filtro.
 source = source.replace("@st.cache_data(ttl=30, show_spinner='Carregando bases...')", "@st.cache_resource(show_spinner='Carregando bases...')")
 source = source.replace("@st.cache_data(ttl=86400, show_spinner=False)", "@st.cache_resource(show_spinner=False)")
 
-# Filtro temporal global: Ano -> Mês, ambos com opção "Todos".
-# Isso permite analisar um mês, o acumulado do ano ou todo o histórico disponível.
+# Filtro temporal global: Ano -> Mês, ambos com opção Todos.
 source = source.replace(
 """ativos = rcas[rcas['ATIVO'].eq('S')].copy()
 meses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)
@@ -97,7 +95,7 @@ meta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RC
 """
 )
 
-# Clientes novos e inativos passam a respeitar o período selecionado, inclusive visão anual.
+# Clientes novos e inativos respeitam o período selecionado.
 source = source.replace(
 """hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
 primeira = hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
@@ -131,42 +129,33 @@ _, suffix = rest.split('\nst.divider()\n', 1)
 aba4 = r'''
 with aba4:
     st.subheader('Cobertura municipal — Nordeste')
-    st.markdown("<div class='section-note'>Selecione um estado para ampliar o mapa. Os filtros de ano, mês, supervisor, RCA e departamento atualizam automaticamente o mapa e os indicadores. Com Mês = Todos, o mapa mostra todas as cidades atendidas no ano escolhido.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-note'>A cidade é definida pela praça da própria venda (MUNICENT) e o estado por ESTENT. Os filtros de ano, mês, supervisor, RCA e departamento atualizam automaticamente o mapa e os indicadores.</div>", unsafe_allow_html=True)
 
     if fat.empty:
         st.info('Sem faturamento para o recorte selecionado.')
-    elif not {'CIDADE','UF'}.issubset(clientes.columns):
-        st.warning('A base de clientes não contém as colunas CIDADE e UF necessárias para o mapa.')
+    elif not {'MUNICENT','ESTENT'}.issubset(fat.columns):
+        st.warning('A base de vendas não contém as colunas MUNICENT e ESTENT necessárias para o mapa.')
     else:
         from difflib import SequenceMatcher
         import re
 
         nomes_uf = {
             'Nordeste': None,
-            'Alagoas (AL)': 'AL',
-            'Bahia (BA)': 'BA',
-            'Ceará (CE)': 'CE',
-            'Maranhão (MA)': 'MA',
-            'Paraíba (PB)': 'PB',
-            'Pernambuco (PE)': 'PE',
-            'Piauí (PI)': 'PI',
-            'Rio Grande do Norte (RN)': 'RN',
-            'Sergipe (SE)': 'SE',
+            'Alagoas (AL)': 'AL', 'Bahia (BA)': 'BA', 'Ceará (CE)': 'CE',
+            'Maranhão (MA)': 'MA', 'Paraíba (PB)': 'PB', 'Pernambuco (PE)': 'PE',
+            'Piauí (PI)': 'PI', 'Rio Grande do Norte (RN)': 'RN', 'Sergipe (SE)': 'SE',
         }
-
         estado_label = st.selectbox('Filtrar por estado', list(nomes_uf.keys()), index=0, key='estado_mapa')
         estado_uf = nomes_uf[estado_label]
 
-        cli_cols = ['CODCLI','CIDADE','UF'] + (['CLIENTE'] if 'CLIENTE' in clientes.columns else [])
-        cli_geo = clientes[cli_cols].drop_duplicates('CODCLI').copy()
-        cli_geo['UF'] = cli_geo['UF'].astype(str).str.upper().str.strip()
-        loc = fat.merge(cli_geo, on='CODCLI', how='left')
+        # Fonte geográfica: a própria linha de venda.
+        loc = fat.copy()
+        loc['UF'] = loc['ESTENT'].astype(str).str.upper().str.strip()
+        loc['CIDADE'] = loc['MUNICENT'].astype(str).str.strip()
         loc = loc[loc.UF.isin(NE_CODES)].copy()
         if estado_uf:
             loc = loc[loc.UF.eq(estado_uf)].copy()
 
-        # Correspondência tolerante com o nome oficial do município.
-        # Trata acentos, pontuação, artigos (do/da/de/dos/das), abreviações e nomes truncados.
         geojson_all = load_nordeste_geojson()
         all_features = geojson_all['features']
 
@@ -181,14 +170,11 @@ with aba4:
             pr = ft.get('properties', {})
             uf = str(pr.get('uf','')).upper().strip()
             nome = pr.get('name','')
-            if not uf or not nome:
-                continue
-            oficiais.setdefault(uf, []).append({
-                'nome': nome,
-                'norm': norm(nome),
-                'solto': cidade_solto(nome),
-                'key': pr.get('key', f'{uf}|{norm(nome)}')
-            })
+            if uf and nome:
+                oficiais.setdefault(uf, []).append({
+                    'nome': nome, 'norm': norm(nome), 'solto': cidade_solto(nome),
+                    'key': pr.get('key', f'{uf}|{norm(nome)}')
+                })
 
         def resolver_cidade(uf, cidade):
             uf = str(uf or '').upper().strip()
@@ -197,33 +183,21 @@ with aba4:
             cands = oficiais.get(uf, [])
             if not bruto or not cands:
                 return f'{uf}|{bruto}', cidade, 'sem_correspondencia'
-
-            # 1) Nome normalizado exato.
             ex = [c for c in cands if c['norm'] == bruto]
             if len(ex) == 1:
                 return ex[0]['key'], ex[0]['nome'], 'exato'
-
-            # 2) Exato ignorando artigos/preposições.
             ex2 = [c for c in cands if c['solto'] == solto]
             if len(ex2) == 1:
                 return ex2[0]['key'], ex2[0]['nome'], 'sem_artigos'
-
-            # 3) Nome truncado: aceita apenas quando há um único prefixo plausível.
             pref = [c for c in cands if min(len(solto), len(c['solto'])) >= 8 and (c['solto'].startswith(solto) or solto.startswith(c['solto']))]
             if len(pref) == 1:
                 return pref[0]['key'], pref[0]['nome'], 'truncado'
-
-            # 4) Similaridade conservadora, somente dentro do mesmo estado.
-            scores = sorted(
-                ((SequenceMatcher(None, solto, c['solto']).ratio(), c) for c in cands),
-                key=lambda x: x[0], reverse=True
-            )
+            scores = sorted(((SequenceMatcher(None, solto, c['solto']).ratio(), c) for c in cands), key=lambda x: x[0], reverse=True)
             if scores:
                 melhor, cand = scores[0]
                 segundo = scores[1][0] if len(scores) > 1 else 0
                 if melhor >= 0.88 and (melhor - segundo >= 0.04 or melhor >= 0.95):
                     return cand['key'], cand['nome'], 'aproximado'
-
             return f'{uf}|{bruto}', cidade, 'sem_correspondencia'
 
         pares = loc[['UF','CIDADE']].drop_duplicates().copy()
@@ -236,9 +210,7 @@ with aba4:
         loc['CIDADE'] = loc['CIDADE_OFICIAL'].fillna(loc['CIDADE'])
 
         city = loc.groupby(['KEY','CIDADE','UF'], dropna=False).agg(
-            FATURAMENTO=('VALOR','sum'),
-            CLIENTES=('CODCLI','nunique'),
-            PEDIDOS=('NUMPED','nunique')
+            FATURAMENTO=('VALOR','sum'), CLIENTES=('CODCLI','nunique'), PEDIDOS=('NUMPED','nunique')
         ).reset_index()
         cmix = loc.groupby(['KEY','CODCLI']).CODPROD.nunique().rename('MIXCLI').reset_index()
         cmix = cmix.groupby('KEY').MIXCLI.mean().rename('MIX').reset_index()
@@ -249,12 +221,7 @@ with aba4:
             features = [ft for ft in features if ft.get('properties',{}).get('uf') == estado_uf]
         geojson = {'type':'FeatureCollection','features':features}
 
-        munis = pd.DataFrame([{
-            'KEY': ft['properties']['key'],
-            'CIDADE_MAPA': ft['properties'].get('name',''),
-            'UF_MAPA': ft['properties'].get('uf','')
-        } for ft in features])
-
+        munis = pd.DataFrame([{'KEY':ft['properties']['key'],'CIDADE_MAPA':ft['properties'].get('name',''),'UF_MAPA':ft['properties'].get('uf','')} for ft in features])
         mapa = munis.merge(city, on='KEY', how='left')
         mapa['CIDADE'] = mapa['CIDADE'].fillna(mapa['CIDADE_MAPA'])
         mapa['UF'] = mapa['UF'].fillna(mapa['UF_MAPA'])
@@ -273,132 +240,46 @@ with aba4:
 
         mapa_sem = mapa[mapa.FATURAMENTO.le(0)].copy()
         mapa_com = mapa[mapa.FATURAMENTO.gt(0)].copy()
-
         fig = go.Figure()
-
         if not mapa_sem.empty:
             custom_sem = mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy()
-            fig.add_trace(go.Choropleth(
-                geojson=geojson,
-                locations=mapa_sem.KEY,
-                z=[0] * len(mapa_sem),
-                featureidkey='properties.key',
-                zmin=0,
-                zmax=1,
-                colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],
-                showscale=False,
-                marker_line_color='#AFA8A0',
-                marker_line_width=.65 if estado_uf else .4,
-                customdata=custom_sem,
-                hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',
-                name='Sem faturamento'
-            ))
-
+            fig.add_trace(go.Choropleth(geojson=geojson, locations=mapa_sem.KEY, z=[0]*len(mapa_sem), featureidkey='properties.key', zmin=0, zmax=1, colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']], showscale=False, marker_line_color='#AFA8A0', marker_line_width=.65 if estado_uf else .4, customdata=custom_sem, hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>', name='Sem faturamento'))
         if not mapa_com.empty:
-            zmax = float(mapa_com.FATURAMENTO.quantile(.95)) if len(mapa_com) else 1.0
-            zmax = max(zmax, 1.0)
+            zmax = max(float(mapa_com.FATURAMENTO.quantile(.95)),1.0)
             custom_com = mapa_com[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy()
-            fig.add_trace(go.Choropleth(
-                geojson=geojson,
-                locations=mapa_com.KEY,
-                z=mapa_com.FATURAMENTO,
-                featureidkey='properties.key',
-                zmin=0,
-                zmax=zmax,
-                colorscale=[
-                    [0.00,'#E6EAF6'],
-                    [0.18,'#D3DAEE'],
-                    [0.40,'#A8B4D9'],
-                    [0.65,'#7080B7'],
-                    [0.82,'#42548D'],
-                    [1.00,NAVY]
-                ],
-                marker_line_color='#8994B6',
-                marker_line_width=.65 if estado_uf else .4,
-                customdata=custom_com,
-                colorbar=dict(title='Faturamento (R$)', thickness=12, len=.34, orientation='h', x=.72, y=.01, xanchor='center', yanchor='bottom'),
-                hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Mix: %{customdata[5]:.2f}<extra></extra>',
-                name='Com faturamento'
-            ))
+            fig.add_trace(go.Choropleth(geojson=geojson, locations=mapa_com.KEY, z=mapa_com.FATURAMENTO, featureidkey='properties.key', zmin=0, zmax=zmax, colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]], marker_line_color='#8994B6', marker_line_width=.65 if estado_uf else .4, customdata=custom_com, colorbar=dict(title='Faturamento (R$)', thickness=12, len=.34, orientation='h', x=.72, y=.01, xanchor='center', yanchor='bottom'), hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Mix: %{customdata[5]:.2f}<extra></extra>', name='Com faturamento'))
 
         fig.update_geos(fitbounds='locations', visible=False, projection_type='mercator', bgcolor='rgba(0,0,0,0)')
-        fig.update_layout(
-            height=980,
-            margin=dict(l=0,r=0,t=0,b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            dragmode=False,
-            showlegend=True,
-            legend=dict(
-                orientation='h', x=.01, y=.01, xanchor='left', yanchor='bottom',
-                bgcolor='rgba(255,255,255,.88)', bordercolor='#E1E3EA', borderwidth=1
-            )
-        )
+        fig.update_layout(height=980, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', dragmode=False, showlegend=True, legend=dict(orientation='h',x=.01,y=.01,xanchor='left',yanchor='bottom',bgcolor='rgba(255,255,255,.88)',bordercolor='#E1E3EA',borderwidth=1))
 
         selected_key = None
-        col_map, col_det = st.columns([1.45, 1], gap='large')
-
+        col_map, col_det = st.columns([1.45,1], gap='large')
         with col_map:
             try:
                 ev = st.plotly_chart(fig, use_container_width=True, on_select='rerun', selection_mode='points', key=f'mapa_{estado_uf or "ne"}_{ano_sel}_{mes_sel}')
-                sel = getattr(ev, 'selection', None)
-                pts = getattr(sel, 'points', None) if sel is not None else None
-                if pts and isinstance(pts[0], dict):
-                    selected_key = pts[0].get('location')
+                sel = getattr(ev,'selection',None); pts = getattr(sel,'points',None) if sel is not None else None
+                if pts and isinstance(pts[0],dict): selected_key = pts[0].get('location')
             except Exception:
                 st.plotly_chart(fig, use_container_width=True, key=f'mapa_fb_{estado_uf or "ne"}_{ano_sel}_{mes_sel}')
 
         labels_df = city[['KEY','CIDADE','UF','FATURAMENTO']].copy()
-        labels_df['LABEL'] = labels_df.CIDADE.astype(str) + ' - ' + labels_df.UF.astype(str)
+        labels_df['LABEL'] = labels_df.CIDADE.astype(str)+' - '+labels_df.UF.astype(str)
         labels_df = labels_df.sort_values(['UF','CIDADE'])
-        labels = labels_df.LABEL.tolist()
-        key_to_label = dict(zip(labels_df.KEY, labels_df.LABEL))
-        default_label = key_to_label.get(selected_key, labels[0] if labels else None)
+        labels = labels_df.LABEL.tolist(); key_to_label = dict(zip(labels_df.KEY,labels_df.LABEL)); default_label = key_to_label.get(selected_key, labels[0] if labels else None)
 
         with col_det:
             st.markdown("<div style='font-size:12px;color:#737A8C;margin-bottom:2px;'>Cidade selecionada</div>", unsafe_allow_html=True)
             idx = labels.index(default_label) if default_label in labels else 0
             choice = st.selectbox('Cidade', labels, index=idx if labels else None, label_visibility='collapsed', key=f'cidade_{estado_uf or "ne"}_{ano_sel}_{mes_sel}')
-
             if choice:
-                row = labels_df.loc[labels_df.LABEL.eq(choice)].iloc[0]
-                key = row.KEY
-                d = loc[loc.KEY.eq(key)].copy()
-                dcli = d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'), FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique')).reset_index()
-
+                row = labels_df.loc[labels_df.LABEL.eq(choice)].iloc[0]; key=row.KEY; d=loc[loc.KEY.eq(key)].copy()
+                dcli=d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
                 st.markdown(f"<div style='font-size:22px;font-weight:800;color:{NAVY};margin:4px 0 12px 0;'>{row.CIDADE} - {row.UF}</div>", unsafe_allow_html=True)
-
-                a1,a2,a3 = st.columns(3)
-                a1.markdown(kpi('Faturamento', brl_compacto(d.VALOR.sum()), brl(d.VALOR.sum())), unsafe_allow_html=True)
-                a2.markdown(kpi('Clientes positivados', nint(d.CODCLI.nunique()), periodo_label), unsafe_allow_html=True)
-                a3.markdown(kpi('Pedidos', nint(d.NUMPED.nunique()), periodo_label), unsafe_allow_html=True)
-                b1,b2,b3 = st.columns(3)
-                b1.markdown(kpi('Ticket médio', brl_compacto(d.VALOR.sum()/d.NUMPED.nunique() if d.NUMPED.nunique() else 0), 'Por pedido'), unsafe_allow_html=True)
-                b2.markdown(kpi('Mix médio', dec(dcli.PRODUTOS.mean()), 'Produtos/cliente'), unsafe_allow_html=True)
-                part = d.VALOR.sum()/city.FATURAMENTO.sum()*100 if city.FATURAMENTO.sum() else 0
-                b3.markdown(kpi('Participação', pct(part), titulo_regiao), unsafe_allow_html=True)
-
-                st.markdown('**Faturamento por RCA na cidade**')
-                rc = d.groupby('RCA', as_index=False).VALOR.sum().sort_values('VALOR', ascending=False)
-                rc['% Cidade'] = rc.VALOR.div(rc.VALOR.sum()).mul(100)
-                rc_show = pd.DataFrame({'RCA':rc.RCA, 'Faturamento (R$)':rc.VALOR.map(brl), '% Cidade':rc['% Cidade'].map(pct)})
-                st.dataframe(rc_show, use_container_width=True, hide_index=True, height=min(220, 38 + 35*len(rc_show)))
-
-                st.markdown('**Faturamento por departamento na cidade**')
-                dp = d.groupby('DEPARTAMENTO', as_index=False).VALOR.sum().sort_values('VALOR', ascending=False)
-                dp['% Cidade'] = dp.VALOR.div(dp.VALOR.sum()).mul(100)
-                dp_show = pd.DataFrame({'Departamento':dp.DEPARTAMENTO, 'Faturamento (R$)':dp.VALOR.map(brl), '% Cidade':dp['% Cidade'].map(pct)})
-                st.dataframe(dp_show, use_container_width=True, hide_index=True, height=min(260, 38 + 35*len(dp_show)))
-
-                st.markdown('**Principais clientes da cidade**')
-                nomes = clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI') if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE'])
-                detail = dcli.merge(nomes, on='CODCLI', how='left').sort_values('FATURAMENTO', ascending=False).head(12)
-                detail_show = pd.DataFrame({
-                    'Cliente': detail['CLIENTE'].fillna(detail.CODCLI.astype(str)) if 'CLIENTE' in detail.columns else detail.CODCLI.astype(str),
-                    'Faturamento (R$)': detail.FATURAMENTO.map(brl),
-                    'Pedidos': detail.PEDIDOS.map(nint),
-                    'Mix': detail.PRODUTOS.map(dec),
-                })
-                st.dataframe(detail_show, use_container_width=True, hide_index=True, height=min(340, 38 + 35*len(detail_show)))
+                a1,a2,a3=st.columns(3); a1.markdown(kpi('Faturamento',brl_compacto(d.VALOR.sum()),brl(d.VALOR.sum())),unsafe_allow_html=True); a2.markdown(kpi('Clientes positivados',nint(d.CODCLI.nunique()),periodo_label),unsafe_allow_html=True); a3.markdown(kpi('Pedidos',nint(d.NUMPED.nunique()),periodo_label),unsafe_allow_html=True)
+                b1,b2,b3=st.columns(3); b1.markdown(kpi('Ticket médio',brl_compacto(d.VALOR.sum()/d.NUMPED.nunique() if d.NUMPED.nunique() else 0),'Por pedido'),unsafe_allow_html=True); b2.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos/cliente'),unsafe_allow_html=True); part=d.VALOR.sum()/city.FATURAMENTO.sum()*100 if city.FATURAMENTO.sum() else 0; b3.markdown(kpi('Participação',pct(part),titulo_regiao),unsafe_allow_html=True)
+                st.markdown('**Faturamento por RCA na cidade**'); rc=d.groupby('RCA',as_index=False).VALOR.sum().sort_values('VALOR',ascending=False); rc['% Cidade']=rc.VALOR.div(rc.VALOR.sum()).mul(100); st.dataframe(pd.DataFrame({'RCA':rc.RCA,'Faturamento (R$)':rc.VALOR.map(brl),'% Cidade':rc['% Cidade'].map(pct)}),use_container_width=True,hide_index=True,height=min(220,38+35*len(rc)))
+                st.markdown('**Faturamento por departamento na cidade**'); dp=d.groupby('DEPARTAMENTO',as_index=False).VALOR.sum().sort_values('VALOR',ascending=False); dp['% Cidade']=dp.VALOR.div(dp.VALOR.sum()).mul(100); st.dataframe(pd.DataFrame({'Departamento':dp.DEPARTAMENTO,'Faturamento (R$)':dp.VALOR.map(brl),'% Cidade':dp['% Cidade'].map(pct)}),use_container_width=True,hide_index=True,height=min(260,38+35*len(dp)))
+                st.markdown('**Principais clientes da cidade**'); nomes=clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI') if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE']); detail=dcli.merge(nomes,on='CODCLI',how='left').sort_values('FATURAMENTO',ascending=False).head(12); st.dataframe(pd.DataFrame({'Cliente':detail['CLIENTE'].fillna(detail.CODCLI.astype(str)) if 'CLIENTE' in detail.columns else detail.CODCLI.astype(str),'Faturamento (R$)':detail.FATURAMENTO.map(brl),'Pedidos':detail.PEDIDOS.map(nint),'Mix':detail.PRODUTOS.map(dec)}),use_container_width=True,hide_index=True,height=min(340,38+35*len(detail)))
             else:
                 st.info('Nenhuma cidade com faturamento no recorte atual.')
 '''
