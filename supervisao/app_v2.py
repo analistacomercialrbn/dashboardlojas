@@ -11,7 +11,7 @@ st.set_page_config(page_title='Dashboard de Supervisão', page_icon='📊', layo
 
 VENDAS_ID = '1ioeKNG2P5HLZpmCTxUa3FaCfI1pfHuyC'
 AUX_ID = '1h3XtB-2aMSMGhr5Ws7P-6nijKZc3zeqI'
-BASE_VENDAS_VERSAO = 'Produto (24)'
+BASE_VENDAS_VERSAO = 'Produto (16)'
 
 NAVY = '#1E2655'
 NAVY_2 = '#2D396F'
@@ -237,6 +237,7 @@ xf_sup = st.session_state.get('xf_supervisor')
 xf_rca = st.session_state.get('xf_rca')
 xf_dep = st.session_state.get('xf_departamento')
 
+# Remove filtros clicados que deixaram de existir no recorte lateral atual.
 if xf_sup and xf_sup not in set(ss_eff):
     st.session_state.pop('xf_supervisor', None); xf_sup = None
 if xf_rca and xf_rca not in set(rs_eff):
