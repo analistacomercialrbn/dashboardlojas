@@ -1,0 +1,2 @@
+Base de vendas atualizada para Produto (24) em 2026-09-09.
+Arquivo oficial no Google Drive mantido no mesmo ID para preservar a integração do dashboard.
