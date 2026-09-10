@@ -168,6 +168,11 @@ def load(base_version):
     v['CODPROD'] = cod(v['Cod/Produto'])
     v['DATA_FAT'] = dt(v['Data Faturamento'])
     v['VALOR'] = pd.to_numeric(v['Pedidos Enviados'], errors='coerce').fillna(0)
+    v['MARGEM_PCT'] = pd.to_numeric(v.get('% Margem'), errors='coerce')
+    v['DESCONTO_VALOR'] = pd.to_numeric(v.get('Vl Desconto'), errors='coerce').fillna(0)
+    v['DESCONTO_PCT_ORIG'] = pd.to_numeric(v.get('% Desconto'), errors='coerce')
+    v['MARGEM_PESO'] = v['MARGEM_PCT'] * v['VALOR']
+    v['BASE_BRUTA_DESC'] = v['VALOR'] + v['DESCONTO_VALOR']
     v['FATURADO'] = v['DATA_FAT'].notna() & v['Posição'].astype(str).str.strip().str.upper().eq('FECHADO')
     v['MES_FAT'] = v['DATA_FAT'].dt.to_period('M').astype('string')
 
@@ -237,7 +242,6 @@ xf_sup = st.session_state.get('xf_supervisor')
 xf_rca = st.session_state.get('xf_rca')
 xf_dep = st.session_state.get('xf_departamento')
 
-# Remove filtros clicados que deixaram de existir no recorte lateral atual.
 if xf_sup and xf_sup not in set(ss_eff):
     st.session_state.pop('xf_supervisor', None); xf_sup = None
 if xf_rca and xf_rca not in set(rs_eff):
@@ -271,7 +275,12 @@ F = fat.VALOR.sum(); M = meta.META.sum(); P = fat.NUMPED.nunique(); C = fat.CODC
 base = ativos[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff)][['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA')
 if xf_sup: base = base[base.SUPERVISOR.astype(str).eq(xf_sup)]
 if xf_rca: base = base[base.RCA.astype(str).eq(xf_rca)]
-fr = fat.groupby('COD_RCA').agg(FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique'),POSITIVADOS=('CODCLI','nunique')).reset_index()
+fr = fat.groupby('COD_RCA').agg(
+    FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique'), POSITIVADOS=('CODCLI','nunique'),
+    MARGEM_PESO=('MARGEM_PESO','sum'), DESCONTO_VALOR=('DESCONTO_VALOR','sum'), BASE_BRUTA_DESC=('BASE_BRUTA_DESC','sum')
+).reset_index()
+fr['MARGEM_CALC'] = fr['MARGEM_PESO'].div(fr['FATURAMENTO'].replace(0,pd.NA))
+fr['DESCONTO_PCT_CALC'] = -fr['DESCONTO_VALOR'].div(fr['BASE_BRUTA_DESC'].replace(0,pd.NA))*100
 mr = meta.groupby('COD_RCA',as_index=False).META.sum()
 
 if fat.empty:
@@ -282,7 +291,7 @@ else:
     mix = pc.groupby('COD_RCA').agg(MIX_PRODUTOS_CLIENTE=('PRODUTOS','mean')).reset_index()
     mix_geral = pc.PRODUTOS.mean()
 
-r = base.merge(fr,on='COD_RCA',how='left').merge(mr,on='COD_RCA',how='left').merge(mix,on='COD_RCA',how='left').fillna({'FATURAMENTO':0,'PEDIDOS':0,'POSITIVADOS':0,'META':0,'MIX_PRODUTOS_CLIENTE':0})
+r = base.merge(fr,on='COD_RCA',how='left').merge(mr,on='COD_RCA',how='left').merge(mix,on='COD_RCA',how='left').fillna({'FATURAMENTO':0,'PEDIDOS':0,'POSITIVADOS':0,'META':0,'MIX_PRODUTOS_CLIENTE':0,'DESCONTO_VALOR':0})
 r['ATINGIMENTO'] = r.FATURAMENTO.div(r.META.replace(0,pd.NA))*100
 r['TICKET'] = r.FATURAMENTO.div(r.PEDIDOS.replace(0,pd.NA))
 
@@ -351,7 +360,8 @@ with aba1:
     tabela = pd.DataFrame({
         'RCA':r.RCA,'Supervisor':r.SUPERVISOR,'Faturamento':r.FATURAMENTO.map(brl),'Meta':r.META.map(brl),
         'Atingimento':r.ATINGIMENTO.map(pct),'Clientes':r.POSITIVADOS.map(nint),'Ticket médio':r.TICKET.map(brl),
-        'Mix prod./cliente':r.MIX_PRODUTOS_CLIENTE.map(dec),'Margem':'—','Descontos':'—'
+        'Mix prod./cliente':r.MIX_PRODUTOS_CLIENTE.map(dec),'Margem':r.MARGEM_CALC.map(pct),
+        'Desconto (R$)':r.DESCONTO_VALOR.map(brl),'% Desconto':r.DESCONTO_PCT_CALC.map(pct)
     })
     st.dataframe(tabela,use_container_width=True,hide_index=True,height=min(620,40+35*len(tabela)))
 
