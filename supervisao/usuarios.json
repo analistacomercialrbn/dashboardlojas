@@ -1,12 +1,22 @@
 {
   "admin": {
+    "ativo": true,
+    "cod_rca": null,
     "nome": "Coordenação Comercial",
     "perfil": "ADMIN",
+    "salt": "",
     "senha_algo": "sha256",
     "senha_hash": "2b5c13156ad585cfd7dc3de698ddef30d37ac8438f62998ef2dd1ab75cd50fdd",
-    "salt": "",
-    "supervisor": null,
+    "supervisor": null
+  },
+  "analistacomercialrbn@gmail.com": {
+    "ativo": true,
     "cod_rca": null,
-    "ativo": true
+    "nome": "Airton César",
+    "perfil": "ADMIN",
+    "salt": "25dc1ae25a28870dcdeb525a276e27bc",
+    "senha_algo": "pbkdf2_sha256",
+    "senha_hash": "35d09dbe5f3a61a7aa53fcc2f11815536f4143293fd1ce704252b50d03806817",
+    "supervisor": null
   }
 }
