@@ -1,11 +1,10 @@
-import os, io, re, unicodedata
+import os, io, re, json, unicodedata
 from datetime import datetime
 import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
 import plotly.express as px
-import pydeck as pdk
 
 st.set_page_config(page_title='Logística Operacional | RBN', page_icon='🚚', layout='wide', initial_sidebar_state='expanded')
 st.markdown('''<style>
@@ -15,25 +14,20 @@ def norm(s):
     s='' if s is None else str(s)
     s=unicodedata.normalize('NFKD',s).encode('ascii','ignore').decode('ascii')
     return re.sub(r'\s+',' ',s.replace('\n',' ')).strip().upper()
-
 def txt(v):
     if pd.isna(v): return None
     s=str(v).strip(); return s or None
-
 def xdate(v):
     if pd.isna(v) or v=='': return pd.NaT
     if isinstance(v,(pd.Timestamp,datetime)): return pd.to_datetime(v,errors='coerce')
-    if isinstance(v,(int,float,np.integer,np.floating)) and 30000<=float(v)<=70000:
-        return pd.Timestamp('1899-12-30')+pd.to_timedelta(float(v),unit='D')
+    if isinstance(v,(int,float,np.integer,np.floating)) and 30000<=float(v)<=70000: return pd.Timestamp('1899-12-30')+pd.to_timedelta(float(v),unit='D')
     return pd.to_datetime(v,errors='coerce',dayfirst=True)
-
 def wait(v):
     if pd.isna(v) or v=='': return np.nan
     if isinstance(v,(int,float,np.integer,np.floating)): return float(v)
     d=pd.to_datetime(v,errors='coerce')
     if pd.notna(d) and d.year<=1901: return float((d-pd.Timestamp('1899-12-31')).days)
     m=re.search(r'(\d+(?:[\.,]\d+)?)',str(v)); return float(m.group(1).replace(',','.')) if m else np.nan
-
 def br(x,d=0):
     if pd.isna(x): return '-'
     return f'{x:,.{d}f}'.replace(',','X').replace('.',',').replace('X','.')
@@ -44,22 +38,22 @@ def cards(items):
     cols=st.columns(len(items))
     for c,item in zip(cols,items):
         with c: card(*item)
-
 def city_key(v):
     if v is None or pd.isna(v): return None
-    s=str(v).strip().upper()
-    s=re.sub(r'\s*[-/]\s*[A-Z]{2}\s*$','',s)
+    s=str(v).strip().upper(); s=re.sub(r'\s*[-/]\s*[A-Z]{2}\s*$','',s)
     return norm(s)
 def city_uf(v):
     if v is None or pd.isna(v): return None
     m=re.search(r'[-/]\s*([A-Z]{2})\s*$',str(v).upper().strip())
     return m.group(1) if m else None
 
+def secret(name, default=None):
+    try: return st.secrets.get(name, default)
+    except Exception: return os.getenv(name, default)
+
 @st.cache_data(ttl=300,show_spinner=False)
 def source_bytes():
-    try: url=st.secrets.get('DATA_XLSX_URL',None)
-    except Exception: url=None
-    url=url or os.getenv('DATA_XLSX_URL')
+    url=secret('DATA_XLSX_URL')
     if not url: raise FileNotFoundError('Configure DATA_XLSX_URL em Secrets.')
     r=requests.get(url,timeout=45); r.raise_for_status(); return io.BytesIO(r.content)
 
@@ -76,46 +70,78 @@ def load():
     for c in ['DATA_IMPLANTACAO','DATA_CARREGAMENTO','DATA_CHEGADA','PREVISAO_ROTA']: d[c]=d[c].map(xdate)
     d['DIAS_ESPERA']=d['TEMPO_ESPERA'].map(wait); s=d['STATUS'].fillna('').str.upper()
     d['ENTREGUE']=s.str.contains('ENTREG'); d['EM_ROTA']=s.str.contains('ROTA')&~d['ENTREGUE']; d['CARREGADO']=s.str.contains('CARREG')&~d['ENTREGUE']; d['TEM_OCORRENCIA']=d['CATEGORIA_OCORRENCIA'].notna()|d['FOLLOW_UP'].notna()
+    d['MUN_KEY']=d['CIDADE'].map(city_key); d['UF_KEY']=d['CIDADE'].map(city_uf)
     try:
         src2=source_bytes(); rg=pd.read_excel(src2,sheet_name='CADASTRO REGIAO',header=0,engine='openpyxl'); rg.columns=[norm(c) for c in rg.columns]
         mc=next((c for c in rg.columns if 'MUNICIPIO' in c),None); rc=next((c for c in rg.columns if 'REGIAO DE PLANEJAMENTO' in c),None)
         if mc and rc:
-            rg=rg[[mc,rc]].dropna(); rg['KEY']=rg[mc].map(city_key); d['KEY']=d['CIDADE'].map(city_key); d=d.merge(rg[['KEY',rc]].drop_duplicates('KEY'),on='KEY',how='left').rename(columns={rc:'REGIAO'})
+            rg=rg[[mc,rc]].dropna(); rg['MUN_KEY']=rg[mc].map(city_key); d=d.merge(rg[['MUN_KEY',rc]].drop_duplicates('MUN_KEY'),on='MUN_KEY',how='left').rename(columns={rc:'REGIAO'})
         else: d['REGIAO']=np.nan
     except Exception: d['REGIAO']=np.nan
+    d['REGIAO_OPERACIONAL']=d['REGIAO'].fillna(d['CLASSIFICACAO_ROTA']).fillna('SEM REGIÃO')
     return d
 
 @st.cache_data(ttl=3600,show_spinner=False)
-def coords():
-    try: url=st.secrets.get('MAP_COORDS_URL',None)
-    except Exception: url=None
-    url=url or os.getenv('MAP_COORDS_URL') or 'https://drive.google.com/uc?export=download&id=1ojDIEwHSRybJ8qfGwFRmJEDFs-pa17Gz'
-    try:
-        r=requests.get(url,timeout=45); r.raise_for_status(); c=pd.read_csv(io.BytesIO(r.content),encoding='utf-8-sig')
-        c.columns=[norm(x) for x in c.columns]; c['MUN_KEY']=c['NM_MUN'].map(city_key); c['SIGLA_UF']=c['SIGLA_UF'].astype(str).str.upper().str.strip()
-        c['LATITUDE']=pd.to_numeric(c['LATITUDE'],errors='coerce'); c['LONGITUDE']=pd.to_numeric(c['LONGITUDE'],errors='coerce')
-        return c[['MUN_KEY','SIGLA_UF','LATITUDE','LONGITUDE']].dropna(subset=['LATITUDE','LONGITUDE'])
-    except Exception: return pd.DataFrame()
+def geojson_ne():
+    url=secret('MAP_GEOJSON_URL','https://drive.google.com/uc?export=download&id=1syIzmYAeSd6_LS0d3P-yO411KsVzDP5K')
+    r=requests.get(url,timeout=60); r.raise_for_status(); return r.json()
 
-def map_data(base):
-    x=base.copy(); x['MUN_KEY']=x['CIDADE'].map(city_key); x['UF_KEY']=x['CIDADE'].map(city_uf); x['PESO_ABERTO_L']=np.where(~x.ENTREGUE,x.PESO.fillna(0),0); x['ABERTO_L']=(~x.ENTREGUE).astype(int)
-    g=x.groupby(['MUN_KEY','UF_KEY'],dropna=False).agg(CIDADE=('CIDADE','first'),PESO_ABERTO=('PESO_ABERTO_L','sum'),REGISTROS_ABERTOS=('ABERTO_L','sum'),TEMPO_MEDIO=('DIAS_ESPERA','mean'),OCORRENCIAS=('TEM_OCORRENCIA','sum')).reset_index(); c=coords()
-    if c.empty: return g
-    out=g.merge(c,left_on=['MUN_KEY','UF_KEY'],right_on=['MUN_KEY','SIGLA_UF'],how='left'); miss=out.LATITUDE.isna()
-    if miss.any():
-        ct=c.groupby('MUN_KEY').size(); uq=c[c.MUN_KEY.isin(ct[ct.eq(1)].index)].drop_duplicates('MUN_KEY'); alt=out.loc[miss,['MUN_KEY']].merge(uq,on='MUN_KEY',how='left')
-        out.loc[miss,'LATITUDE']=alt.LATITUDE.values; out.loc[miss,'LONGITUDE']=alt.LONGITUDE.values
-    return out
+def cidade_agg(base):
+    x=base.copy(); x['PESO_ABERTO_L']=np.where(~x.ENTREGUE,x.PESO.fillna(0),0); x['ABERTO_L']=(~x.ENTREGUE).astype(int)
+    g=x.groupby(['MUN_KEY','UF_KEY'],dropna=False).agg(CIDADE=('CIDADE','first'),REGIAO=('REGIAO_OPERACIONAL','first'),PESO_ABERTO=('PESO_ABERTO_L','sum'),REGISTROS_ABERTOS=('ABERTO_L','sum'),CLIENTES=('CLIENTE','nunique'),TEMPO_MEDIO=('DIAS_ESPERA','mean'),OCORRENCIAS=('TEM_OCORRENCIA','sum'),EM_ROTA=('EM_ROTA','sum')).reset_index()
+    g['LOC']=g['MUN_KEY'].fillna('')+'|'+g['UF_KEY'].fillna('')
+    return g
 
-def show_map(base,indicator,height=520):
-    md=map_data(base); key={'Peso em aberto':'PESO_ABERTO','Registros em aberto':'REGISTROS_ABERTOS','Tempo médio de espera':'TEMPO_MEDIO','Ocorrências':'OCORRENCIAS'}[indicator]
-    if 'LATITUDE' not in md or md.LATITUDE.notna().sum()==0:
-        st.warning('A base de coordenadas do Drive ainda não está pública para leitura do Streamlit.'); st.dataframe(md.sort_values(key,ascending=False).head(30),use_container_width=True,hide_index=True); return
-    md=md[md.LATITUDE.notna()&md.LONGITUDE.notna()].copy(); vals=pd.to_numeric(md[key],errors='coerce').fillna(0); vmax=max(float(vals.max()),1); md['RADIUS']=5000+np.sqrt(vals.clip(lower=0)/vmax)*42000
-    layer=pdk.Layer('ScatterplotLayer',data=md,get_position='[LONGITUDE,LATITUDE]',get_radius='RADIUS',get_fill_color='[26,104,87,170]',get_line_color='[15,47,42,220]',line_width_min_pixels=1,pickable=True,auto_highlight=True)
-    view=pdk.ViewState(latitude=float(md.LATITUDE.mean()),longitude=float(md.LONGITUDE.mean()),zoom=4.2)
-    tip={'html':'<b>{CIDADE}</b><br/>Peso em aberto: {PESO_ABERTO} kg<br/>Registros em aberto: {REGISTROS_ABERTOS}<br/>Espera média: {TEMPO_MEDIO} dias<br/>Ocorrências: {OCORRENCIAS}','style':{'backgroundColor':'#0f2f2a','color':'white'}}
-    st.pydeck_chart(pdk.Deck(layers=[layer],initial_view_state=view,tooltip=tip,map_style=None),use_container_width=True,height=height)
+def mapa_logistico(base, key_prefix='mapa'):
+    st.markdown('<div class="section">Mapa logístico — Nordeste</div>',unsafe_allow_html=True)
+    st.caption('Visão consolidada por região operacional. Selecione a região e depois a cidade no painel lateral para abrir o detalhe.')
+    indicador=st.selectbox('Indicador do mapa',['Peso em aberto','Formações em aberto','Tempo médio de espera','Ocorrências'],key=key_prefix+'_ind')
+    metric={'Peso em aberto':'PESO_ABERTO','Formações em aberto':'REGISTROS_ABERTOS','Tempo médio de espera':'TEMPO_MEDIO','Ocorrências':'OCORRENCIAS'}[indicador]
+    g=cidade_agg(base)
+    try: gj=geojson_ne()
+    except Exception as e:
+        st.warning('A malha municipal ainda não está acessível ao Streamlit.'); st.code(str(e)); return
+    for ft in gj.get('features',[]):
+        p=ft.setdefault('properties',{}); p['LOC']=city_key(p.get('NM_MUN'))+'|'+str(p.get('SIGLA_UF','')).upper()
+    regions=sorted([x for x in g.REGIAO.dropna().unique() if str(x).strip()])
+    c1,c2=st.columns([1.45,1])
+    with c2:
+        reg=st.selectbox('Região selecionada',['Todas']+regions,key=key_prefix+'_reg')
+        gr=g if reg=='Todas' else g[g.REGIAO.eq(reg)]
+        city_opts=sorted([x for x in gr.CIDADE.dropna().unique() if str(x).strip()])
+        cidade=st.selectbox('Cidade selecionada',['Visão da região']+city_opts,key=key_prefix+'_city')
+        det=base.copy() if reg=='Todas' else base[base.REGIAO_OPERACIONAL.eq(reg)].copy()
+        if cidade!='Visão da região': det=det[det.CIDADE.eq(cidade)]
+        aberto=det[~det.ENTREGUE]
+        titulo='Nordeste' if reg=='Todas' else reg
+        if cidade!='Visão da região': titulo=cidade
+        st.markdown(f'### {titulo}')
+        aa,bb,cc=st.columns(3)
+        with aa: card('Peso em aberto',f'{br(aberto.PESO.sum()/1000,1)} t')
+        with bb: card('Clientes',br(aberto.CLIENTE.nunique()))
+        with cc: card('Formações',br(len(aberto)))
+        aa,bb,cc=st.columns(3)
+        with aa: card('Espera média',f'{br(aberto.DIAS_ESPERA.mean(),1)} dias')
+        with bb: card('Em rota',br(det.EM_ROTA.sum()))
+        with cc: card('Ocorrências',br(det.TEM_OCORRENCIA.sum()))
+        if cidade=='Visão da região':
+            t=gr[['CIDADE','PESO_ABERTO','REGISTROS_ABERTOS','CLIENTES','TEMPO_MEDIO','OCORRENCIAS']].sort_values('PESO_ABERTO',ascending=False).head(15)
+            st.markdown('**Cidades da região**'); st.dataframe(t,use_container_width=True,hide_index=True)
+        else:
+            st.markdown('**Motoristas na cidade**')
+            tm=det.groupby('MOTORISTA',dropna=False).agg(PESO=('PESO','sum'),FORMACOES=('CLIENTE','size'),CLIENTES=('CLIENTE','nunique')).reset_index().sort_values('PESO',ascending=False)
+            st.dataframe(tm,use_container_width=True,hide_index=True)
+            st.markdown('**Pendências da cidade**')
+            cols=['CLIENTE','VENDEDOR','PESO','DIAS_ESPERA','STATUS','PREVISAO_ROTA','MOTORISTA']
+            st.dataframe(aberto[cols].sort_values('DIAS_ESPERA',ascending=False).head(20),use_container_width=True,hide_index=True)
+    with c1:
+        plotg=g.copy()
+        if reg!='Todas':
+            plotg=plotg[plotg.REGIAO.eq(reg)]
+        fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color=metric,hover_name='CIDADE',hover_data={'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},color_continuous_scale='Blues')
+        fig.update_geos(fitbounds='locations',visible=False)
+        fig.update_layout(height=720,margin=dict(l=0,r=0,t=10,b=0),coloraxis_colorbar=dict(title=indicador))
+        st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
 
 try: df=load()
 except Exception as e:
@@ -123,12 +149,12 @@ except Exception as e:
 
 with st.sidebar:
     st.markdown('### 🚚 LOGÍSTICA RBN'); st.caption('Dashboard Operacional · V1')
-    page=st.radio('Menu',['Visão Geral','Formação de Cargas','Rotas e Entregas','Motoristas e Frota','Pendências','Ocorrências','Custos'],label_visibility='collapsed')
+    page=st.radio('Menu',['Visão Geral','Mapa Logístico','Formação de Cargas','Rotas e Entregas','Motoristas e Frota','Pendências','Ocorrências','Custos'],label_visibility='collapsed')
     st.markdown('---'); st.markdown('#### Filtros')
     def multi(label,col): return st.multiselect(label,sorted([x for x in df[col].dropna().unique() if str(x).strip()]))
     dates=df.DATA_IMPLANTACAO.dropna(); period=None
     if len(dates): period=st.date_input('Período',value=(dates.min().date(),dates.max().date()),min_value=dates.min().date(),max_value=dates.max().date())
-    filters=[(multi('Vendedor','VENDEDOR'),'VENDEDOR'),(multi('Região','REGIAO'),'REGIAO'),(multi('Cidade','CIDADE'),'CIDADE'),(multi('Motorista','MOTORISTA'),'MOTORISTA'),(multi('Caminhão','CAMINHAO'),'CAMINHAO'),(multi('Status','STATUS'),'STATUS'),(multi('Produto','PRODUTO'),'PRODUTO'),(multi('Classificação de rota','CLASSIFICACAO_ROTA'),'CLASSIFICACAO_ROTA')]
+    filters=[(multi('Vendedor','VENDEDOR'),'VENDEDOR'),(multi('Região','REGIAO_OPERACIONAL'),'REGIAO_OPERACIONAL'),(multi('Cidade','CIDADE'),'CIDADE'),(multi('Motorista','MOTORISTA'),'MOTORISTA'),(multi('Caminhão','CAMINHAO'),'CAMINHAO'),(multi('Status','STATUS'),'STATUS'),(multi('Produto','PRODUTO'),'PRODUTO'),(multi('Classificação de rota','CLASSIFICACAO_ROTA'),'CLASSIFICACAO_ROTA')]
     st.caption('Somente leitura · nenhum dado é gravado na planilha.')
 
 f=df.copy()
@@ -143,22 +169,22 @@ if page=='Visão Geral':
     aberto=f[~f.ENTREGUE]; cards([('Registros em aberto',br(len(aberto)),''),('Peso em aberto',f'{br(aberto.PESO.sum()/1000,1)} t',''),('Em rota',br(f.EM_ROTA.sum()),''),('Entregues',br(f.ENTREGUE.sum()),''),('Espera média',f'{br(aberto.DIAS_ESPERA.mean(),1)} dias',''),('Ocorrências',br(f.TEM_OCORRENCIA.sum()),'')])
     c1,c2=st.columns([1.2,1])
     with c1:
-        st.markdown('<div class="section">Peso em aberto por rota</div>',unsafe_allow_html=True); g=aberto.groupby('CLASSIFICACAO_ROTA',dropna=False).PESO.sum().reset_index().sort_values('PESO').tail(12); g.CLASSIFICACAO_ROTA=g.CLASSIFICACAO_ROTA.fillna('Sem classificação'); st.plotly_chart(px.bar(g,x='PESO',y='CLASSIFICACAO_ROTA',orientation='h'),use_container_width=True)
+        g=aberto.groupby('REGIAO_OPERACIONAL',dropna=False).PESO.sum().reset_index().sort_values('PESO').tail(12); st.plotly_chart(px.bar(g,x='PESO',y='REGIAO_OPERACIONAL',orientation='h'),use_container_width=True)
     with c2:
-        st.markdown('<div class="section">Situação operacional</div>',unsafe_allow_html=True); sit=pd.DataFrame({'Situação':['Entregue','Em rota','Carregado','Demais'],'Qtd':[f.ENTREGUE.sum(),f.EM_ROTA.sum(),f.CARREGADO.sum(),(~(f.ENTREGUE|f.EM_ROTA|f.CARREGADO)).sum()]}); st.plotly_chart(px.pie(sit,names='Situação',values='Qtd',hole=.58),use_container_width=True)
-    st.markdown('<div class="section">Mapa operacional por cidade</div>',unsafe_allow_html=True); ind=st.selectbox('Indicador do mapa',['Peso em aberto','Registros em aberto','Tempo médio de espera','Ocorrências']); show_map(f,ind)
-    st.markdown('<div class="section">Atenção operacional</div>',unsafe_allow_html=True); p=aberto.copy(); p['PRIORIDADE']=np.where(p.DIAS_ESPERA.ge(10),'CRÍTICA',np.where(p.DIAS_ESPERA.ge(5),'ATENÇÃO','NORMAL')); st.dataframe(p.sort_values('DIAS_ESPERA',ascending=False)[['PRIORIDADE','CLIENTE','CIDADE','VENDEDOR','PESO','DIAS_ESPERA','STATUS','MOTORISTA','CAMINHAO','PREVISAO_ROTA']].head(50),use_container_width=True,hide_index=True)
+        sit=pd.DataFrame({'Situação':['Entregue','Em rota','Carregado','Demais'],'Qtd':[f.ENTREGUE.sum(),f.EM_ROTA.sum(),f.CARREGADO.sum(),(~(f.ENTREGUE|f.EM_ROTA|f.CARREGADO)).sum()]}); st.plotly_chart(px.pie(sit,names='Situação',values='Qtd',hole=.58),use_container_width=True)
+    st.markdown('### Mapa resumido'); mapa_logistico(f,'geral')
+elif page=='Mapa Logístico': mapa_logistico(f,'principal')
 elif page=='Formação de Cargas':
-    cards([('Registros',br(len(f)),''),('Clientes',br(f.CLIENTE.nunique()),''),('Volumes',br(f.VOLUMES.sum()),''),('Peso',f'{br(f.PESO.sum()/1000,1)} t',''),('Espera média',f'{br(f.DIAS_ESPERA.mean(),1)} dias','')]); st.dataframe(f[['DATA_IMPLANTACAO','CLIENTE','VENDEDOR','CIDADE','REGIAO','PRODUTO','VOLUMES','PESO','DIAS_ESPERA','MOTORISTA','CAMINHAO','STATUS','CLASSIFICACAO_ROTA','PREVISAO_ROTA','OBSERVACOES']].sort_values('DIAS_ESPERA',ascending=False),use_container_width=True,hide_index=True)
+    cards([('Registros',br(len(f)),''),('Clientes',br(f.CLIENTE.nunique()),''),('Volumes',br(f.VOLUMES.sum()),''),('Peso',f'{br(f.PESO.sum()/1000,1)} t',''),('Espera média',f'{br(f.DIAS_ESPERA.mean(),1)} dias','')]); st.dataframe(f[['DATA_IMPLANTACAO','CLIENTE','VENDEDOR','CIDADE','REGIAO_OPERACIONAL','PRODUTO','VOLUMES','PESO','DIAS_ESPERA','MOTORISTA','CAMINHAO','STATUS','PREVISAO_ROTA']].sort_values('DIAS_ESPERA',ascending=False),use_container_width=True,hide_index=True)
 elif page=='Rotas e Entregas':
-    a=f[~f.ENTREGUE]; cards([('Rotas',br(a.CLASSIFICACAO_ROTA.nunique()),''),('Clientes em aberto',br(a.CLIENTE.nunique()),''),('Peso em aberto',f'{br(a.PESO.sum()/1000,1)} t',''),('Em rota',br(f.EM_ROTA.sum()),''),('Sem previsão',br(a.PREVISAO_ROTA.isna().sum()),'')]); st.markdown('<div class="section">Mapa de rotas e entregas</div>',unsafe_allow_html=True); ind=st.selectbox('Indicador do mapa',['Peso em aberto','Registros em aberto','Tempo médio de espera','Ocorrências'],key='rotasmap'); show_map(f,ind,560); g=a.groupby('CLASSIFICACAO_ROTA',dropna=False).agg(PESO=('PESO','sum'),CLIENTES=('CLIENTE','nunique'),REGISTROS=('CLIENTE','size'),ESPERA=('DIAS_ESPERA','mean')).reset_index(); st.plotly_chart(px.bar(g,x='CLASSIFICACAO_ROTA',y='PESO',hover_data=['CLIENTES','REGISTROS','ESPERA']),use_container_width=True); st.dataframe(g.sort_values('PESO',ascending=False),use_container_width=True,hide_index=True)
+    a=f[~f.ENTREGUE]; cards([('Regiões',br(a.REGIAO_OPERACIONAL.nunique()),''),('Clientes em aberto',br(a.CLIENTE.nunique()),''),('Peso em aberto',f'{br(a.PESO.sum()/1000,1)} t',''),('Em rota',br(f.EM_ROTA.sum()),''),('Sem previsão',br(a.PREVISAO_ROTA.isna().sum()),'')]); mapa_logistico(f,'rotas')
 elif page=='Motoristas e Frota':
-    m=f[f.MOTORISTA.notna()]; g=m.groupby('MOTORISTA').agg(REGISTROS=('CLIENTE','size'),CLIENTES=('CLIENTE','nunique'),PESO=('PESO','sum'),ENTREGUES=('ENTREGUE','sum'),OCORRENCIAS=('TEM_OCORRENCIA','sum'),ESPERA=('DIAS_ESPERA','mean')).reset_index(); cards([('Motoristas',br(m.MOTORISTA.nunique()),''),('Veículos',br(m.CAMINHAO.nunique()),''),('Peso associado',f'{br(m.PESO.sum()/1000,1)} t',''),('Em rota',br(m.EM_ROTA.sum()),''),('Ocorrências',br(m.TEM_OCORRENCIA.sum()),'')]); st.plotly_chart(px.bar(g.sort_values('PESO',ascending=False).head(15),x='MOTORISTA',y='PESO',hover_data=['CLIENTES','REGISTROS','ENTREGUES','OCORRENCIAS']),use_container_width=True); st.dataframe(g.sort_values('PESO',ascending=False),use_container_width=True,hide_index=True)
+    m=f[f.MOTORISTA.notna()]; g=m.groupby('MOTORISTA').agg(REGISTROS=('CLIENTE','size'),CLIENTES=('CLIENTE','nunique'),PESO=('PESO','sum'),ENTREGUES=('ENTREGUE','sum'),OCORRENCIAS=('TEM_OCORRENCIA','sum')).reset_index(); cards([('Motoristas',br(m.MOTORISTA.nunique()),''),('Veículos',br(m.CAMINHAO.nunique()),''),('Peso associado',f'{br(m.PESO.sum()/1000,1)} t',''),('Em rota',br(m.EM_ROTA.sum()),''),('Ocorrências',br(m.TEM_OCORRENCIA.sum()),'')]); st.dataframe(g.sort_values('PESO',ascending=False),use_container_width=True,hide_index=True)
 elif page=='Pendências':
-    p=f[~f.ENTREGUE].copy(); p['SEM_PREVISAO']=p.PREVISAO_ROTA.isna(); p['SEM_MOTORISTA']=p.MOTORISTA.isna(); p['OCORR_SEM_FOLLOW']=p.CATEGORIA_OCORRENCIA.notna()&p.FOLLOW_UP.isna(); cards([('Pendências',br(len(p)),''),('Espera ≥10d',br(p.DIAS_ESPERA.ge(10).sum()),''),('Sem previsão',br(p.SEM_PREVISAO.sum()),''),('Sem motorista',br(p.SEM_MOTORISTA.sum()),''),('Ocorr. sem follow-up',br(p.OCORR_SEM_FOLLOW.sum()),'')]); st.dataframe(p.sort_values('DIAS_ESPERA',ascending=False)[['CLIENTE','CIDADE','VENDEDOR','PESO','DIAS_ESPERA','STATUS','PREVISAO_ROTA','MOTORISTA','CAMINHAO','CATEGORIA_OCORRENCIA','FOLLOW_UP']],use_container_width=True,hide_index=True)
+    p=f[~f.ENTREGUE].copy(); p['SEM_PREVISAO']=p.PREVISAO_ROTA.isna(); p['SEM_MOTORISTA']=p.MOTORISTA.isna(); p['OCORR_SEM_FOLLOW']=p.CATEGORIA_OCORRENCIA.notna()&p.FOLLOW_UP.isna(); cards([('Pendências',br(len(p)),''),('Espera ≥10d',br(p.DIAS_ESPERA.ge(10).sum()),''),('Sem previsão',br(p.SEM_PREVISAO.sum()),''),('Sem motorista',br(p.SEM_MOTORISTA.sum()),''),('Ocorr. sem follow-up',br(p.OCORR_SEM_FOLLOW.sum()),'')]); st.dataframe(p[['CLIENTE','CIDADE','VENDEDOR','PESO','DIAS_ESPERA','STATUS','PREVISAO_ROTA','MOTORISTA','CATEGORIA_OCORRENCIA','FOLLOW_UP']].sort_values('DIAS_ESPERA',ascending=False),use_container_width=True,hide_index=True)
 elif page=='Ocorrências':
-    o=f[f.TEM_OCORRENCIA].copy(); cards([('Ocorrências',br(len(o)),''),('Categorias',br(o.CATEGORIA_OCORRENCIA.nunique()),''),('Com follow-up',br(o.FOLLOW_UP.notna().sum()),''),('% follow-up',f'{br(100*o.FOLLOW_UP.notna().mean(),1)}%','')]); g=o.groupby('CATEGORIA_OCORRENCIA',dropna=False).size().reset_index(name='QTD'); st.plotly_chart(px.bar(g,x='QTD',y='CATEGORIA_OCORRENCIA',orientation='h'),use_container_width=True); st.dataframe(o[['CLIENTE','CIDADE','MOTORISTA','CAMINHAO','CATEGORIA_OCORRENCIA','FOLLOW_UP','CONFERENTE','SEPARADOR','STATUS']],use_container_width=True,hide_index=True)
+    o=f[f.TEM_OCORRENCIA].copy(); cards([('Ocorrências',br(len(o)),''),('Categorias',br(o.CATEGORIA_OCORRENCIA.nunique()),''),('Com follow-up',br(o.FOLLOW_UP.notna().sum()),''),('% follow-up',f'{br(100*o.FOLLOW_UP.notna().mean(),1)}%','')]); st.dataframe(o[['CLIENTE','CIDADE','MOTORISTA','CAMINHAO','CATEGORIA_OCORRENCIA','FOLLOW_UP','CONFERENTE','SEPARADOR','STATUS']],use_container_width=True,hide_index=True)
 elif page=='Custos':
-    custo=f.CUSTOS.sum(min_count=1); peso=f.PESO.sum(min_count=1); cards([('Custo informado',money(custo if pd.notna(custo) else 0),''),('Registros com custo',br(f.CUSTOS.notna().sum()),''),('Peso total',f'{br(peso/1000,1)} t',''),('Custo/kg',money((custo/peso) if pd.notna(custo) and peso else 0),'exploratório')]); st.warning('Custos ainda têm cobertura parcial na base.'); g=f[f.CUSTOS.notna()].groupby('CLASSIFICACAO_ROTA',dropna=False).agg(CUSTO=('CUSTOS','sum'),PESO=('PESO','sum'),REGISTROS=('CLIENTE','size')).reset_index(); g['CUSTO_KG']=g.CUSTO/g.PESO.replace(0,np.nan); st.dataframe(g.sort_values('CUSTO',ascending=False),use_container_width=True,hide_index=True)
+    custo=f.CUSTOS.sum(min_count=1); peso=f.PESO.sum(min_count=1); cards([('Custo informado',money(custo if pd.notna(custo) else 0),''),('Registros com custo',br(f.CUSTOS.notna().sum()),''),('Peso total',f'{br(peso/1000,1)} t',''),('Custo/kg',money((custo/peso) if pd.notna(custo) and peso else 0),'exploratório')]); st.warning('Custos ainda têm cobertura parcial na base.')
 
 st.markdown('---'); st.caption('V1 · Dados processados somente em memória. Nenhuma alteração é realizada nos arquivos de origem.')
