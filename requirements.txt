@@ -2,3 +2,4 @@ streamlit
 pandas
 openpyxl
 plotly
+# força rebuild para recarregar a base de vendas do Drive
