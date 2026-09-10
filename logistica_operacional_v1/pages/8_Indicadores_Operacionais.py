@@ -9,10 +9,26 @@ import plotly.express as px
 st.set_page_config(page_title='Indicadores Operacionais | RBN', page_icon='📊', layout='wide')
 
 st.markdown('''<style>
-.block-container{padding-top:1rem;max-width:1500px}
-.ttl{font-size:30px;font-weight:800;color:#143c35}.sub{color:#667085;margin-bottom:18px}
+.block-container{
+    padding-top:4.25rem !important;
+    padding-bottom:2rem;
+    max-width:1500px;
+}
+.ttl{
+    font-size:30px;
+    font-weight:800;
+    color:#143c35;
+    line-height:1.2;
+    margin:0 0 4px 0;
+    padding-top:.2rem;
+}
+.sub{color:#667085;margin-bottom:18px}
 .card{background:white;border:1px solid #e7ecea;border-radius:14px;padding:15px 17px;min-height:105px}
 .lab{font-size:12px;color:#667085;font-weight:700;text-transform:uppercase}.val{font-size:27px;color:#143c35;font-weight:800;margin-top:7px}.help{font-size:11px;color:#98a2b3;margin-top:4px}
+@media (max-width:768px){
+    .block-container{padding-top:4.75rem !important;}
+    .ttl{font-size:26px;line-height:1.25;}
+}
 </style>''', unsafe_allow_html=True)
 
 def norm(s):
