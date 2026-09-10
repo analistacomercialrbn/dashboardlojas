@@ -145,23 +145,24 @@ def _render_admin_users(rcas):
     rca_map = {f"{int(row.COD_RCA)} - {row.RCA}": int(row.COD_RCA) for _, row in rca_opts_df.iterrows()}
 
     if modo == 'Novo usuário':
-        with st.form('novo_usuario_form'):
-            a,b = st.columns(2)
-            login = a.text_input('Usuário ou e-mail *')
-            nome = b.text_input('Nome *')
-            perfil = st.selectbox('Perfil *', ['SUPERVISOR','RCA','GERENTE','ADMIN'])
-            supervisor = None
-            cod_rca = None
-            if perfil == 'SUPERVISOR':
-                supervisor = st.selectbox('Supervisor vinculado *', sup_opts) if sup_opts else None
-            elif perfil == 'RCA':
-                escolhido = st.selectbox('RCA vinculado *', rca_labels) if rca_labels else None
-                cod_rca = rca_map.get(escolhido) if escolhido else None
-            c,d = st.columns(2)
-            senha = c.text_input('Senha inicial *', type='password')
-            confirma = d.text_input('Confirmar senha *', type='password')
-            ativo = st.checkbox('Usuário ativo', value=True)
-            salvar = st.form_submit_button('Cadastrar usuário', use_container_width=True)
+        perfil = st.selectbox('Perfil *', ['ADMIN','GERENTE','SUPERVISOR','RCA'], key='novo_usuario_perfil')
+        if perfil in ('ADMIN','GERENTE'):
+            st.caption('Este perfil tem visão geral e não precisa ser vinculado a supervisor ou RCA.')
+        a,b = st.columns(2)
+        login = a.text_input('Usuário ou e-mail *', key='novo_usuario_login')
+        nome = b.text_input('Nome *', key='novo_usuario_nome')
+        supervisor = None
+        cod_rca = None
+        if perfil == 'SUPERVISOR':
+            supervisor = st.selectbox('Supervisor vinculado *', sup_opts, key='novo_usuario_supervisor') if sup_opts else None
+        elif perfil == 'RCA':
+            escolhido = st.selectbox('RCA vinculado *', rca_labels, key='novo_usuario_rca') if rca_labels else None
+            cod_rca = rca_map.get(escolhido) if escolhido else None
+        c,d = st.columns(2)
+        senha = c.text_input('Senha inicial *', type='password', key='novo_usuario_senha')
+        confirma = d.text_input('Confirmar senha *', type='password', key='novo_usuario_confirma')
+        ativo = st.checkbox('Usuário ativo', value=True, key='novo_usuario_ativo')
+        salvar = st.button('Cadastrar usuário', use_container_width=True, key='novo_usuario_salvar')
 
         if salvar:
             chave = str(login or '').strip().lower()
@@ -199,34 +200,35 @@ def _render_admin_users(rcas):
                     st.error(msg)
     else:
         editaveis = sorted(ACCESS_USERS.keys())
-        escolhido_login = st.selectbox('Usuário para editar', editaveis)
+        escolhido_login = st.selectbox('Usuário para editar', editaveis, key='editar_usuario_login')
         atual = ACCESS_USERS[escolhido_login]
-        perfis = ['SUPERVISOR','RCA','GERENTE','ADMIN']
+        perfis = ['ADMIN','GERENTE','SUPERVISOR','RCA']
         perfil_idx = perfis.index(atual.get('perfil')) if atual.get('perfil') in perfis else 0
+        perfil_edit = st.selectbox('Perfil *', perfis, index=perfil_idx, key=f'editar_perfil_{escolhido_login}')
+        if perfil_edit in ('ADMIN','GERENTE'):
+            st.caption('Este perfil tem visão geral e não precisa ser vinculado a supervisor ou RCA.')
 
-        with st.form('editar_usuario_form'):
-            a,b = st.columns(2)
-            st.text_input('Usuário', value=escolhido_login, disabled=True)
-            nome_edit = b.text_input('Nome *', value=atual.get('nome',''))
-            perfil_edit = st.selectbox('Perfil *', perfis, index=perfil_idx)
-            supervisor_edit = None
-            cod_rca_edit = None
-            if perfil_edit == 'SUPERVISOR':
-                atual_sup = atual.get('supervisor')
-                sup_idx = sup_opts.index(atual_sup) if atual_sup in sup_opts else 0
-                supervisor_edit = st.selectbox('Supervisor vinculado *', sup_opts, index=sup_idx) if sup_opts else None
-            elif perfil_edit == 'RCA':
-                atual_cod = atual.get('cod_rca')
-                atual_label = next((k for k,v in rca_map.items() if v == atual_cod), None)
-                rca_idx = rca_labels.index(atual_label) if atual_label in rca_labels else 0
-                rca_label_edit = st.selectbox('RCA vinculado *', rca_labels, index=rca_idx) if rca_labels else None
-                cod_rca_edit = rca_map.get(rca_label_edit) if rca_label_edit else None
-            ativo_edit = st.checkbox('Usuário ativo', value=bool(atual.get('ativo', True)), disabled=(escolhido_login == st.session_state.get('auth_user')))
-            st.caption('Para manter a senha atual, deixe os campos abaixo vazios.')
-            c,d = st.columns(2)
-            nova_senha = c.text_input('Nova senha', type='password')
-            confirma_senha = d.text_input('Confirmar nova senha', type='password')
-            salvar_edit = st.form_submit_button('Salvar alterações', use_container_width=True)
+        a,b = st.columns(2)
+        a.text_input('Usuário', value=escolhido_login, disabled=True, key=f'editar_login_{escolhido_login}')
+        nome_edit = b.text_input('Nome *', value=atual.get('nome',''), key=f'editar_nome_{escolhido_login}')
+        supervisor_edit = None
+        cod_rca_edit = None
+        if perfil_edit == 'SUPERVISOR':
+            atual_sup = atual.get('supervisor')
+            sup_idx = sup_opts.index(atual_sup) if atual_sup in sup_opts else 0
+            supervisor_edit = st.selectbox('Supervisor vinculado *', sup_opts, index=sup_idx, key=f'editar_sup_{escolhido_login}') if sup_opts else None
+        elif perfil_edit == 'RCA':
+            atual_cod = atual.get('cod_rca')
+            atual_label = next((k for k,v in rca_map.items() if v == atual_cod), None)
+            rca_idx = rca_labels.index(atual_label) if atual_label in rca_labels else 0
+            rca_label_edit = st.selectbox('RCA vinculado *', rca_labels, index=rca_idx, key=f'editar_rca_{escolhido_login}') if rca_labels else None
+            cod_rca_edit = rca_map.get(rca_label_edit) if rca_label_edit else None
+        ativo_edit = st.checkbox('Usuário ativo', value=bool(atual.get('ativo', True)), disabled=(escolhido_login == st.session_state.get('auth_user')), key=f'editar_ativo_{escolhido_login}')
+        st.caption('Para manter a senha atual, deixe os campos abaixo vazios.')
+        c,d = st.columns(2)
+        nova_senha = c.text_input('Nova senha', type='password', key=f'editar_senha_{escolhido_login}')
+        confirma_senha = d.text_input('Confirmar nova senha', type='password', key=f'editar_confirma_{escolhido_login}')
+        salvar_edit = st.button('Salvar alterações', use_container_width=True, key=f'editar_salvar_{escolhido_login}')
 
         if salvar_edit:
             if not str(nome_edit or '').strip():
