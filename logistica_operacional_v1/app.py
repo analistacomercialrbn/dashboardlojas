@@ -97,14 +97,29 @@ def mapa_logistico(base, key_prefix='mapa'):
     st.caption('Visão consolidada por região operacional. Selecione a região e depois a cidade no painel lateral para abrir o detalhe.')
     indicador=st.selectbox('Indicador do mapa',['Peso em aberto','Formações em aberto','Tempo médio de espera','Ocorrências'],key=key_prefix+'_ind')
     metric={'Peso em aberto':'PESO_ABERTO','Formações em aberto':'REGISTROS_ABERTOS','Tempo médio de espera':'TEMPO_MEDIO','Ocorrências':'OCORRENCIAS'}[indicador]
-    g=cidade_agg(base)
     try: gj=geojson_ne()
     except Exception as e:
         st.warning('A malha municipal ainda não está acessível ao Streamlit.'); st.code(str(e)); return
+
+    # Normaliza a malha e infere a UF quando a cidade da planilha vem sem "- UF".
+    uf_by_city={}
     for ft in gj.get('features',[]):
-        p=ft.setdefault('properties',{}); p['LOC']=city_key(p.get('NM_MUN'))+'|'+str(p.get('SIGLA_UF','')).upper()
+        p=ft.setdefault('properties',{})
+        mun=city_key(p.get('NM_MUN'))
+        uf=str(p.get('SIGLA_UF','')).upper().strip()
+        p['LOC']=(mun or '')+'|'+uf
+        if mun and uf:
+            uf_by_city.setdefault(mun,set()).add(uf)
+
+    base_map=base.copy()
+    missing=base_map['UF_KEY'].isna() | base_map['UF_KEY'].astype(str).str.strip().eq('')
+    inferred=base_map.loc[missing,'MUN_KEY'].map(lambda m: next(iter(uf_by_city.get(m,set()))) if len(uf_by_city.get(m,set()))==1 else None)
+    base_map.loc[missing,'UF_KEY']=inferred
+    g=cidade_agg(base_map)
+    g=g[g['LOC'].str.endswith('|')==False].copy()
+
     regions=sorted([x for x in g.REGIAO.dropna().unique() if str(x).strip()])
-    c1,c2=st.columns([1.45,1])
+    c1,c2=st.columns([1.35,1])
     with c2:
         reg=st.selectbox('Região selecionada',['Todas']+regions,key=key_prefix+'_reg')
         gr=g if reg=='Todas' else g[g.REGIAO.eq(reg)]
@@ -136,12 +151,15 @@ def mapa_logistico(base, key_prefix='mapa'):
             st.dataframe(aberto[cols].sort_values('DIAS_ESPERA',ascending=False).head(20),use_container_width=True,hide_index=True)
     with c1:
         plotg=g.copy()
-        if reg!='Todas':
-            plotg=plotg[plotg.REGIAO.eq(reg)]
-        fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color=metric,hover_name='CIDADE',hover_data={'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},color_continuous_scale='Blues')
-        fig.update_geos(fitbounds='locations',visible=False)
-        fig.update_layout(height=720,margin=dict(l=0,r=0,t=10,b=0),coloraxis_colorbar=dict(title=indicador))
-        st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
+        if reg!='Todas': plotg=plotg[plotg.REGIAO.eq(reg)]
+        if cidade!='Visão da região': plotg=plotg[plotg.CIDADE.eq(cidade)]
+        if plotg.empty:
+            st.info('Não há municípios da seleção atual correspondentes à malha do mapa.')
+        else:
+            fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color=metric,hover_name='CIDADE',hover_data={'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},color_continuous_scale='Blues')
+            fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator')
+            fig.update_layout(height=560,margin=dict(l=0,r=0,t=0,b=0),coloraxis_colorbar=dict(title=indicador,len=.72,thickness=14))
+            st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
 
 try: df=load()
 except Exception as e:
