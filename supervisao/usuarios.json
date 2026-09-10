@@ -1,0 +1,12 @@
+{
+  "admin": {
+    "nome": "Coordenação Comercial",
+    "perfil": "ADMIN",
+    "senha_algo": "sha256",
+    "senha_hash": "2b5c13156ad585cfd7dc3de698ddef30d37ac8438f62998ef2dd1ab75cd50fdd",
+    "salt": "",
+    "supervisor": null,
+    "cod_rca": null,
+    "ativo": true
+  }
+}
