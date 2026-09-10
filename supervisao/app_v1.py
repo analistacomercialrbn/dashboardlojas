@@ -149,7 +149,7 @@ def _render_admin_users(rcas):
             a,b = st.columns(2)
             login = a.text_input('Usuário ou e-mail *')
             nome = b.text_input('Nome *')
-            perfil = st.selectbox('Perfil *', ['SUPERVISOR','RCA','ADMIN'])
+            perfil = st.selectbox('Perfil *', ['SUPERVISOR','RCA','GERENTE','ADMIN'])
             supervisor = None
             cod_rca = None
             if perfil == 'SUPERVISOR':
@@ -201,7 +201,7 @@ def _render_admin_users(rcas):
         editaveis = sorted(ACCESS_USERS.keys())
         escolhido_login = st.selectbox('Usuário para editar', editaveis)
         atual = ACCESS_USERS[escolhido_login]
-        perfis = ['SUPERVISOR','RCA','ADMIN']
+        perfis = ['SUPERVISOR','RCA','GERENTE','ADMIN']
         perfil_idx = perfis.index(atual.get('perfil')) if atual.get('perfil') in perfis else 0
 
         with st.form('editar_usuario_form'):
