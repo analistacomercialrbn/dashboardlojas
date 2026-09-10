@@ -3,9 +3,10 @@ from pathlib import Path
 _app = Path(__file__).with_name('app_v2.py')
 source = _app.read_text(encoding='utf-8')
 
-# Performance: as bases e o GeoJSON são recursos estáveis entre reruns.
-source = source.replace("@st.cache_data(ttl=30, show_spinner='Carregando bases...')", "@st.cache_resource(show_spinner='Carregando bases...')")
+# A base de vendas muda ao longo do mês: preservar cache_data com TTL do app_v2.
+# O GeoJSON é estável e pode continuar como recurso em memória.
 source = source.replace("@st.cache_data(ttl=86400, show_spinner=False)", "@st.cache_resource(show_spinner=False)")
+source = source.replace("BASE_VENDAS_VERSAO = 'Produto (16)'", "BASE_VENDAS_VERSAO = 'BASE_VENDAS_SUPERVISAO'")
 
 # Filtro temporal global: Ano -> Mês, ambos com opção Todos.
 source = source.replace(
