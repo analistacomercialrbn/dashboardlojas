@@ -142,8 +142,8 @@ def cidade_agg(base):
 
 def mapa_logistico(base,key_prefix='mapa'):
     st.markdown('<div class="section">Mapa logístico — Nordeste</div>',unsafe_allow_html=True)
-    st.caption('Clique em um município no mapa para selecionar a cidade. Os indicadores laterais e os detalhes de clientes abaixo serão atualizados automaticamente.')
-    indicador=st.selectbox('Indicador do mapa',['Peso em aberto','Formações em aberto','Tempo médio de espera','Ocorrências'],key=key_prefix+'_ind')
+    st.caption('Visão inicial por regionais. Clique em uma área para abrir a regional; dentro dela, a intensidade passa a representar o indicador por cidade.')
+    indicador=st.selectbox('Indicador por cidade (após abrir a regional)',['Peso em aberto','Formações em aberto','Tempo médio de espera','Ocorrências'],key=key_prefix+'_ind')
     metric={'Peso em aberto':'PESO_ABERTO','Formações em aberto':'REGISTROS_ABERTOS','Tempo médio de espera':'TEMPO_MEDIO','Ocorrências':'OCORRENCIAS'}[indicador]
     try: gj=geojson_ne()
     except Exception as e:
@@ -166,30 +166,45 @@ def mapa_logistico(base,key_prefix='mapa'):
     if cidade not in ['Visão da região']+city_opts: cidade='Visão da região'
 
     c1,c2=st.columns([1.35,1])
-    clicked_city=None
+    clicked_region=None; clicked_city=None
     with c1:
-        plotg=g_reg.copy()
+        plotg=g_estado.copy() if reg=='Todas' else g_reg.copy()
         if plotg.empty:
             st.info('Não há municípios da seleção atual correspondentes à malha do mapa.')
         else:
-            fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color=metric,hover_name='CIDADE',custom_data=['LOC','CIDADE'],hover_data={'UF_NOME':True,'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},color_continuous_scale='Blues')
+            if reg=='Todas':
+                fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color='REGIAO',hover_name='CIDADE',custom_data=['LOC','CIDADE','REGIAO'],hover_data={'UF_NOME':True,'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},labels={'REGIAO':'Regional'})
+                fig.update_layout(legend_title_text='Regionais')
+            else:
+                fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color=metric,hover_name='CIDADE',custom_data=['LOC','CIDADE','REGIAO'],hover_data={'UF_NOME':True,'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},color_continuous_scale='Blues')
+                fig.update_layout(coloraxis_colorbar=dict(title=indicador,len=.68,thickness=14))
             fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator')
-            fig.update_layout(height=600,margin=dict(l=0,r=0,t=0,b=0),coloraxis_colorbar=dict(title=indicador,len=.68,thickness=14),clickmode='event+select')
-            event=st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False},key=key_prefix+'_plot',on_select='rerun',selection_mode='points')
+            fig.update_layout(height=600,margin=dict(l=0,r=0,t=0,b=0),clickmode='event+select')
+            event=st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False},key=f"{key_prefix}_plot_{norm(reg)}",on_select='rerun',selection_mode='points')
             try:
                 pts=event.selection.points
                 if pts:
                     loc=pts[-1].get('location') or (pts[-1].get('customdata') or [None])[0]
                     hit=plotg[plotg.LOC.eq(loc)]
-                    if len(hit): clicked_city=hit.iloc[0]['CIDADE']
+                    if len(hit):
+                        if reg=='Todas': clicked_region=hit.iloc[0]['REGIAO']
+                        else: clicked_city=hit.iloc[0]['CIDADE']
             except Exception:
-                clicked_city=None
+                clicked_region=None; clicked_city=None
         unmatched=base_reg[~base_reg.MAP_MATCH & base_reg.MUN_KEY.notna()]
         if len(unmatched): st.caption(f'{len(unmatched)} registro(s) da seleção ainda não puderam ser associados com segurança a um município da malha.')
 
-    if clicked_city and clicked_city in city_opts:
-        cidade=clicked_city
+    if clicked_region and clicked_region in regions:
+        st.session_state[key_prefix+'_reg']=clicked_region
+        st.session_state[key_prefix+'_city']='Visão da região'
+        reg=clicked_region
+        base_reg=base_estado[base_estado.REGIAO_OPERACIONAL.eq(reg)]
+        g_reg=g_estado[g_estado.REGIAO.eq(reg)]
+        city_opts=sorted([x for x in g_reg.CIDADE.dropna().unique() if str(x).strip()])
+        cidade='Visão da região'
+    elif clicked_city and clicked_city in city_opts:
         st.session_state[key_prefix+'_city']=clicked_city
+        cidade=clicked_city
 
     with c2:
         estado=st.selectbox('Estado',estados,key=key_prefix+'_uf')
@@ -197,7 +212,9 @@ def mapa_logistico(base,key_prefix='mapa'):
         base_estado=base_map if uf_sel is None else base_map[base_map.UF_KEY.eq(uf_sel)]
         g_estado=g if uf_sel is None else g[g.UF_KEY.eq(uf_sel)]
         regions=sorted([x for x in base_estado.REGIAO_OPERACIONAL.dropna().unique() if str(x).strip()])
-        reg=st.selectbox('Região operacional',['Todas']+regions,key=key_prefix+'_reg')
+        if st.session_state.get(key_prefix+'_reg') not in ['Todas']+regions:
+            st.session_state[key_prefix+'_reg']='Todas'
+        reg=st.selectbox('Regional',['Todas']+regions,key=key_prefix+'_reg')
         base_reg=base_estado if reg=='Todas' else base_estado[base_estado.REGIAO_OPERACIONAL.eq(reg)]
         g_reg=g_estado if reg=='Todas' else g_estado[g_estado.REGIAO.eq(reg)]
         city_opts=sorted([x for x in g_reg.CIDADE.dropna().unique() if str(x).strip()])
@@ -218,18 +235,21 @@ def mapa_logistico(base,key_prefix='mapa'):
         with aa: card('Espera média',f'{br(aberto.DIAS_ESPERA.mean(),1)} dias')
         with bb: card('Em rota',br(det.EM_ROTA.sum()))
         with cc: card('Ocorrências',br(det.TEM_OCORRENCIA.sum()))
-        if cidade=='Visão da região':
+        if reg=='Todas':
+            tr=base_estado.groupby('REGIAO_OPERACIONAL',dropna=False).agg(CIDADES=('MUN_KEY','nunique'),CLIENTES=('CLIENTE','nunique'),PESO=('PESO','sum'),FORMACOES=('CLIENTE','size'),OCORRENCIAS=('TEM_OCORRENCIA','sum')).reset_index().sort_values('PESO',ascending=False)
+            st.markdown('**Resumo por regional**'); st.dataframe(tr,use_container_width=True,hide_index=True)
+        elif cidade=='Visão da região':
             t=g_reg[['CIDADE','UF_NOME','PESO_ABERTO','REGISTROS_ABERTOS','CLIENTES','TEMPO_MEDIO','OCORRENCIAS']].sort_values('PESO_ABERTO',ascending=False).head(15)
-            st.markdown('**Cidades da seleção**'); st.dataframe(t,use_container_width=True,hide_index=True)
+            st.markdown('**Cidades da regional**'); st.dataframe(t,use_container_width=True,hide_index=True)
         else:
             st.markdown('**Motoristas na cidade**')
             tm=det.groupby('MOTORISTA',dropna=False).agg(PESO=('PESO','sum'),FORMACOES=('CLIENTE','size'),CLIENTES=('CLIENTE','nunique')).reset_index().sort_values('PESO',ascending=False)
             st.dataframe(tm,use_container_width=True,hide_index=True)
 
     cidade_final=st.session_state.get(key_prefix+'_city','Visão da região')
+    reg_final=st.session_state.get(key_prefix+'_reg','Todas')
     if cidade_final!='Visão da região':
-        base_final=prepare_geo(base,gj)
-        det_cli=base_final[base_final.CIDADE.eq(cidade_final)].copy()
+        det_cli=base_map[base_map.CIDADE.eq(cidade_final)].copy()
         st.markdown(f'### Clientes — {cidade_final}')
         st.caption('Detalhamento dos registros da cidade selecionada no mapa ou no filtro lateral.')
         if len(det_cli):
@@ -242,8 +262,10 @@ def mapa_logistico(base,key_prefix='mapa'):
                 st.dataframe(det_cli[cols].sort_values(['CLIENTE','DIAS_ESPERA'],ascending=[True,False]),use_container_width=True,hide_index=True)
         else:
             st.info('Não há registros para a cidade selecionada.')
+    elif reg_final!='Todas':
+        st.caption('A regional está aberta. Clique em uma cidade no mapa para ver abaixo o detalhe dos clientes.')
     else:
-        st.info('Clique em uma cidade no mapa para visualizar abaixo os detalhes dos clientes.')
+        st.caption('Clique em uma regional no mapa para abrir suas cidades.')
 
 try: df=load()
 except Exception as e:
