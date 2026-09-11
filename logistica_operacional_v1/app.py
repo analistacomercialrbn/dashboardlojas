@@ -5,6 +5,7 @@ import pandas as pd
 import requests
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
 
 st.set_page_config(page_title='Logística Operacional | RBN', page_icon='🚚', layout='wide', initial_sidebar_state='expanded')
 st.markdown('''<style>
@@ -142,7 +143,7 @@ def cidade_agg(base):
 
 def mapa_logistico(base,key_prefix='mapa'):
     st.markdown('<div class="section">Mapa logístico — Nordeste</div>',unsafe_allow_html=True)
-    st.caption('Na visão inicial, a intensidade do azul representa o peso em aberto consolidado da regional. Ao abrir uma regional, a intensidade passa a representar o indicador por cidade.')
+    st.caption('Na visão inicial, a intensidade do azul representa o peso em aberto consolidado da regional. Ao abrir uma regional, a intensidade passa a representar o indicador por cidade. Dentro da regional, clique em qualquer área cinza fora dela para voltar ao mapa geral.')
     indicador=st.selectbox('Indicador por cidade (após abrir a regional)',['Peso em aberto','Formações em aberto','Tempo médio de espera','Ocorrências'],key=key_prefix+'_ind')
     metric={'Peso em aberto':'PESO_ABERTO','Formações em aberto':'REGISTROS_ABERTOS','Tempo médio de espera':'TEMPO_MEDIO','Ocorrências':'OCORRENCIAS'}[indicador]
     try: gj=geojson_ne()
@@ -165,7 +166,6 @@ def mapa_logistico(base,key_prefix='mapa'):
     cidade=st.session_state.get(key_prefix+'_city','Visão da região')
     if cidade not in ['Visão da região']+city_opts: cidade='Visão da região'
 
-    # Peso em aberto consolidado por regional. Todas as cidades da mesma regional recebem a mesma intensidade na visão inicial.
     reg_base=base_estado.copy()
     reg_base['PESO_ABERTO_L']=np.where(~reg_base.ENTREGUE,reg_base.PESO.fillna(0),0)
     reg_resumo=reg_base.groupby('REGIAO_OPERACIONAL',dropna=False).agg(
@@ -177,7 +177,7 @@ def mapa_logistico(base,key_prefix='mapa'):
     g_regional=g_estado.merge(reg_resumo,on='REGIAO',how='left')
 
     c1,c2=st.columns([1.35,1])
-    clicked_region=None; clicked_city=None
+    clicked_region=None; clicked_city=None; back_general=False
     with c1:
         plotg=g_regional.copy() if reg=='Todas' else g_reg.copy()
         if plotg.empty:
@@ -192,12 +192,27 @@ def mapa_logistico(base,key_prefix='mapa'):
                 )
                 fig.update_layout(coloraxis_colorbar=dict(title='Peso regional em aberto',len=.68,thickness=14))
             else:
-                fig=px.choropleth(
+                # Mantém a silhueta completa do estado em cinza. Clicar fora da regional retorna à visão geral.
+                bg_locs=[]
+                for ft in gj.get('features',[]):
+                    p=ft.get('properties',{})
+                    if uf_sel is None or str(p.get('SIGLA_UF','')).upper().strip()==uf_sel:
+                        bg_locs.append(p.get('LOC'))
+                bg_locs=[x for x in bg_locs if x]
+                bg=go.Choropleth(
+                    geojson=gj,locations=bg_locs,featureidkey='properties.LOC',
+                    z=[1]*len(bg_locs),colorscale=[[0,'#f2f4f7'],[1,'#f2f4f7']],showscale=False,
+                    marker_line_color='#d0d5dd',marker_line_width=0.7,
+                    customdata=[['__BACK__'] for _ in bg_locs],hovertemplate='Clique para voltar ao mapa geral<extra></extra>'
+                )
+                city_fig=px.choropleth(
                     plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',
                     color=metric,hover_name='CIDADE',custom_data=['LOC','CIDADE','REGIAO'],
                     hover_data={'UF_NOME':True,'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},
                     color_continuous_scale='Blues'
                 )
+                fig=go.Figure(data=[bg]+list(city_fig.data))
+                fig.update_layout(coloraxis=city_fig.layout.coloraxis)
                 fig.update_layout(coloraxis_colorbar=dict(title=indicador,len=.68,thickness=14))
             fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator')
             fig.update_layout(height=600,margin=dict(l=0,r=0,t=0,b=0),clickmode='event+select')
@@ -205,27 +220,32 @@ def mapa_logistico(base,key_prefix='mapa'):
             try:
                 pts=event.selection.points
                 if pts:
-                    loc=pts[-1].get('location') or (pts[-1].get('customdata') or [None])[0]
-                    hit=plotg[plotg.LOC.eq(loc)]
-                    if len(hit):
-                        if reg=='Todas': clicked_region=hit.iloc[0]['REGIAO']
-                        else: clicked_city=hit.iloc[0]['CIDADE']
+                    pt=pts[-1]
+                    loc=pt.get('location') or (pt.get('customdata') or [None])[0]
+                    if reg!='Todas' and loc not in set(g_reg.LOC):
+                        back_general=True
+                    else:
+                        hit=plotg[plotg.LOC.eq(loc)]
+                        if len(hit):
+                            if reg=='Todas': clicked_region=hit.iloc[0]['REGIAO']
+                            else: clicked_city=hit.iloc[0]['CIDADE']
             except Exception:
-                clicked_region=None; clicked_city=None
+                clicked_region=None; clicked_city=None; back_general=False
         unmatched=base_reg[~base_reg.MAP_MATCH & base_reg.MUN_KEY.notna()]
         if len(unmatched): st.caption(f'{len(unmatched)} registro(s) da seleção ainda não puderam ser associados com segurança a um município da malha.')
 
+    # O rerun imediato evita a necessidade de um segundo clique para efetivar o drill-down.
+    if back_general and reg!='Todas':
+        st.session_state[key_prefix+'_reg']='Todas'
+        st.session_state[key_prefix+'_city']='Visão da região'
+        st.rerun()
     if clicked_region and clicked_region in regions:
         st.session_state[key_prefix+'_reg']=clicked_region
         st.session_state[key_prefix+'_city']='Visão da região'
-        reg=clicked_region
-        base_reg=base_estado[base_estado.REGIAO_OPERACIONAL.eq(reg)]
-        g_reg=g_estado[g_estado.REGIAO.eq(reg)]
-        city_opts=sorted([x for x in g_reg.CIDADE.dropna().unique() if str(x).strip()])
-        cidade='Visão da região'
-    elif clicked_city and clicked_city in city_opts:
+        st.rerun()
+    if clicked_city and clicked_city in city_opts:
         st.session_state[key_prefix+'_city']=clicked_city
-        cidade=clicked_city
+        st.rerun()
 
     with c2:
         estado=st.selectbox('Estado',estados,key=key_prefix+'_uf')
@@ -289,7 +309,7 @@ def mapa_logistico(base,key_prefix='mapa'):
         else:
             st.info('Não há registros para a cidade selecionada.')
     elif reg_final!='Todas':
-        st.caption('A regional está aberta. Clique em uma cidade no mapa para ver abaixo o detalhe dos clientes.')
+        st.caption('A regional está aberta. Clique em uma cidade azul para ver os clientes; clique em uma área cinza fora da regional para voltar ao mapa geral.')
     else:
         st.caption('Clique em uma regional no mapa para abrir suas cidades.')
 
