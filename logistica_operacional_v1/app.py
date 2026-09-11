@@ -142,7 +142,7 @@ def cidade_agg(base):
 
 def mapa_logistico(base,key_prefix='mapa'):
     st.markdown('<div class="section">Mapa logístico — Nordeste</div>',unsafe_allow_html=True)
-    st.caption('Visão inicial por regionais. Clique em uma área para abrir a regional; dentro dela, a intensidade passa a representar o indicador por cidade.')
+    st.caption('Na visão inicial, a intensidade do azul representa o peso em aberto consolidado da regional. Ao abrir uma regional, a intensidade passa a representar o indicador por cidade.')
     indicador=st.selectbox('Indicador por cidade (após abrir a regional)',['Peso em aberto','Formações em aberto','Tempo médio de espera','Ocorrências'],key=key_prefix+'_ind')
     metric={'Peso em aberto':'PESO_ABERTO','Formações em aberto':'REGISTROS_ABERTOS','Tempo médio de espera':'TEMPO_MEDIO','Ocorrências':'OCORRENCIAS'}[indicador]
     try: gj=geojson_ne()
@@ -165,18 +165,39 @@ def mapa_logistico(base,key_prefix='mapa'):
     cidade=st.session_state.get(key_prefix+'_city','Visão da região')
     if cidade not in ['Visão da região']+city_opts: cidade='Visão da região'
 
+    # Peso em aberto consolidado por regional. Todas as cidades da mesma regional recebem a mesma intensidade na visão inicial.
+    reg_base=base_estado.copy()
+    reg_base['PESO_ABERTO_L']=np.where(~reg_base.ENTREGUE,reg_base.PESO.fillna(0),0)
+    reg_resumo=reg_base.groupby('REGIAO_OPERACIONAL',dropna=False).agg(
+        PESO_REGIONAL_ABERTO=('PESO_ABERTO_L','sum'),
+        CIDADES_REGIONAL=('MUN_KEY','nunique'),
+        CLIENTES_REGIONAL=('CLIENTE','nunique'),
+        FORMACOES_REGIONAIS=('CLIENTE','size')
+    ).reset_index().rename(columns={'REGIAO_OPERACIONAL':'REGIAO'})
+    g_regional=g_estado.merge(reg_resumo,on='REGIAO',how='left')
+
     c1,c2=st.columns([1.35,1])
     clicked_region=None; clicked_city=None
     with c1:
-        plotg=g_estado.copy() if reg=='Todas' else g_reg.copy()
+        plotg=g_regional.copy() if reg=='Todas' else g_reg.copy()
         if plotg.empty:
             st.info('Não há municípios da seleção atual correspondentes à malha do mapa.')
         else:
             if reg=='Todas':
-                fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color='REGIAO',hover_name='CIDADE',custom_data=['LOC','CIDADE','REGIAO'],hover_data={'UF_NOME':True,'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},labels={'REGIAO':'Regional'})
-                fig.update_layout(legend_title_text='Regionais')
+                fig=px.choropleth(
+                    plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',
+                    color='PESO_REGIONAL_ABERTO',hover_name='REGIAO',custom_data=['LOC','CIDADE','REGIAO'],
+                    hover_data={'CIDADE':True,'UF_NOME':True,'PESO_REGIONAL_ABERTO':':,.0f','CIDADES_REGIONAL':True,'CLIENTES_REGIONAL':True,'FORMACOES_REGIONAIS':True,'LOC':False},
+                    color_continuous_scale='Blues',labels={'PESO_REGIONAL_ABERTO':'Peso regional em aberto'}
+                )
+                fig.update_layout(coloraxis_colorbar=dict(title='Peso regional em aberto',len=.68,thickness=14))
             else:
-                fig=px.choropleth(plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',color=metric,hover_name='CIDADE',custom_data=['LOC','CIDADE','REGIAO'],hover_data={'UF_NOME':True,'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},color_continuous_scale='Blues')
+                fig=px.choropleth(
+                    plotg,geojson=gj,locations='LOC',featureidkey='properties.LOC',
+                    color=metric,hover_name='CIDADE',custom_data=['LOC','CIDADE','REGIAO'],
+                    hover_data={'UF_NOME':True,'REGIAO':True,'PESO_ABERTO':':,.0f','REGISTROS_ABERTOS':True,'TEMPO_MEDIO':':.1f','OCORRENCIAS':True,'LOC':False},
+                    color_continuous_scale='Blues'
+                )
                 fig.update_layout(coloraxis_colorbar=dict(title=indicador,len=.68,thickness=14))
             fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator')
             fig.update_layout(height=600,margin=dict(l=0,r=0,t=0,b=0),clickmode='event+select')
@@ -236,8 +257,13 @@ def mapa_logistico(base,key_prefix='mapa'):
         with bb: card('Em rota',br(det.EM_ROTA.sum()))
         with cc: card('Ocorrências',br(det.TEM_OCORRENCIA.sum()))
         if reg=='Todas':
-            tr=base_estado.groupby('REGIAO_OPERACIONAL',dropna=False).agg(CIDADES=('MUN_KEY','nunique'),CLIENTES=('CLIENTE','nunique'),PESO=('PESO','sum'),FORMACOES=('CLIENTE','size'),OCORRENCIAS=('TEM_OCORRENCIA','sum')).reset_index().sort_values('PESO',ascending=False)
-            st.markdown('**Resumo por regional**'); st.dataframe(tr,use_container_width=True,hide_index=True)
+            tr=reg_resumo.copy().sort_values('PESO_REGIONAL_ABERTO',ascending=False)
+            st.markdown('**Resumo por regional**')
+            st.dataframe(tr,use_container_width=True,hide_index=True,column_config={
+                'REGIAO':'Regional',
+                'PESO_REGIONAL_ABERTO':st.column_config.NumberColumn('Peso em aberto',format='%.0f kg'),
+                'CIDADES_REGIONAL':'Cidades','CLIENTES_REGIONAL':'Clientes','FORMACOES_REGIONAIS':'Formações'
+            })
         elif cidade=='Visão da região':
             t=g_reg[['CIDADE','UF_NOME','PESO_ABERTO','REGISTROS_ABERTOS','CLIENTES','TEMPO_MEDIO','OCORRENCIAS']].sort_values('PESO_ABERTO',ascending=False).head(15)
             st.markdown('**Cidades da regional**'); st.dataframe(t,use_container_width=True,hide_index=True)
