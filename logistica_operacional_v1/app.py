@@ -192,11 +192,16 @@ def mapa_logistico(base,key_prefix='mapa'):
                 )
                 fig.update_layout(coloraxis_colorbar=dict(title='Peso regional em aberto',len=.68,thickness=14))
             else:
-                # Mantém a silhueta completa do estado em cinza. Clicar fora da regional retorna à visão geral.
+                # Ao abrir uma regional, mostra apenas o(s) estado(s) aos quais ela pertence como pano de fundo.
+                region_ufs=sorted([u for u in g_reg.UF_KEY.dropna().unique() if str(u).strip()])
+                bg_ufs=[uf_sel] if uf_sel else region_ufs
+                if not bg_ufs:
+                    bg_ufs=sorted([u for u in g_estado.UF_KEY.dropna().unique() if str(u).strip()])
                 bg_locs=[]
                 for ft in gj.get('features',[]):
                     p=ft.get('properties',{})
-                    if uf_sel is None or str(p.get('SIGLA_UF','')).upper().strip()==uf_sel:
+                    puf=str(p.get('SIGLA_UF','')).upper().strip()
+                    if puf in bg_ufs:
                         bg_locs.append(p.get('LOC'))
                 bg_locs=[x for x in bg_locs if x]
                 bg=go.Choropleth(
@@ -234,7 +239,6 @@ def mapa_logistico(base,key_prefix='mapa'):
         unmatched=base_reg[~base_reg.MAP_MATCH & base_reg.MUN_KEY.notna()]
         if len(unmatched): st.caption(f'{len(unmatched)} registro(s) da seleção ainda não puderam ser associados com segurança a um município da malha.')
 
-    # O rerun imediato evita a necessidade de um segundo clique para efetivar o drill-down.
     if back_general and reg!='Todas':
         st.session_state[key_prefix+'_reg']='Todas'
         st.session_state[key_prefix+'_city']='Visão da região'
