@@ -4,9 +4,9 @@
     "cod_rca": null,
     "nome": "Coordenação Comercial",
     "perfil": "ADMIN",
-    "salt": "",
-    "senha_algo": "sha256",
-    "senha_hash": "2b5c13156ad585cfd7dc3de698ddef30d37ac8438f62998ef2dd1ab75cd50fdd",
+    "salt": "50e85bb49c5a87aa796bef513993fe7d",
+    "senha_algo": "pbkdf2_sha256",
+    "senha_hash": "8e49e2da7801ed95fdcc707b284da859d9b072e5fb1e60bf4c1fe0ab4c0d85c6",
     "supervisor": null
   },
   "analistacomercialrbn@gmail.com": {
