@@ -554,12 +554,49 @@ def mapa_logistico(base, key_prefix="mapa"):
         else:
             st.info("Não há registros para a cidade selecionada.")
     elif reg_final != "Todas":
-        st.caption(
-            "A regional está aberta. Clique em uma cidade no mapa para ver abaixo os detalhes dos clientes. "
-            "Use “Voltar ao mapa geral” para sair da regional."
-        )
+        det_reg = base_map[base_map.REGIAO_OPERACIONAL.eq(reg_final)].copy()
+        st.markdown(f"### Detalhe da regional — {reg_final}")
+        st.caption("Clientes e formações de toda a regional selecionada. O clique em uma cidade continua disponível apenas para aprofundar o detalhe.")
+        if len(det_reg):
+            resumo_reg = det_reg.groupby(["CIDADE", "CLIENTE", "VENDEDOR"], dropna=False).agg(
+                PESO=("PESO", "sum"),
+                VOLUMES=("VOLUMES", "sum"),
+                FORMACOES=("CLIENTE", "size"),
+                ESPERA_MEDIA=("DIAS_ESPERA", "mean"),
+                EM_ROTA=("EM_ROTA", "sum"),
+                OCORRENCIAS=("TEM_OCORRENCIA", "sum"),
+            ).reset_index().sort_values(["PESO", "CIDADE"], ascending=[False, True])
+            st.dataframe(
+                resumo_reg,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "CIDADE": "Cidade",
+                    "CLIENTE": "Cliente",
+                    "VENDEDOR": "Vendedor",
+                    "PESO": st.column_config.NumberColumn("Peso", format="%.0f kg"),
+                    "VOLUMES": st.column_config.NumberColumn("Volumes", format="%.0f"),
+                    "FORMACOES": "Formações",
+                    "ESPERA_MEDIA": st.column_config.NumberColumn("Espera média", format="%.1f dias"),
+                    "EM_ROTA": "Em rota",
+                    "OCORRENCIAS": "Ocorrências",
+                },
+            )
+            with st.expander("Ver detalhes das formações da regional", expanded=False):
+                cols = [
+                    "CIDADE", "CLIENTE", "VENDEDOR", "PRODUTO", "PESO", "VOLUMES",
+                    "DIAS_ESPERA", "STATUS", "PREVISAO_ROTA", "MOTORISTA", "CAMINHAO",
+                    "CATEGORIA_OCORRENCIA", "FOLLOW_UP",
+                ]
+                st.dataframe(
+                    det_reg[cols].sort_values(["CIDADE", "CLIENTE", "DIAS_ESPERA"], ascending=[True, True, False]),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.info("Não há registros para a regional selecionada.")
     else:
-        st.caption("Clique em uma regional no mapa para abrir suas cidades.")
+        st.caption("Clique em uma regional no mapa para abrir suas cidades e ver os detalhes operacionais abaixo.")
 
 
 try:
