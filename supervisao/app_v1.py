@@ -33,17 +33,20 @@ source = source.replace(old_tabs, new_tabs, 1)
 
 gestao_block = r"""
 with aba5:
-    from gestao_metas import render_gestao_metas
-    render_gestao_metas(
-        vendas=vendas,
-        metas=metas,
-        ativos=ativos,
-        usuario=USUARIO_ATUAL,
-        brl=brl,
-        brl_compacto=brl_compacto,
-        pct=pct,
-        kpi=kpi,
-    )
+    if USUARIO_ATUAL.get('perfil') == 'RCA':
+        st.info('A Gestão de Metas está disponível para Supervisor, Gerente e Admin. O perfil RCA permanece somente no acompanhamento operacional.')
+    else:
+        from gestao_metas import render_gestao_metas
+        render_gestao_metas(
+            vendas=vendas,
+            metas=metas,
+            ativos=ativos,
+            usuario=USUARIO_ATUAL,
+            brl=brl,
+            brl_compacto=brl_compacto,
+            pct=pct,
+            kpi=kpi,
+        )
 """
 source = source.replace("\nwith aba4:\n", "\n" + gestao_block + "\nwith aba4:\n", 1)
 '''
