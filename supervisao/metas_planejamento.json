@@ -1,3 +1,36 @@
 {
+  "cycles": {
+    "2026|10,11,12": {
+      "ano": 2026,
+      "atualizado_em": "2026-09-16T23:59:15+00:00",
+      "criado_em": "2026-09-16T23:59:14+00:00",
+      "criado_por": "Coordenação Comercial",
+      "criterio_sugestao": "Média 50/50",
+      "eventos": [
+        {
+          "acao": "SALVAR_META_GLOBAL",
+          "data_hora": "2026-09-16T23:59:15+00:00",
+          "observacao": "",
+          "status": "RASCUNHO",
+          "usuario": "Coordenação Comercial"
+        }
+      ],
+      "meses": [
+        10,
+        11,
+        12
+      ],
+      "meta_empresa": 24500000.0,
+      "meta_mensal": {
+        "10": 8500000.0,
+        "11": 8500000.0,
+        "12": 7500000.0
+      },
+      "status": "RASCUNHO",
+      "supervisores": {},
+      "tipo": "Trimestral",
+      "versoes": []
+    }
+  },
   "plans": {}
 }
