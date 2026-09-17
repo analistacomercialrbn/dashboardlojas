@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-17T18:58:35+00:00",
+      "atualizado_em": "2026-09-17T19:20:34+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -60,6 +60,13 @@
           "acao": "SALVAR_META_GLOBAL_E_DISTRIBUICAO_MENSAL",
           "data_hora": "2026-09-17T18:58:35+00:00",
           "observacao": "Outubro + Novembro + Dezembro/2026 | meta 24500000",
+          "status": "AJUSTE_SOLICITADO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DEPARTAMENTOS",
+          "data_hora": "2026-09-17T19:20:34+00:00",
+          "observacao": "CEARA CENTRO OESTE",
           "status": "AJUSTE_SOLICITADO",
           "usuario": "Coordenação Comercial"
         }
@@ -159,7 +166,48 @@
         },
         "CEARA CENTRO OESTE": {
           "criterio": "Participação histórica",
-          "departamentos": {},
+          "departamentos": {
+            "AGRICULTURA": {
+              "mensal": {},
+              "proposta": 589225.0,
+              "sugerida": 696935.3803037893
+            },
+            "INGREDIENTES MINERAIS": {
+              "mensal": {},
+              "proposta": 90650.0,
+              "sugerida": 74376.30764951049
+            },
+            "MAQUINAS E EQUIPAMENTOS": {
+              "mensal": {},
+              "proposta": 0.0,
+              "sugerida": 26617.691692020428
+            },
+            "MIX REVENDA": {
+              "mensal": {},
+              "proposta": 906500.0,
+              "sugerida": 1039779.7855090918
+            },
+            "NUTRICAO - MONOGASTRICOS": {
+              "mensal": {},
+              "proposta": 1269100.0,
+              "sugerida": 1381356.1054720334
+            },
+            "NUTRICAO - RUMINANTES": {
+              "mensal": {},
+              "proposta": 4169900.0,
+              "sugerida": 4695642.446731845
+            },
+            "ORDENHA": {
+              "mensal": {},
+              "proposta": 226625.0,
+              "sugerida": 220333.6456164939
+            },
+            "SAUDE ANIMAL": {
+              "mensal": {},
+              "proposta": 589225.0,
+              "sugerida": 929958.6370252154
+            }
+          },
           "justificativa": "",
           "proposta": 9065000.0,
           "rcas": {},
