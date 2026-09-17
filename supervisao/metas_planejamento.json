@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-17T19:22:58+00:00",
+      "atualizado_em": "2026-09-17T19:25:05+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -81,6 +81,13 @@
           "acao": "SALVAR_DEPARTAMENTOS",
           "data_hora": "2026-09-17T19:22:58+00:00",
           "observacao": "CEARA LESTE",
+          "status": "AJUSTE_SOLICITADO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DEPARTAMENTOS",
+          "data_hora": "2026-09-17T19:25:05+00:00",
+          "observacao": "GUILHERME GONÇALVES",
           "status": "AJUSTE_SOLICITADO",
           "usuario": "Coordenação Comercial"
         }
@@ -280,7 +287,53 @@
         },
         "GUILHERME GONÇALVES": {
           "criterio": "Participação histórica",
-          "departamentos": {},
+          "departamentos": {
+            "AGRICULTURA": {
+              "mensal": {},
+              "proposta": 76256.25,
+              "sugerida": 38496.772320775905
+            },
+            "INGREDIENTES MINERAIS": {
+              "mensal": {},
+              "proposta": 152512.5,
+              "sugerida": 81084.56353551756
+            },
+            "MAQUINAS E EQUIPAMENTOS": {
+              "mensal": {},
+              "proposta": 0.0,
+              "sugerida": 3938.763249249154
+            },
+            "MIX REVENDA": {
+              "mensal": {},
+              "proposta": 228768.75,
+              "sugerida": 229223.5157496611
+            },
+            "NUTRICAO - MONOGASTRICOS": {
+              "mensal": {},
+              "proposta": 1347193.75,
+              "sugerida": 1290369.0970804363
+            },
+            "NUTRICAO - RUMINANTES": {
+              "mensal": {},
+              "proposta": 177931.25,
+              "sugerida": 264593.3657678112
+            },
+            "ORDENHA": {
+              "mensal": {},
+              "proposta": 0.0,
+              "sugerida": 7520.963158714323
+            },
+            "RACOES": {
+              "mensal": {},
+              "proposta": 0.0,
+              "sugerida": 4924.730943219754
+            },
+            "SAUDE ANIMAL": {
+              "mensal": {},
+              "proposta": 3101087.5,
+              "sugerida": 3163598.2281946153
+            }
+          },
           "justificativa": "",
           "proposta": 5083750.0,
           "rcas": {},
