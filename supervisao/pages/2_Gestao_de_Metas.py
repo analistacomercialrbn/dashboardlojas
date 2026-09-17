@@ -195,7 +195,6 @@ if USUARIO_ATUAL.get('perfil') == 'RCA':
     st.stop()
 
 # Padrão brasileiro para valores em tabelas/editors: 1.234.567,89.
-# NumberColumn com “localized” respeita o locale do navegador e evita o padrão US.
 if not hasattr(st, '_rbn_number_column_original'):
     st._rbn_number_column_original = st.column_config.NumberColumn
 
@@ -209,7 +208,117 @@ def _rbn_number_column(*args, **kwargs):
 
 st.column_config.NumberColumn = _rbn_number_column
 
-# Gráficos Plotly: decimal por vírgula e milhar por ponto.
+# Cabeçalho dos comparativos: referência anterior primeiro, período atual depois.
+if not hasattr(st, '_rbn_info_original'):
+    st._rbn_info_original = st.info
+
+
+def _rbn_info(body, *args, **kwargs):
+    if isinstance(body, str) and body.startswith('Ciclo:') and 'comparação recente:' in body and 'sazonalidade:' in body:
+        partes = [p.strip() for p in body.split('•')]
+        if len(partes) >= 3:
+            ciclo = partes[0].replace('Ciclo:', 'Ciclo de planejamento:', 1)
+            atual = partes[1].replace('comparação recente:', 'Ano atual:', 1)
+            anterior = partes[2].replace('sazonalidade:', 'Ano anterior:', 1)
+            body = f'{ciclo}  •  {anterior}  •  {atual}'
+            st.session_state['_rbn_compare_detail'] = f'{anterior}  •  {atual}'
+    return st._rbn_info_original(body, *args, **kwargs)
+
+
+st.info = _rbn_info
+
+
+def _rbn_comparison_frame(df):
+    if not isinstance(df, pd.DataFrame):
+        return df, {}
+
+    # Tabela analítica principal: já possui as participações dos dois períodos.
+    principal = {'Últimos meses', 'Mesmo período A-1', 'Part. Últimos meses', 'Part. Mesmo período A-1'}
+    if principal.issubset(df.columns):
+        ren = {
+            'Mesmo período A-1': 'Ano anterior (R$)',
+            'Part. Mesmo período A-1': '% Ano anterior',
+            'Últimos meses': 'Ano atual (R$)',
+            'Part. Últimos meses': '% Ano atual',
+            'Crescimento recente x A-1': 'Crescimento',
+        }
+        out = df.rename(columns=ren).copy()
+        ids = [c for c in df.columns if c not in principal and c != 'Crescimento recente x A-1']
+        ordem = ids[:1] + ['Ano anterior (R$)', '% Ano anterior', 'Ano atual (R$)', '% Ano atual']
+        if 'Crescimento' in out.columns:
+            ordem.append('Crescimento')
+        ordem += [c for c in out.columns if c not in ordem]
+        return out[ordem], ren
+
+    # Tabelas de distribuição: cria participação e crescimento para manter o mesmo padrão.
+    if {'Hist. A-1', 'Hist. recente'}.issubset(df.columns):
+        out = df.copy()
+        anterior = pd.to_numeric(out['Hist. A-1'], errors='coerce').fillna(0)
+        atual = pd.to_numeric(out['Hist. recente'], errors='coerce').fillna(0)
+        total_anterior = float(anterior.sum())
+        total_atual = float(atual.sum())
+        out['% Ano anterior'] = anterior / total_anterior * 100 if total_anterior else 0.0
+        out['% Ano atual'] = atual / total_atual * 100 if total_atual else 0.0
+        out['Crescimento'] = (atual / anterior.replace(0, pd.NA) - 1) * 100
+        ren = {'Hist. A-1': 'Ano anterior (R$)', 'Hist. recente': 'Ano atual (R$)'}
+        out = out.rename(columns=ren)
+        historicas = {'Hist. A-1', 'Hist. recente'}
+        ids = [c for c in df.columns if c not in historicas and c not in {'Participação ref. %', 'Meta sugerida', 'Meta definida', 'Meta proposta'}]
+        ordem = ids + ['Ano anterior (R$)', '% Ano anterior', 'Ano atual (R$)', '% Ano atual', 'Crescimento']
+        for c in ['Participação ref. %', 'Meta sugerida', 'Meta definida', 'Meta proposta']:
+            if c in out.columns:
+                ordem.append(c)
+        ordem += [c for c in out.columns if c not in ordem]
+        return out[ordem], ren
+
+    return df, {}
+
+
+def _rbn_remap_config(config, ren):
+    if not isinstance(config, dict):
+        config = {} if config is None else config
+    if not isinstance(config, dict):
+        return config
+    novo = {ren.get(k, k): v for k, v in config.items()}
+    novo.setdefault('% Ano anterior', st.column_config.NumberColumn(format='%.2f%%'))
+    novo.setdefault('% Ano atual', st.column_config.NumberColumn(format='%.2f%%'))
+    novo.setdefault('Crescimento', st.column_config.NumberColumn(format='%.2f%%'))
+    return novo
+
+
+if not hasattr(st, '_rbn_dataframe_original'):
+    st._rbn_dataframe_original = st.dataframe
+if not hasattr(st, '_rbn_data_editor_original'):
+    st._rbn_data_editor_original = st.data_editor
+
+
+def _rbn_dataframe(data=None, *args, **kwargs):
+    novo, ren = _rbn_comparison_frame(data)
+    if ren:
+        detalhe = st.session_state.get('_rbn_compare_detail')
+        if detalhe:
+            st.caption(f'Comparativo: {detalhe}')
+        kwargs['column_config'] = _rbn_remap_config(kwargs.get('column_config'), ren)
+    return st._rbn_dataframe_original(novo, *args, **kwargs)
+
+
+def _rbn_data_editor(data=None, *args, **kwargs):
+    novo, ren = _rbn_comparison_frame(data)
+    if ren:
+        detalhe = st.session_state.get('_rbn_compare_detail')
+        if detalhe:
+            st.caption(f'Comparativo: {detalhe}')
+        kwargs['column_config'] = _rbn_remap_config(kwargs.get('column_config'), ren)
+        disabled = kwargs.get('disabled')
+        if isinstance(disabled, (list, tuple)):
+            kwargs['disabled'] = [ren.get(c, c) for c in disabled]
+    return st._rbn_data_editor_original(novo, *args, **kwargs)
+
+
+st.dataframe = _rbn_dataframe
+st.data_editor = _rbn_data_editor
+
+# Gráficos Plotly: decimal por vírgula, milhar por ponto e ano anterior primeiro.
 if not hasattr(st, '_rbn_plotly_chart_original'):
     st._rbn_plotly_chart_original = st.plotly_chart
 
@@ -217,6 +326,16 @@ if not hasattr(st, '_rbn_plotly_chart_original'):
 def _rbn_plotly_chart(fig, *args, **kwargs):
     try:
         fig.update_layout(separators=',.')
+        for tr in fig.data:
+            if getattr(tr, 'name', None) == 'Mesmo período A-1':
+                tr.name = 'Ano anterior'
+            elif getattr(tr, 'name', None) == 'Últimos meses':
+                tr.name = 'Ano atual'
+        anteriores = [tr for tr in fig.data if getattr(tr, 'name', None) == 'Ano anterior']
+        atuais = [tr for tr in fig.data if getattr(tr, 'name', None) == 'Ano atual']
+        outros = [tr for tr in fig.data if getattr(tr, 'name', None) not in ('Ano anterior', 'Ano atual')]
+        if anteriores or atuais:
+            fig.data = tuple(anteriores + atuais + outros)
     except Exception:
         pass
     return st._rbn_plotly_chart_original(fig, *args, **kwargs)
