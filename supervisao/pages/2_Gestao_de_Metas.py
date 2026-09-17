@@ -194,6 +194,36 @@ if USUARIO_ATUAL.get('perfil') == 'RCA':
     st.info('A Gestão de Metas está disponível para Supervisor, Gerente e Admin. O perfil RCA permanece no acompanhamento operacional.')
     st.stop()
 
+# Padrão brasileiro para valores em tabelas/editors: 1.234.567,89.
+# NumberColumn com “localized” respeita o locale do navegador e evita o padrão US.
+if not hasattr(st, '_rbn_number_column_original'):
+    st._rbn_number_column_original = st.column_config.NumberColumn
+
+
+def _rbn_number_column(*args, **kwargs):
+    fmt = kwargs.get('format')
+    if isinstance(fmt, str) and ('R$' in fmt or fmt == '%.2f'):
+        kwargs['format'] = 'localized'
+    return st._rbn_number_column_original(*args, **kwargs)
+
+
+st.column_config.NumberColumn = _rbn_number_column
+
+# Gráficos Plotly: decimal por vírgula e milhar por ponto.
+if not hasattr(st, '_rbn_plotly_chart_original'):
+    st._rbn_plotly_chart_original = st.plotly_chart
+
+
+def _rbn_plotly_chart(fig, *args, **kwargs):
+    try:
+        fig.update_layout(separators=',.')
+    except Exception:
+        pass
+    return st._rbn_plotly_chart_original(fig, *args, **kwargs)
+
+
+st.plotly_chart = _rbn_plotly_chart
+
 gm.render_gestao_metas(
     vendas=vendas,
     metas=metas,
