@@ -41,6 +41,13 @@
           "observacao": "Outubro + Novembro + Dezembro/2026 | meta 24500000",
           "status": "DISTRIBUIDO",
           "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SOLICITAR_AJUSTE",
+          "data_hora": "2026-09-17T18:35:52+00:00",
+          "observacao": "",
+          "status": "AJUSTE_SOLICITADO",
+          "usuario": "Coordenação Comercial"
         }
       ],
       "meses": [
@@ -63,16 +70,77 @@
         ],
         "modelo": "inteligente_por_ciclo"
       },
-      "status": "DISTRIBUIDO",
+      "status": "AJUSTE_SOLICITADO",
       "supervisores": {
         "BALCAO REBANHO": {
           "criterio": "Participação histórica",
-          "departamentos": {},
+          "departamentos": {
+            "AGRICULTURA": {
+              "mensal": {},
+              "proposta": 14332.392613389185,
+              "sugerida": 14332.392613389185
+            },
+            "INGREDIENTES MINERAIS": {
+              "mensal": {},
+              "proposta": 40687.04125766923,
+              "sugerida": 40687.04125766923
+            },
+            "MAQUINAS E EQUIPAMENTOS": {
+              "mensal": {},
+              "proposta": 10218.74611831485,
+              "sugerida": 10218.74611831485
+            },
+            "MIX REVENDA": {
+              "mensal": {},
+              "proposta": 37218.5658172497,
+              "sugerida": 37218.5658172497
+            },
+            "NUTRICAO - MONOGASTRICOS": {
+              "mensal": {},
+              "proposta": 317159.32561451214,
+              "sugerida": 317159.32561451214
+            },
+            "NUTRICAO - RUMINANTES": {
+              "mensal": {},
+              "proposta": 397103.8863645633,
+              "sugerida": 397103.8863645633
+            },
+            "ORDENHA": {
+              "mensal": {},
+              "proposta": 15550.28836965862,
+              "sugerida": 15550.28836965862
+            },
+            "RACOES": {
+              "mensal": {},
+              "proposta": 147075.98501948063,
+              "sugerida": 147075.98501948063
+            },
+            "SAUDE ANIMAL": {
+              "mensal": {},
+              "proposta": 429403.7688251624,
+              "sugerida": 429403.7688251624
+            }
+          },
           "justificativa": "",
           "proposta": 1408750.0,
-          "rcas": {},
+          "rcas": {
+            "115": {
+              "criterio": "Participação histórica",
+              "justificativa": "",
+              "proposta": 231414.11385224378,
+              "rca": "ROBSON",
+              "sugerida": 231414.11385224378
+            },
+            "28": {
+              "criterio": "Participação histórica",
+              "justificativa": "",
+              "proposta": 1177335.8861477564,
+              "rca": "JALUSA",
+              "sugerida": 1177335.8861477564
+            }
+          },
           "status": "EM_PREENCHIMENTO",
-          "sugerida": 1344537.2534604531
+          "sugerida": 1344537.2534604534
         },
         "CEARA CENTRO OESTE": {
           "criterio": "Participação histórica",
@@ -90,7 +158,7 @@
           "proposta": 8942500.0,
           "rcas": {},
           "status": "EM_PREENCHIMENTO",
-          "sugerida": 8626481.076422654
+          "sugerida": 8626481.076422658
         },
         "GUILHERME GONÇALVES": {
           "criterio": "Participação histórica",
@@ -99,7 +167,7 @@
           "proposta": 5083750.0,
           "rcas": {},
           "status": "EM_PREENCHIMENTO",
-          "sugerida": 5474967.060014941
+          "sugerida": 5474967.060014942
         }
       },
       "tipo": "Trimestral",
