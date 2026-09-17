@@ -3,7 +3,7 @@ from aggrid_ptbr_patch import aplicar_aggrid_ptbr
 from gestao_layout_patch import aplicar_layout_simplificado
 from gestao_expand_patch import aplicar_expandir_tabela
 from gestao_fullscreen_css import aplicar_fullscreen_dialog
-from gestao_sugestao_ciclo_patch import aplicar_sugestao_inteligente_ciclo
+from gestao_sugestao_ciclo_reapply import aplicar_sugestao_ciclo_estavel
 
 
 def aplicar_formatacao_comparativos():
@@ -12,4 +12,4 @@ def aplicar_formatacao_comparativos():
     aplicar_layout_simplificado()
     aplicar_expandir_tabela()
     aplicar_fullscreen_dialog()
-    aplicar_sugestao_inteligente_ciclo()
+    aplicar_sugestao_ciclo_estavel()
