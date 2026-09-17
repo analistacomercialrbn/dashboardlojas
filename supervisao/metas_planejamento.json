@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-17T19:20:34+00:00",
+      "atualizado_em": "2026-09-17T19:21:45+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -66,6 +66,13 @@
         {
           "acao": "SALVAR_DEPARTAMENTOS",
           "data_hora": "2026-09-17T19:20:34+00:00",
+          "observacao": "CEARA CENTRO OESTE",
+          "status": "AJUSTE_SOLICITADO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DEPARTAMENTOS",
+          "data_hora": "2026-09-17T19:21:45+00:00",
           "observacao": "CEARA CENTRO OESTE",
           "status": "AJUSTE_SOLICITADO",
           "usuario": "Coordenação Comercial"
@@ -169,7 +176,7 @@
           "departamentos": {
             "AGRICULTURA": {
               "mensal": {},
-              "proposta": 589225.0,
+              "proposta": 1813000.0,
               "sugerida": 696935.3803037893
             },
             "INGREDIENTES MINERAIS": {
