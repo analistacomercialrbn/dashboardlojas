@@ -10,6 +10,7 @@ from gestao_supervisor_analise_toggle import aplicar_toggle_analise_supervisores
 from gestao_departamento_visual import aplicar_visual_departamentos
 from gestao_rca_visual import aplicar_visual_rcas
 from gestao_aprovacao_visual import aplicar_visual_aprovacao
+from gestao_mensal_integrado import aplicar_mensal_integrado
 
 
 def aplicar_formatacao_comparativos():
@@ -25,3 +26,4 @@ def aplicar_formatacao_comparativos():
     aplicar_visual_departamentos()
     aplicar_visual_rcas()
     aplicar_visual_aprovacao()
+    aplicar_mensal_integrado()
