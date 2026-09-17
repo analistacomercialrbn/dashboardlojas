@@ -220,7 +220,7 @@ def render_gestao_metas(vendas,metas,ativos,usuario,brl,brl_compacto,pct,kpi):
     hist_sup,recent_periods,prior_periods=_supervisor_history(vendas,ativos,ano,meses)
     st.info(f"Ciclo: **{_period_label(ano,meses)}**  •  comparação recente: **{_fmt_periods(recent_periods)}**  •  sazonalidade: **{_fmt_periods(prior_periods)}**")
 
-    tabs=st.tabs(['1. Meta da Empresa','2. Análise dos Supervisores','3. Distribuição por Supervisor','4. Departamentos','5. RCAs','6. Aprovação e Histórico'])
+    tabs=st.tabs(['1. Meta da Empresa','2. Análise e Distribuição dos Supervisores','3. Departamentos','4. RCAs','5. Aprovação e Histórico'])
 
     with tabs[0]:
         st.markdown('### Meta global da empresa')
@@ -263,12 +263,12 @@ def render_gestao_metas(vendas,metas,ativos,usuario,brl,brl_compacto,pct,kpi):
             sup_det=st.selectbox('Ver evolução de um supervisor',['Todos']+ana['Supervisor'].tolist(),key=f'gm2_sup_det_{key}')
             _monthly_chart(vendas,None if sup_det=='Todos' else sup_det)
 
-    with tabs[2]:
-        st.markdown('### Distribuição da meta por supervisor')
-        if perfil!='ADMIN': st.caption('A distribuição macro é definida pelo administrador.')
-        modo=st.radio('Base da sugestão',['Média 50/50','Últimos meses','Mesmo período A-1'],horizontal=True,index=['Média 50/50','Últimos meses','Mesmo período A-1'].index(cycle.get('criterio_sugestao','Média 50/50')) if cycle.get('criterio_sugestao') in ['Média 50/50','Últimos meses','Mesmo período A-1'] else 0,disabled=perfil!='ADMIN',key=f'gm2_mode_{key}')
-        cycle['criterio_sugestao']=modo
-        if not hist_sup.empty:
+            st.divider()
+            st.markdown('### Distribuição da meta por supervisor')
+            st.caption('Use a análise acima como referência para definir a distribuição sem sair da tela.')
+            if perfil!='ADMIN': st.caption('A distribuição macro é definida pelo administrador.')
+            modo=st.radio('Base da sugestão',['Média 50/50','Últimos meses','Mesmo período A-1'],horizontal=True,index=['Média 50/50','Últimos meses','Mesmo período A-1'].index(cycle.get('criterio_sugestao','Média 50/50')) if cycle.get('criterio_sugestao') in ['Média 50/50','Últimos meses','Mesmo período A-1'] else 0,disabled=perfil!='ADMIN',key=f'gm2_mode_{key}')
+            cycle['criterio_sugestao']=modo
             hs=hist_sup.copy()
             hs['_w']=hs.apply(lambda r:_weighted_share(r['Part. Últimos meses'],r['Part. Mesmo período A-1'],modo),axis=1)
             if hs['_w'].sum(): hs['_w']=hs['_w']/hs['_w'].sum()*100
@@ -296,7 +296,7 @@ def render_gestao_metas(vendas,metas,ativos,usuario,brl,brl_compacto,pct,kpi):
                 ok,msg=_save_store(store); (st.success if ok else st.error)(msg)
                 if ok: st.rerun()
 
-    with tabs[3]:
+    with tabs[2]:
         st.markdown('### Análise e distribuição por departamento')
         sups=sorted(cycle.get('supervisores',{}).keys()) or sorted(ativos['SUPERVISOR'].dropna().astype(str).unique())
         if perfil=='SUPERVISOR':
@@ -333,7 +333,7 @@ def render_gestao_metas(vendas,metas,ativos,usuario,brl,brl_compacto,pct,kpi):
                     ok,msg=_save_store(store); (st.success if ok else st.error)(msg)
                     if ok: st.rerun()
 
-    with tabs[4]:
+    with tabs[3]:
         st.markdown('### Distribuição da meta do supervisor entre RCAs')
         sups=sorted(cycle.get('supervisores',{}).keys())
         if perfil=='SUPERVISOR':
@@ -371,7 +371,7 @@ def render_gestao_metas(vendas,metas,ativos,usuario,brl,brl_compacto,pct,kpi):
                     ok,msg=_save_store(store); (st.success if ok else st.error)(msg)
                     if ok: st.rerun()
 
-    with tabs[5]:
+    with tabs[4]:
         st.markdown('### Validação, aprovação e histórico')
         sup_rows=[]
         for s,r in cycle.get('supervisores',{}).items():
