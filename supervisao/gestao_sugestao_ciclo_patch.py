@@ -1,12 +1,10 @@
 import copy
+import inspect
 
 import pandas as pd
 import streamlit as st
 
 import gestao_metas as gm
-
-
-MESES_CURTOS = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
 
 
 def _reconciliar(valores_brutos, total, passo=10000):
@@ -32,7 +30,27 @@ def _reconciliar(valores_brutos, total, passo=10000):
     return arred, alvo
 
 
+def _contexto_render():
+    frame = inspect.currentframe()
+    try:
+        atual = frame.f_back
+        while atual is not None:
+            if atual.f_code.co_name == 'render_gestao_metas':
+                return {
+                    'vendas': atual.f_locals.get('vendas'),
+                    'ativos': atual.f_locals.get('ativos'),
+                    'usuario': atual.f_locals.get('usuario'),
+                    'brl': atual.f_locals.get('brl'),
+                }
+            atual = atual.f_back
+    finally:
+        del frame
+    return {}
+
+
 def _modelo_ciclo(vendas, ativos, ano_meta, meses, meta_informada=0.0):
+    if not isinstance(vendas, pd.DataFrame) or not isinstance(ativos, pd.DataFrame):
+        return None
     permitidos = set(pd.to_numeric(ativos['COD_RCA'], errors='coerce').dropna().astype('Int64').tolist())
     h = vendas[vendas['FATURADO'] & vendas['DATA_FAT'].notna()].copy()
     if permitidos:
@@ -49,7 +67,6 @@ def _modelo_ciclo(vendas, ativos, ano_meta, meses, meta_informada=0.0):
     pesos_ano = {a:i+1 for i,a in enumerate(anos)}
 
     base_mes = {}
-    mediana_mes = {}
     for m in meses:
         existentes = [(a, float(matriz.loc[a,m])) for a in anos if float(matriz.loc[a,m]) > 0]
         if existentes:
@@ -57,13 +74,10 @@ def _modelo_ciclo(vendas, ativos, ano_meta, meses, meta_informada=0.0):
             media_pond = sum(v * pesos_ano[a] for a,v in existentes) / soma_p
             mediana = float(pd.Series([v for _,v in existentes]).median())
             base_mes[m] = 0.60 * media_pond + 0.40 * mediana
-            mediana_mes[m] = mediana
         else:
             base_mes[m] = 0.0
-            mediana_mes[m] = 0.0
 
     base_hist = sum(base_mes.values())
-
     n = len(meses)
     recent_periods = gm._recent_period(vendas, n)
     recent = gm._period_values(vendas, recent_periods, cods=permitidos if permitidos else None)
@@ -114,10 +128,19 @@ def _modelo_ciclo(vendas, ativos, ano_meta, meses, meta_informada=0.0):
     }
 
 
-def aplicar_sugestao_inteligente_ciclo(vendas, ativos, usuario, brl):
+def aplicar_sugestao_inteligente_ciclo():
     if getattr(st, '_gm_ciclo_patch_aplicado', False):
         return
     st._gm_ciclo_patch_aplicado = True
+
+    # A antiga seção anual deixa de ser exibida; a sugestão passa a existir
+    # somente dentro da Meta da Empresa, respeitando o ciclo selecionado.
+    caller = inspect.currentframe().f_back
+    while caller is not None:
+        if 'render_sugestao_meta_inteligente' in caller.f_globals:
+            caller.f_globals['render_sugestao_meta_inteligente'] = lambda *args, **kwargs: None
+            break
+        caller = caller.f_back
 
     number_input_original = st.number_input
 
@@ -135,12 +158,17 @@ def aplicar_sugestao_inteligente_ciclo(vendas, ativos, usuario, brl):
         except Exception:
             return valor
 
+        ctx = _contexto_render()
+        vendas = ctx.get('vendas')
+        ativos = ctx.get('ativos')
+        usuario = ctx.get('usuario') or {}
+        brl = ctx.get('brl') or (lambda x: f'R$ {float(x):,.2f}')
         perfil = str(usuario.get('perfil') or '')
         if perfil not in ('ADMIN','GERENTE'):
             return valor
 
         st.markdown('#### Sugestão inteligente do ciclo')
-        st.caption('A sugestão agora respeita exatamente o período escolhido acima. Usa o mesmo período dos anos anteriores e o comportamento dos últimos meses fechados equivalentes ao tamanho do ciclo.')
+        st.caption('A sugestão respeita exatamente o período definido acima. Para um ciclo trimestral, por exemplo, analisa os três meses do ciclo, compara com o mesmo período histórico e usa os três últimos meses fechados como sinal de tendência.')
 
         modelo = _modelo_ciclo(vendas, ativos, ano, meses, valor)
         if not modelo:
@@ -153,9 +181,9 @@ def aplicar_sugestao_inteligente_ciclo(vendas, ativos, usuario, brl):
         c3.metric(f'Últimos {len(meses)} mês(es)', brl(modelo['recent_total']))
 
         if float(valor or 0) > 0:
-            st.caption(f'A distribuição abaixo usa a meta informada de {brl(valor)}. A referência calculada pelo modelo para o ciclo é {brl(modelo["meta_sugerida"])}.')
+            st.caption(f'A distribuição abaixo usa a meta informada de {brl(valor)}. A referência calculada pelo modelo para este ciclo é {brl(modelo["meta_sugerida"])}.')
         else:
-            st.caption(f'Como a meta do ciclo está zerada, a distribuição abaixo usa automaticamente a sugestão de {brl(modelo["meta_sugerida"])}.')
+            st.caption(f'Como a meta do ciclo está zerada, a distribuição usa automaticamente a sugestão de {brl(modelo["meta_sugerida"])}.')
 
         tabela = modelo['tabela']
         edit = st.data_editor(
