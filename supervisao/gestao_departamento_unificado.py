@@ -42,20 +42,22 @@ def _distribuir(total, meses, pesos):
 
 
 def aplicar_departamentos_unificados():
-    """Transforma a distribuicao por departamento em uma grade horizontal, com total e meses na mesma linha."""
+    """Tela operacional de departamentos: foco em meta total e distribuicao mensal."""
     st.markdown(
         """
         <style>
-        .gm-du-head{display:grid;grid-template-columns:1.75fr .95fr .75fr 1fr 1.15fr repeat(3,1.08fr) .82fr;gap:12px;padding:0 16px 7px;margin-top:10px;align-items:end}
-        .gm-du-head span{font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:850;letter-spacing:.04em;text-align:center}
-        .gm-du-head span:first-child{text-align:left}
-        .gm-du-namebox{min-height:52px;display:flex;flex-direction:column;justify-content:center}
-        .gm-du-name{font-size:12px;font-weight:900;color:#1e2655;line-height:1.2}.gm-du-sub{font-size:8px;color:#8b91a0;margin-top:4px}
-        .gm-du-refbox{min-height:52px;display:flex;flex-direction:column;justify-content:center;text-align:center}.gm-du-refbox strong{font-size:10px;color:#30384d}.gm-du-refbox span{font-size:8px;color:#9096a4;margin-top:2px}
+        .gm-du-panel{background:#fff;border:1px solid #e4e8ef;border-radius:16px;padding:14px 16px;margin:6px 0 12px}
+        .gm-du-panel-top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+        .gm-du-panel-title{font-size:17px;font-weight:900;color:#1e2655}.gm-du-panel-sub{font-size:10px;color:#858b99;margin-top:3px}
+        .gm-du-panel-meta{text-align:right}.gm-du-panel-meta span{display:block;font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:850}.gm-du-panel-meta strong{font-size:18px;color:#1e2655}
+        .gm-du-head{display:grid;grid-template-columns:2.25fr 1.25fr repeat(3,1.18fr) .9fr;gap:12px;padding:0 14px 7px;margin-top:8px;align-items:end}
+        .gm-du-head span{font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:850;letter-spacing:.04em;text-align:center}.gm-du-head span:first-child{text-align:left}
+        .gm-du-namebox{min-height:48px;display:flex;flex-direction:column;justify-content:center}.gm-du-name{font-size:12px;font-weight:900;color:#1e2655;line-height:1.2}.gm-du-sub{font-size:8px;color:#8b91a0;margin-top:4px}
         .gm-du-status{border-radius:9px;padding:7px 5px;font-size:9px;font-weight:800;text-align:center;line-height:1.25;white-space:nowrap}.gm-du-status.ok{background:#f2faf5;border:1px solid #d7eadf;color:#356b46}.gm-du-status.warn{background:#fff9f0;border:1px solid #eadfc4;color:#816422}
         .gm-du-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:12px 0 5px}.gm-du-box{background:#fff;border:1px solid #e4e8ef;border-radius:13px;padding:10px 12px}.gm-du-box span{font-size:8px;color:#8e95a4;text-transform:uppercase;font-weight:850}.gm-du-box strong{display:block;font-size:13px;color:#1e2655;margin-top:2px}.gm-du-box small{font-size:8px;color:#8a90a0}
         .gm-du-total{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0 8px}.gm-du-total>div{background:#fff;border:1px solid #e4e8ef;border-radius:13px;padding:11px 13px}.gm-du-total span{font-size:8px;color:#8e95a4;text-transform:uppercase;font-weight:850}.gm-du-total strong{display:block;font-size:15px;color:#1e2655;margin-top:2px}
-        @media(max-width:1100px){.gm-du-head{display:none}.gm-du-summary,.gm-du-total{grid-template-columns:1fr}.gm-du-status{margin-top:0}}
+        .gm-du-ref-table{font-size:10px;color:#596174;margin-top:4px}
+        @media(max-width:1000px){.gm-du-head{display:none}.gm-du-summary,.gm-du-total{grid-template-columns:1fr}.gm-du-panel-meta{text-align:left}.gm-du-status{margin-top:0}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -85,15 +87,48 @@ def aplicar_departamentos_unificados():
         deps = srec.setdefault('departamentos', {})
         saida = data.copy()
 
-        st.markdown('#### Distribuição comercial por departamento')
-        st.caption('Total do ciclo e metas mensais ficam na mesma linha. Cada departamento precisa fechar o próprio total e, juntos, os meses devem fechar a meta do supervisor.')
+        st.markdown(
+            f"""
+            <div class='gm-du-panel'>
+              <div class='gm-du-panel-top'>
+                <div>
+                  <div class='gm-du-panel-title'>Distribuição por departamento</div>
+                  <div class='gm-du-panel-sub'>Defina apenas os valores do planejamento. A análise histórica continua disponível como apoio, sem ocupar a tela principal.</div>
+                </div>
+                <div class='gm-du-panel-meta'><span>Meta do supervisor</span><strong>{_fmt(meta_sup)}</strong></div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.expander('Ver referências usadas na sugestão', expanded=False):
+            refs = []
+            for _, r in data.iterrows():
+                refs.append({
+                    'Departamento': str(r.get('Departamento', '')),
+                    'Histórico recente': _num(r.get('Hist. recente')),
+                    'Participação ref. %': _num(r.get('Participação ref. %')),
+                    'Meta sugerida': _num(r.get('Meta sugerida')),
+                })
+            rdf = pd.DataFrame(refs)
+            st.dataframe(
+                rdf,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    'Histórico recente': st.column_config.NumberColumn(format='R$ %.2f'),
+                    'Participação ref. %': st.column_config.NumberColumn(format='%.2f%%'),
+                    'Meta sugerida': st.column_config.NumberColumn(format='R$ %.2f'),
+                },
+            )
 
         nomes_meses = [gm.MESES[m] for m in meses]
         while len(nomes_meses) < 3:
             nomes_meses.append('')
         st.markdown(
             "<div class='gm-du-head'>"
-            "<span>Departamento</span><span>Histórico</span><span>Part. ref.</span><span>Meta sugerida</span><span>Meta total</span>"
+            "<span>Departamento</span><span>Meta total</span>"
             + ''.join(f"<span>{nome}</span>" for nome in nomes_meses[:3])
             + "<span>Status</span></div>",
             unsafe_allow_html=True,
@@ -104,9 +139,6 @@ def aplicar_departamentos_unificados():
             dep = str(row.get('Departamento', 'Departamento'))
             rec = deps.setdefault(dep, {})
             atual = _num(row.get('Meta proposta'))
-            hist = _num(row.get('Hist. recente'))
-            part = _num(row.get('Participação ref. %'))
-            sugerida = _num(row.get('Meta sugerida'))
 
             mensal = rec.setdefault('mensal', {})
             soma_existente = sum(_num(mensal.get(str(m))) for m in meses)
@@ -116,32 +148,38 @@ def aplicar_departamentos_unificados():
                 mensal.update(_distribuir(atual, meses, sup_mensal))
 
             with st.container(border=True):
-                specs = [1.75, .95, .75, 1.0, 1.15] + [1.08] * len(meses) + [.82]
+                specs = [2.25, 1.25] + [1.18] * len(meses) + [.9]
                 cols = st.columns(specs, vertical_alignment='center', gap='small')
 
                 with cols[0]:
-                    st.markdown(f"<div class='gm-du-namebox'><div class='gm-du-name'>{dep}</div><div class='gm-du-sub'>Departamento de {sup}</div></div>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<div class='gm-du-namebox'><div class='gm-du-name'>{dep}</div><div class='gm-du-sub'>Planejamento do ciclo</div></div>",
+                        unsafe_allow_html=True,
+                    )
                 with cols[1]:
-                    st.markdown(f"<div class='gm-du-refbox'><strong>{_fmt(hist)}</strong><span>histórico recente</span></div>", unsafe_allow_html=True)
-                with cols[2]:
-                    st.markdown(f"<div class='gm-du-refbox'><strong>{part:.1f}%</strong><span>referência</span></div>", unsafe_allow_html=True)
-                with cols[3]:
-                    st.markdown(f"<div class='gm-du-refbox'><strong>{_fmt(sugerida)}</strong><span>sugerida</span></div>", unsafe_allow_html=True)
-                with cols[4]:
-                    total_novo = st.number_input('Meta total', min_value=0.0, value=atual, step=10000.0, format='%.2f', key=f'gm_du_total_{key}_{idx}', label_visibility='collapsed')
+                    total_novo = st.number_input(
+                        'Meta total', min_value=0.0, value=atual, step=10000.0,
+                        format='%.2f', key=f'gm_du_total_{key}_{idx}', label_visibility='collapsed'
+                    )
                 saida.loc[saida.index[idx], 'Meta proposta'] = float(total_novo)
 
                 novos = {}
                 for j, m in enumerate(meses):
-                    with cols[5 + j]:
-                        novos[str(m)] = st.number_input(gm.MESES[m], min_value=0.0, value=_num(mensal.get(str(m))), step=10000.0, format='%.2f', key=f'gm_du_month_{key}_{idx}_{m}', label_visibility='collapsed')
+                    with cols[2 + j]:
+                        novos[str(m)] = st.number_input(
+                            gm.MESES[m], min_value=0.0, value=_num(mensal.get(str(m))), step=10000.0,
+                            format='%.2f', key=f'gm_du_month_{key}_{idx}_{m}', label_visibility='collapsed'
+                        )
                 rec['mensal'] = {str(m): float(novos[str(m)]) for m in meses}
                 soma_m = sum(rec['mensal'].values())
                 dif = float(total_novo) - soma_m
                 ok = abs(dif) <= 0.02
                 linhas_ok = linhas_ok and ok
                 with cols[-1]:
-                    st.markdown(f"<div class='gm-du-status {'ok' if ok else 'warn'}'>{'✓ Fechado' if ok else 'Ajustar'}<br>{_fmt(dif)}</div>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<div class='gm-du-status {'ok' if ok else 'warn'}'>{'✓ Fechado' if ok else 'Ajustar'}<br>{_fmt(dif)}</div>",
+                        unsafe_allow_html=True,
+                    )
 
         total = float(pd.to_numeric(saida['Meta proposta'], errors='coerce').fillna(0).sum())
         dif_total = meta_sup - total
@@ -157,7 +195,9 @@ def aplicar_departamentos_unificados():
             alvo = _num(sup_mensal.get(str(m)))
             ok = abs(soma - alvo) <= 0.02
             meses_ok = meses_ok and ok
-            cards.append(f"<div class='gm-du-box'><span>{gm.MESES[m]}</span><strong>{_fmt(soma)}</strong><small>Alvo {_fmt(alvo)} • {'Fechado' if ok else 'Ajustar'}</small></div>")
+            cards.append(
+                f"<div class='gm-du-box'><span>{gm.MESES[m]}</span><strong>{_fmt(soma)}</strong><small>Alvo {_fmt(alvo)} • {'Fechado' if ok else 'Ajustar'}</small></div>"
+            )
         if cards:
             st.markdown("<div class='gm-du-summary'>" + ''.join(cards) + "</div>", unsafe_allow_html=True)
 
