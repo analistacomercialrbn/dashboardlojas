@@ -128,11 +128,32 @@ def _modelo_ciclo(vendas, ativos, ano_meta, meses, meta_informada=0.0):
     }
 
 
-def aplicar_sugestao_inteligente_ciclo():
-    if getattr(st, '_gm_ciclo_patch_aplicado', False):
-        return
-    st._gm_ciclo_patch_aplicado = True
+def _desembrulhar_number_input(fn):
+    """Remove wrappers antigos deste patch para impedir duplicação entre reruns."""
+    atual = fn
+    vistos = set()
+    for _ in range(12):
+        if id(atual) in vistos:
+            break
+        vistos.add(id(atual))
+        if getattr(atual, '__module__', '') != __name__ or getattr(atual, '__name__', '') != 'number_input':
+            break
+        proximo = None
+        for cell in getattr(atual, '__closure__', None) or []:
+            try:
+                obj = cell.cell_contents
+            except Exception:
+                continue
+            if callable(obj) and getattr(obj, '__name__', '') == 'number_input':
+                proximo = obj
+                break
+        if proximo is None:
+            break
+        atual = proximo
+    return atual
 
+
+def aplicar_sugestao_inteligente_ciclo():
     # A antiga seção anual deixa de ser exibida; a sugestão passa a existir
     # somente dentro da Meta da Empresa, respeitando o ciclo selecionado.
     caller = inspect.currentframe().f_back
@@ -142,7 +163,11 @@ def aplicar_sugestao_inteligente_ciclo():
             break
         caller = caller.f_back
 
-    number_input_original = st.number_input
+    # IMPORTANTE: o Streamlit preserva o módulo entre reruns. Se empilharmos
+    # wrappers, o mesmo bloco é desenhado duas vezes e gera DuplicateElementKey.
+    # Sempre partimos do number_input original, removendo wrappers antigos.
+    number_input_original = _desembrulhar_number_input(st.number_input)
+    st._gm_ciclo_number_input_original = number_input_original
 
     def number_input(label, *args, **kwargs):
         key = str(kwargs.get('key') or '')
