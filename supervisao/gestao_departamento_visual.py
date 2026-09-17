@@ -25,8 +25,21 @@ def _desembrulhar(fn, nome):
     return atual
 
 
+def _compactar_figura(fig, altura=290):
+    try:
+        fig.update_layout(
+            height=altura,
+            margin=dict(l=8, r=8, t=42, b=8),
+            title_font_size=14,
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+        )
+    except Exception:
+        pass
+    return fig
+
+
 def aplicar_visual_departamentos():
-    """Recolhe a parte analítica da etapa Departamentos em um painel clicável."""
+    """Recolhe a análise da etapa Departamentos em um único painel compacto."""
     st.markdown(
         """
         <style>
@@ -35,6 +48,7 @@ def aplicar_visual_departamentos():
         .gm-dep-title{font-size:20px;font-weight:850;color:#1e2655;margin-top:3px}
         .gm-dep-sub{font-size:12px;color:#767d8d;margin-top:4px}
         div[data-testid="stExpander"] summary p{font-weight:800!important;color:#1e2655!important}
+        .gm-dep-analysis-note{font-size:11px;color:#7b8190;margin:0 0 6px 0}
         </style>
         """,
         unsafe_allow_html=True,
@@ -45,7 +59,13 @@ def aplicar_visual_departamentos():
     selectbox_original = _desembrulhar(st.selectbox, 'selectbox')
     radio_original = _desembrulhar(st.radio, 'radio')
 
-    estado = {'em_departamentos': False, 'painel': None, 'aguardando_grafico': False}
+    estado = {
+        'em_departamentos': False,
+        'primeiro_grafico': None,
+        'painel_criado': False,
+        'slot_segundo_grafico': None,
+        'aguardando_segundo_grafico': False,
+    }
 
     def markdown(body, *args, **kwargs):
         if body == '### Análise e distribuição por departamento':
@@ -62,32 +82,51 @@ def aplicar_visual_departamentos():
             )
         return markdown_original(body, *args, **kwargs)
 
+    def plotly_chart(fig, *args, **kwargs):
+        if not estado['em_departamentos']:
+            return plotly_original(fig, *args, **kwargs)
+
+        # O primeiro gráfico é guardado até o seletor de departamento aparecer.
+        # Assim conseguimos montar apenas um painel e posicionar os dois gráficos lado a lado.
+        if estado['primeiro_grafico'] is None and not estado['painel_criado']:
+            estado['primeiro_grafico'] = fig
+            return None
+
+        if estado.get('aguardando_segundo_grafico') and estado.get('slot_segundo_grafico') is not None:
+            estado['aguardando_segundo_grafico'] = False
+            fig = _compactar_figura(fig)
+            kw = dict(kwargs)
+            kw['use_container_width'] = True
+            return estado['slot_segundo_grafico'].plotly_chart(fig, *args, **kw)
+
+        return plotly_original(fig, *args, **kwargs)
+
     def selectbox(label, options, *args, **kwargs):
         if estado['em_departamentos'] and label == 'Ver evolução de departamento':
             exp = st.expander('Ver análise histórica e evolução', expanded=False)
-            estado['painel'] = exp
-            with exp:
-                st.caption('Consulte o histórico do supervisor e aprofunde em um departamento específico somente quando necessário.')
-                valor = selectbox_original('Departamento para analisar', options, *args, **kwargs)
-                estado['aguardando_grafico'] = True
-                return valor
-        return selectbox_original(label, options, *args, **kwargs)
+            estado['painel_criado'] = True
 
-    def plotly_chart(fig, *args, **kwargs):
-        if estado['em_departamentos']:
-            painel = estado.get('painel')
-            if painel is None:
-                # primeiro gráfico da etapa: também vai para o painel recolhido
-                exp = st.expander('Ver análise histórica e evolução', expanded=False)
-                estado['painel'] = exp
-                with exp:
-                    st.caption('Comparativo histórico dos departamentos do supervisor selecionado.')
-                    return plotly_original(fig, *args, **kwargs)
-            if estado.get('aguardando_grafico'):
-                estado['aguardando_grafico'] = False
-                with painel:
-                    return plotly_original(fig, *args, **kwargs)
-        return plotly_original(fig, *args, **kwargs)
+            with exp:
+                tabs = st.tabs(['📊 Gráficos'])
+                with tabs[0]:
+                    st.markdown(
+                        "<div class='gm-dep-analysis-note'>Compare o período de referência e consulte a evolução de um departamento específico.</div>",
+                        unsafe_allow_html=True,
+                    )
+                    valor = selectbox_original('Departamento para analisar', options, *args, **kwargs)
+                    c1, c2 = st.columns(2, gap='medium')
+                    with c1:
+                        if estado.get('primeiro_grafico') is not None:
+                            fig1 = _compactar_figura(estado['primeiro_grafico'])
+                            plotly_original(fig1, use_container_width=True)
+                    with c2:
+                        estado['slot_segundo_grafico'] = st.empty()
+                        estado['slot_segundo_grafico'].caption('Evolução mensal do departamento selecionado')
+
+            estado['aguardando_segundo_grafico'] = True
+            return valor
+
+        return selectbox_original(label, options, *args, **kwargs)
 
     def radio(label, options, *args, **kwargs):
         if estado['em_departamentos'] and label == 'Base para sugestão do departamento':
