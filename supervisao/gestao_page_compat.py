@@ -6,6 +6,7 @@ from gestao_fullscreen_css import aplicar_fullscreen_dialog
 from gestao_sugestao_ciclo_reapply import aplicar_sugestao_ciclo_estavel
 from gestao_wizard_visual import aplicar_visual_wizard_metas
 from gestao_supervisor_visual import aplicar_visual_supervisores
+from gestao_supervisor_analise_toggle import aplicar_toggle_analise_supervisores
 
 
 def aplicar_formatacao_comparativos():
@@ -17,3 +18,4 @@ def aplicar_formatacao_comparativos():
     aplicar_sugestao_ciclo_estavel()
     aplicar_visual_wizard_metas()
     aplicar_visual_supervisores()
+    aplicar_toggle_analise_supervisores()
