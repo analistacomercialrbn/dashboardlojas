@@ -1,12 +1,12 @@
 from io import BytesIO
-import unicodedata
+import copy
 
 import pandas as pd
 import requests
 import streamlit as st
 
 from access_control import auth_bootstrap, render_admin_users, scope_ativos
-from gestao_metas import render_gestao_metas
+import gestao_metas as gm
 
 st.set_page_config(page_title='Gestão de Metas', page_icon='🎯', layout='wide')
 
@@ -15,6 +15,33 @@ AUX_ID = '1h3XtB-2aMSMGhr5Ws7P-6nijKZc3zeqI'
 NAVY = '#1E2655'
 BG = '#F6F7FB'
 MUTED = '#737A8C'
+
+# Os lançamentos ficam numa branch separada da aplicação para evitar
+# que cada clique em Salvar dispare um novo deploy do Streamlit.
+gm.BRANCH = 'dashboard-data'
+
+# Evita consultar o GitHub novamente a cada rerun de widget.
+if not hasattr(gm, '_load_store_original_fast'):
+    gm._load_store_original_fast = gm._load_store
+if not hasattr(gm, '_save_store_original_fast'):
+    gm._save_store_original_fast = gm._save_store
+
+
+def _load_store_session():
+    if '_gm_store_cache' not in st.session_state:
+        st.session_state['_gm_store_cache'] = gm._load_store_original_fast()
+    return copy.deepcopy(st.session_state['_gm_store_cache'])
+
+
+def _save_store_session(store):
+    ok, msg = gm._save_store_original_fast(store)
+    if ok:
+        st.session_state['_gm_store_cache'] = copy.deepcopy(store)
+    return ok, msg
+
+
+gm._load_store = _load_store_session
+gm._save_store = _save_store_session
 
 st.markdown(f"""
 <style>
@@ -109,7 +136,9 @@ def ler_vendas(buf):
     return pd.read_excel(buf, sheet_name='Sheet1', header=header)
 
 
-@st.cache_data(ttl=30, show_spinner='Carregando histórico e metas...')
+# A base histórica é pesada e não precisa ser baixada de novo a cada salvamento.
+# 15 minutos mantém o uso fluido; há um botão de atualização manual na lateral.
+@st.cache_data(ttl=900, show_spinner='Carregando histórico e metas...')
 def load_data():
     v = ler_vendas(drive_bytes(VENDAS_ID))
     aux = drive_bytes(AUX_ID)
@@ -133,6 +162,11 @@ def load_data():
 
 
 USUARIO_ATUAL = auth_bootstrap()
+
+if st.sidebar.button('↻ Atualizar bases agora', use_container_width=True):
+    load_data.clear()
+    st.session_state.pop('_gm_store_cache', None)
+    st.rerun()
 
 try:
     vendas, rcas, metas = load_data()
@@ -160,7 +194,7 @@ if USUARIO_ATUAL.get('perfil') == 'RCA':
     st.info('A Gestão de Metas está disponível para Supervisor, Gerente e Admin. O perfil RCA permanece no acompanhamento operacional.')
     st.stop()
 
-render_gestao_metas(
+gm.render_gestao_metas(
     vendas=vendas,
     metas=metas,
     ativos=ativos,
