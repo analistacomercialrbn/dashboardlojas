@@ -371,6 +371,47 @@
       },
       "tipo": "Trimestral",
       "versoes": []
+    },
+    "2027|10,11,12": {
+      "ano": 2027,
+      "atualizado_em": "2026-09-17T20:26:33+00:00",
+      "criado_em": "2026-09-17T20:26:33+00:00",
+      "criado_por": "Coordenação Comercial",
+      "criterio_sugestao": "Média 50/50",
+      "eventos": [
+        {
+          "acao": "SALVAR_META_GLOBAL_E_DISTRIBUICAO_MENSAL",
+          "data_hora": "2026-09-17T20:26:33+00:00",
+          "observacao": "Outubro + Novembro + Dezembro/2027 | meta 24500000",
+          "status": "RASCUNHO",
+          "usuario": "Coordenação Comercial"
+        }
+      ],
+      "meses": [
+        10,
+        11,
+        12
+      ],
+      "meta_empresa": 24500000.0,
+      "meta_mensal": {
+        "10": 8500000.0,
+        "11": 8500000.0,
+        "12": 7500000.0
+      },
+      "metodologia_meta_mensal": {
+        "arredondamento": 10000,
+        "criterios": [
+          "mesmo período histórico",
+          "últimos meses fechados",
+          "sazonalidade do ciclo",
+          "ajuste manual"
+        ],
+        "modelo": "inteligente_por_ciclo_com_ajuste_manual"
+      },
+      "status": "RASCUNHO",
+      "supervisores": {},
+      "tipo": "Trimestral",
+      "versoes": []
     }
   },
   "plans": {}
