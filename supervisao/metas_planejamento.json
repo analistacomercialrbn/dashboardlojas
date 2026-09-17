@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-17T19:25:24+00:00",
+      "atualizado_em": "2026-09-17T19:50:59+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -95,6 +95,13 @@
           "acao": "GERAR_DEPARTAMENTOS_AUTOMATICO",
           "data_hora": "2026-09-17T19:25:24+00:00",
           "observacao": "BALCAO REBANHO",
+          "status": "AJUSTE_SOLICITADO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_META_GLOBAL_E_DISTRIBUICAO_MENSAL",
+          "data_hora": "2026-09-17T19:50:59+00:00",
+          "observacao": "Outubro + Novembro + Dezembro/2026 | meta 24500000",
           "status": "AJUSTE_SOLICITADO",
           "usuario": "Coordenação Comercial"
         }
