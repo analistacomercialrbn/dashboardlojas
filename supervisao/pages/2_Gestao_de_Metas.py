@@ -226,9 +226,6 @@ def render_historico_planejamento(vendas, ativos):
     melhor_periodo = mensal.idxmax() if not mensal.empty else None
     melhor_valor = float(mensal.max()) if not mensal.empty else 0
 
-    # Crescimento: sempre compara o ano atual acumulado até ontem com o
-    # mesmo intervalo do ano anterior. Ano/Mês dos filtros não alteram este
-    # indicador; Supervisor, RCA e Departamento continuam sendo respeitados.
     cres_base = hist.copy()
     if sup_sel:
         cres_base = cres_base[cres_base['SUPERVISOR'].astype(str).isin(sup_sel)]
@@ -280,6 +277,214 @@ def render_historico_planejamento(vendas, ativos):
     st.divider()
 
 
+def _reconciliar_dezenas_milhar(valores_brutos, total, passo=10000):
+    alvo = round(float(total) / passo) * passo
+    arred = {m: round(float(v) / passo) * passo for m, v in valores_brutos.items()}
+    diferenca_passos = int(round((alvo - sum(arred.values())) / passo))
+    residuos = {m: float(valores_brutos[m]) - arred[m] for m in arred}
+
+    while diferenca_passos > 0:
+        for m in sorted(arred, key=lambda x: residuos[x], reverse=True):
+            if diferenca_passos <= 0:
+                break
+            arred[m] += passo
+            diferenca_passos -= 1
+
+    while diferenca_passos < 0:
+        candidatos = [m for m in sorted(arred, key=lambda x: residuos[x]) if arred[m] >= passo]
+        if not candidatos:
+            break
+        for m in candidatos:
+            if diferenca_passos >= 0:
+                break
+            arred[m] -= passo
+            diferenca_passos += 1
+
+    return arred, alvo
+
+
+def _modelo_meta_inteligente(vendas, ativos, meta_anual, ano_meta):
+    permitidos = set(pd.to_numeric(ativos['COD_RCA'], errors='coerce').dropna().astype('Int64').tolist())
+    h = vendas[vendas['FATURADO'] & vendas['DATA_FAT'].notna()].copy()
+    if permitidos:
+        h = h[h['COD_RCA'].isin(permitidos)]
+    h = h[h['DATA_FAT'].dt.year < int(ano_meta)].copy()
+    if h.empty:
+        return pd.DataFrame(), {}, float(meta_anual)
+
+    h['ANO'] = h['DATA_FAT'].dt.year.astype(int)
+    h['MES'] = h['DATA_FAT'].dt.month.astype(int)
+    anos = sorted(h['ANO'].unique().tolist())[-3:]
+    h = h[h['ANO'].isin(anos)].copy()
+    matriz = h.groupby(['ANO','MES'])['VALOR'].sum().unstack(fill_value=0).reindex(index=anos, columns=range(1,13), fill_value=0)
+
+    pesos_ano = {a: i + 1 for i, a in enumerate(anos)}
+    base_vals = {}
+    medianas = {}
+    var_24_26 = {}
+    var_25_26 = {}
+    mom_med = {}
+
+    for mes in range(1, 13):
+        existentes = [(a, float(matriz.loc[a, mes])) for a in anos if float(matriz.loc[a, mes]) > 0]
+        if existentes:
+            soma_p = sum(pesos_ano[a] for a, _ in existentes)
+            media_pond = sum(v * pesos_ano[a] for a, v in existentes) / soma_p
+            mediana = float(pd.Series([v for _, v in existentes]).median())
+            base_vals[mes] = 0.60 * media_pond + 0.40 * mediana
+            medianas[mes] = mediana
+        else:
+            base_vals[mes] = 0.0
+            medianas[mes] = 0.0
+
+        v24 = float(matriz.loc[2024, mes]) if 2024 in matriz.index else 0.0
+        v25 = float(matriz.loc[2025, mes]) if 2025 in matriz.index else 0.0
+        v26 = float(matriz.loc[2026, mes]) if 2026 in matriz.index else 0.0
+        var_24_26[mes] = (v26 / v24 - 1) * 100 if v24 and v26 else pd.NA
+        var_25_26[mes] = (v26 / v25 - 1) * 100 if v25 and v26 else pd.NA
+
+        variacoes = []
+        if mes > 1:
+            for a in anos:
+                ant = float(matriz.loc[a, mes - 1])
+                atual = float(matriz.loc[a, mes])
+                if ant > 0 and atual > 0:
+                    variacoes.append((atual / ant - 1) * 100)
+        mom_med[mes] = float(pd.Series(variacoes).median()) if variacoes else pd.NA
+
+    total_base = sum(base_vals.values()) or 1.0
+    part_base = {m: base_vals[m] / total_base for m in range(1,13)}
+    scores = {}
+    for m in range(1,13):
+        sinais = []
+        if not pd.isna(var_25_26[m]):
+            sinais.append(float(var_25_26[m]) / 100)
+        if not pd.isna(var_24_26[m]):
+            v = max(float(var_24_26[m]) / 100, -0.95)
+            sinais.append((1 + v) ** 0.5 - 1)
+        trend = sum(sinais) / len(sinais) if sinais else 0.0
+        trend = max(-0.30, min(0.30, trend))
+        mom = 0.0 if pd.isna(mom_med[m]) else max(-0.30, min(0.30, float(mom_med[m]) / 100))
+        scores[m] = max(part_base[m] * (1 + 0.35 * trend + 0.20 * mom), 0.0001)
+
+    total_score = sum(scores.values()) or 1.0
+    pesos = {m: scores[m] / total_score for m in range(1,13)}
+    bruto = {m: float(meta_anual) * pesos[m] for m in range(1,13)}
+    arred, alvo = _reconciliar_dezenas_milhar(bruto, meta_anual)
+
+    meses_nome = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
+    ranking = sorted(base_vals, key=base_vals.get, reverse=True)
+    fortes = set(ranking[:4])
+    fracos = set(ranking[-4:])
+    linhas = []
+    for m in range(1,13):
+        classe = 'Mês forte' if m in fortes else ('Mês fraco' if m in fracos else 'Mês intermediário')
+        leitura = classe
+        if not pd.isna(var_25_26[m]):
+            leitura += f" • 25→26 {float(var_25_26[m]):+.1f}%"
+        if not pd.isna(mom_med[m]):
+            leitura += f" • vs mês anterior {float(mom_med[m]):+.1f}%"
+        linhas.append({
+            'Mês': meses_nome[m],
+            'Média histórica': base_vals[m],
+            'Mediana histórica': medianas[m],
+            'Part. sazonal %': part_base[m] * 100,
+            'Var. 2024→2026 %': var_24_26[m],
+            'Var. 2025→2026 %': var_25_26[m],
+            'Var. média vs mês anterior %': mom_med[m],
+            'Peso sugerido %': pesos[m] * 100,
+            'Meta sugerida': arred[m],
+            'Leitura do modelo': leitura,
+        })
+    return pd.DataFrame(linhas), arred, alvo
+
+
+def render_sugestao_meta_inteligente(vendas, ativos, usuario):
+    perfil = str(usuario.get('perfil') or '')
+    if perfil not in ('ADMIN', 'GERENTE'):
+        return
+
+    st.markdown('### Sugestão inteligente da meta anual')
+    st.caption('O modelo considera força histórica dos meses, mediana, comportamento mais recente, comparação 2024→2026 e 2025→2026 e a variação de um mês para o outro. As metas mensais são fechadas em dezenas de milhar.')
+
+    anos_hist = sorted(vendas.loc[vendas['FATURADO'], 'DATA_FAT'].dropna().dt.year.astype(int).unique().tolist())
+    ano_padrao = (max(anos_hist) + 1) if anos_hist else 2027
+    c1, c2 = st.columns([1, 2])
+    ano_meta = c1.selectbox('Ano da meta inteligente', sorted(set([ano_padrao, ano_padrao + 1, 2027])), index=0, key='gm_ai_ano')
+    valor_padrao = 112_000_000.0 if int(ano_meta) == 2027 else 0.0
+    meta_anual = c2.number_input('Meta anual', min_value=0.0, value=valor_padrao, step=10000.0, format='%.2f', key='gm_ai_meta')
+
+    tabela, sugestao, meta_arred = _modelo_meta_inteligente(vendas, ativos, meta_anual, ano_meta)
+    if tabela.empty:
+        st.info('Não há histórico suficiente para montar a sugestão.')
+        return
+
+    if abs(meta_arred - float(meta_anual)) > 0.01:
+        st.info(f'A meta anual foi ajustada para {brl(meta_arred)} para respeitar o padrão de dezenas de milhar.')
+
+    st.caption('Arredondamento padrão: somente múltiplos de R$ 10.000,00. Ex.: R$ 433.120,00 é tratado como aproximadamente R$ 430.000,00, e o saldo é redistribuído para que o total anual feche exatamente.')
+    edit = st.data_editor(
+        tabela,
+        use_container_width=True,
+        hide_index=True,
+        disabled=[c for c in tabela.columns if c != 'Meta sugerida'],
+        column_config={
+            'Média histórica': st.column_config.NumberColumn(format='localized'),
+            'Mediana histórica': st.column_config.NumberColumn(format='localized'),
+            'Part. sazonal %': st.column_config.NumberColumn(format='%.2f%%'),
+            'Var. 2024→2026 %': st.column_config.NumberColumn(format='%.1f%%'),
+            'Var. 2025→2026 %': st.column_config.NumberColumn(format='%.1f%%'),
+            'Var. média vs mês anterior %': st.column_config.NumberColumn(format='%.1f%%'),
+            'Peso sugerido %': st.column_config.NumberColumn(format='%.2f%%'),
+            'Meta sugerida': st.column_config.NumberColumn(format='localized', step=10000.0),
+        },
+        key=f'gm_ai_editor_{ano_meta}_{int(meta_arred)}'
+    )
+
+    valores_edit = pd.to_numeric(edit['Meta sugerida'], errors='coerce').fillna(0)
+    fora_padrao = valores_edit.apply(lambda v: abs(v / 10000 - round(v / 10000)) > 1e-9).any()
+    soma = float(valores_edit.sum())
+    d1, d2, d3 = st.columns(3)
+    d1.metric('Meta anual', brl(meta_arred))
+    d2.metric('Soma mensal', brl(soma))
+    d3.metric('Diferença', brl(meta_arred - soma))
+    if fora_padrao:
+        st.warning('Há valor mensal fora do padrão de R$ 10.000,00. Ajuste antes de aplicar.')
+    elif abs(meta_arred - soma) <= 0.01:
+        st.success('Distribuição mensal fechada e dentro do padrão de arredondamento.')
+    else:
+        st.warning('A soma mensal ainda não fecha a meta anual.')
+
+    if perfil == 'ADMIN' and st.button('Aplicar sugestão ao ciclo anual', use_container_width=True, disabled=fora_padrao or abs(meta_arred - soma) > 0.01, key=f'gm_ai_apply_{ano_meta}'):
+        mapa_mes = {'Jan':1,'Fev':2,'Mar':3,'Abr':4,'Mai':5,'Jun':6,'Jul':7,'Ago':8,'Set':9,'Out':10,'Nov':11,'Dez':12}
+        store = gm._load_store()
+        meses = list(range(1,13))
+        key = gm._cycle_key(int(ano_meta), meses)
+        cycle = copy.deepcopy(store.get('cycles', {}).get(key) or gm._empty_cycle(int(ano_meta), meses, 'Anual', meta_arred, usuario))
+        cycle['ano'] = int(ano_meta)
+        cycle['meses'] = meses
+        cycle['tipo'] = 'Anual'
+        cycle['meta_empresa'] = float(meta_arred)
+        cycle['meta_mensal'] = {str(mapa_mes[str(r['Mês'])]): float(r['Meta sugerida']) for _, r in edit.iterrows()}
+        cycle['metodologia_meta_mensal'] = {
+            'modelo': 'inteligente_historico',
+            'arredondamento': 10000,
+            'criterios': ['força histórica', 'mediana', '2024→2026', '2025→2026', 'variação mês a mês'],
+        }
+        cycle['atualizado_em'] = gm._now()
+        gm._event(cycle, 'APLICAR_SUGESTAO_INTELIGENTE_ANUAL', usuario, f'Meta anual {meta_arred:.0f}')
+        store.setdefault('cycles', {})[key] = cycle
+        ok, msg = gm._save_store(store)
+        (st.success if ok else st.error)(msg)
+        if ok:
+            st.session_state['gm2_ano'] = int(ano_meta)
+            st.session_state['gm2_tipo'] = 'Anual'
+            st.session_state['gm2_inicio'] = 'Janeiro'
+            st.rerun()
+
+    st.divider()
+
+
 USUARIO_ATUAL = auth_bootstrap()
 
 if st.sidebar.button('↻ Atualizar bases agora', use_container_width=True):
@@ -316,6 +521,7 @@ if USUARIO_ATUAL.get('perfil') == 'RCA':
 
 aplicar_formatacao_comparativos()
 render_historico_planejamento(vendas, ativos)
+render_sugestao_meta_inteligente(vendas, ativos, USUARIO_ATUAL)
 
 gm.render_gestao_metas(
     vendas=vendas,
