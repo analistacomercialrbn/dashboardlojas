@@ -5,10 +5,6 @@ import streamlit as st
 
 
 def aplicar_layout_simplificado():
-    if getattr(st, '_rbn_layout_simplificado', False):
-        return
-    st._rbn_layout_simplificado = True
-
     dataframe_original = st.dataframe
     editor_original = st.data_editor
 
