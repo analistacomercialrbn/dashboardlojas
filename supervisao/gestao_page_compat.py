@@ -8,6 +8,7 @@ from gestao_wizard_visual import aplicar_visual_wizard_metas
 from gestao_supervisor_visual import aplicar_visual_supervisores
 from gestao_supervisor_analise_toggle import aplicar_toggle_analise_supervisores
 from gestao_departamento_visual import aplicar_visual_departamentos
+from gestao_rca_visual import aplicar_visual_rcas
 
 
 def aplicar_formatacao_comparativos():
@@ -21,3 +22,4 @@ def aplicar_formatacao_comparativos():
     aplicar_visual_supervisores()
     aplicar_toggle_analise_supervisores()
     aplicar_visual_departamentos()
+    aplicar_visual_rcas()
