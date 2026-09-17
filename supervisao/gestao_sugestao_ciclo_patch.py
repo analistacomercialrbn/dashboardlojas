@@ -93,8 +93,7 @@ def _modelo_ciclo(vendas, ativos, ano_meta, meses, meta_informada=0.0):
     a1_total = float(a1['VALOR'].sum()) if not a1.empty else 0.0
 
     referencia = base_hist or a1_total or recent_total
-    sugestao_total = referencia * (1 + 0.50 * crescimento_recente)
-    sugestao_total = round(sugestao_total / 10000) * 10000
+    sugestao_total = round((referencia * (1 + 0.50 * crescimento_recente)) / 10000) * 10000
     meta_base = float(meta_informada) if float(meta_informada or 0) > 0 else float(sugestao_total)
 
     soma_base = sum(base_mes.values()) or 1.0
@@ -128,15 +127,14 @@ def _modelo_ciclo(vendas, ativos, ano_meta, meses, meta_informada=0.0):
     }
 
 
-def _desembrulhar_number_input(fn):
-    """Remove wrappers antigos deste patch para impedir duplicação entre reruns."""
+def _desembrulhar(fn, nome):
     atual = fn
     vistos = set()
-    for _ in range(12):
+    for _ in range(16):
         if id(atual) in vistos:
             break
         vistos.add(id(atual))
-        if getattr(atual, '__module__', '') != __name__ or getattr(atual, '__name__', '') != 'number_input':
+        if getattr(atual, '__module__', '') != __name__ or getattr(atual, '__name__', '') != nome:
             break
         proximo = None
         for cell in getattr(atual, '__closure__', None) or []:
@@ -144,7 +142,7 @@ def _desembrulhar_number_input(fn):
                 obj = cell.cell_contents
             except Exception:
                 continue
-            if callable(obj) and getattr(obj, '__name__', '') == 'number_input':
+            if callable(obj) and getattr(obj, '__name__', '') == nome:
                 proximo = obj
                 break
         if proximo is None:
@@ -154,8 +152,6 @@ def _desembrulhar_number_input(fn):
 
 
 def aplicar_sugestao_inteligente_ciclo():
-    # A antiga seção anual deixa de ser exibida; a sugestão passa a existir
-    # somente dentro da Meta da Empresa, respeitando o ciclo selecionado.
     caller = inspect.currentframe().f_back
     while caller is not None:
         if 'render_sugestao_meta_inteligente' in caller.f_globals:
@@ -163,11 +159,37 @@ def aplicar_sugestao_inteligente_ciclo():
             break
         caller = caller.f_back
 
-    # IMPORTANTE: o Streamlit preserva o módulo entre reruns. Se empilharmos
-    # wrappers, o mesmo bloco é desenhado duas vezes e gera DuplicateElementKey.
-    # Sempre partimos do number_input original, removendo wrappers antigos.
-    number_input_original = _desembrulhar_number_input(st.number_input)
-    st._gm_ciclo_number_input_original = number_input_original
+    number_input_original = _desembrulhar(st.number_input, 'number_input')
+    markdown_original = _desembrulhar(st.markdown, 'markdown')
+    caption_original = _desembrulhar(st.caption, 'caption')
+    button_original = _desembrulhar(st.button, 'button')
+    data_editor_original = st.data_editor
+
+    estado = {'ocultar_temporal': False}
+
+    def markdown(body, *args, **kwargs):
+        if body == '#### Distribuição temporal da meta':
+            estado['ocultar_temporal'] = True
+            return None
+        return markdown_original(body, *args, **kwargs)
+
+    def caption(body, *args, **kwargs):
+        if estado['ocultar_temporal'] and isinstance(body, str) and body.startswith('Soma mensal:'):
+            return None
+        return caption_original(body, *args, **kwargs)
+
+    def data_editor(data=None, *args, **kwargs):
+        key = str(kwargs.get('key') or '')
+        if estado['ocultar_temporal'] and key.startswith('gm2_month_'):
+            return data.copy() if isinstance(data, pd.DataFrame) else data
+        return data_editor_original(data, *args, **kwargs)
+
+    def button(label, *args, **kwargs):
+        key = str(kwargs.get('key') or '')
+        if estado['ocultar_temporal'] and key.startswith('gm2_save_global_'):
+            estado['ocultar_temporal'] = False
+            return False
+        return button_original(label, *args, **kwargs)
 
     def number_input(label, *args, **kwargs):
         key = str(kwargs.get('key') or '')
@@ -193,7 +215,7 @@ def aplicar_sugestao_inteligente_ciclo():
             return valor
 
         st.markdown('#### Sugestão inteligente do ciclo')
-        st.caption('A sugestão respeita exatamente o período definido acima. Para um ciclo trimestral, por exemplo, analisa os três meses do ciclo, compara com o mesmo período histórico e usa os três últimos meses fechados como sinal de tendência.')
+        st.caption('A tabela abaixo é a própria distribuição mensal do ciclo. Você pode ajustar os valores sugeridos antes de salvar.')
 
         modelo = _modelo_ciclo(vendas, ativos, ano, meses, valor)
         if not modelo:
@@ -206,7 +228,7 @@ def aplicar_sugestao_inteligente_ciclo():
         c3.metric(f'Últimos {len(meses)} mês(es)', brl(modelo['recent_total']))
 
         if float(valor or 0) > 0:
-            st.caption(f'A distribuição abaixo usa a meta informada de {brl(valor)}. A referência calculada pelo modelo para este ciclo é {brl(modelo["meta_sugerida"])}.')
+            st.caption(f'A distribuição usa a meta informada de {brl(valor)}. A referência calculada pelo modelo para este ciclo é {brl(modelo["meta_sugerida"])}.')
         else:
             st.caption(f'Como a meta do ciclo está zerada, a distribuição usa automaticamente a sugestão de {brl(modelo["meta_sugerida"])}.')
 
@@ -226,12 +248,25 @@ def aplicar_sugestao_inteligente_ciclo():
 
         valores = pd.to_numeric(edit['Meta sugerida'], errors='coerce').fillna(0.0)
         soma = float(valores.sum())
-        d1,d2 = st.columns(2)
-        d1.metric('Meta usada na distribuição', brl(modelo['meta_base']))
+        diferenca = float(modelo['meta_base']) - soma
+        d1,d2,d3 = st.columns(3)
+        d1.metric('Meta do ciclo', brl(modelo['meta_base']))
         d2.metric('Soma mensal', brl(soma))
+        d3.metric('Diferença', brl(diferenca))
+
+        if abs(diferenca) <= 0.01:
+            st.success('Distribuição mensal fechada. Esta será a distribuição oficial do ciclo ao salvar.')
+        else:
+            st.warning('A soma dos meses precisa fechar a meta do ciclo antes de salvar.')
 
         if perfil == 'ADMIN':
-            if st.button('Aplicar sugestão a este ciclo', use_container_width=True, key=f'gm_ciclo_aplicar_{ano}_{"_".join(map(str,meses))}'):
+            clicou = st.button(
+                'Salvar ciclo e meta global',
+                use_container_width=True,
+                disabled=abs(diferenca) > 0.01,
+                key=f'gm_ciclo_aplicar_{ano}_{"_".join(map(str,meses))}'
+            )
+            if clicou:
                 mapa_nome = {v:k for k,v in gm.MESES.items()}
                 store = gm._load_store()
                 cycle_key = gm._cycle_key(ano, meses)
@@ -242,12 +277,12 @@ def aplicar_sugestao_inteligente_ciclo():
                 cycle['meta_empresa'] = float(modelo['meta_base'])
                 cycle['meta_mensal'] = {str(mapa_nome[str(r['Mês'])]): float(r['Meta sugerida']) for _,r in edit.iterrows()}
                 cycle['metodologia_meta_mensal'] = {
-                    'modelo': 'inteligente_por_ciclo',
+                    'modelo': 'inteligente_por_ciclo_com_ajuste_manual',
                     'arredondamento': 10000,
-                    'criterios': ['mesmo período histórico','últimos meses fechados','sazonalidade do ciclo'],
+                    'criterios': ['mesmo período histórico','últimos meses fechados','sazonalidade do ciclo','ajuste manual'],
                 }
                 cycle['atualizado_em'] = gm._now()
-                gm._event(cycle, 'APLICAR_SUGESTAO_INTELIGENTE_CICLO', usuario, f'{gm._period_label(ano,meses)} | meta {modelo["meta_base"]:.0f}')
+                gm._event(cycle, 'SALVAR_META_GLOBAL_E_DISTRIBUICAO_MENSAL', usuario, f'{gm._period_label(ano,meses)} | meta {modelo["meta_base"]:.0f}')
                 store.setdefault('cycles',{})[cycle_key] = cycle
                 ok,msg = gm._save_store(store)
                 (st.success if ok else st.error)(msg)
@@ -258,3 +293,7 @@ def aplicar_sugestao_inteligente_ciclo():
         return valor
 
     st.number_input = number_input
+    st.markdown = markdown
+    st.caption = caption
+    st.data_editor = data_editor
+    st.button = button
