@@ -42,18 +42,23 @@ def _distribuir(total, meses, pesos):
 
 
 def aplicar_supervisores_unificados():
-    """Une meta total e distribuição mensal no mesmo card do supervisor."""
+    """Une meta total e distribuição mensal em uma linha horizontal por supervisor."""
     st.markdown(
         """
         <style>
-        .gm-su-card{background:#fff;border:1px solid #e3e7ef;border-radius:16px;padding:14px 15px 12px;margin:5px 0 10px}
-        .gm-su-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px}
-        .gm-su-name{font-size:13px;font-weight:900;color:#1e2655}.gm-su-share{font-size:10px;font-weight:800;color:#6f7687;background:#f3f5f9;border-radius:999px;padding:4px 8px}
-        .gm-su-ref{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px}.gm-su-ref span{display:block;font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:800}.gm-su-ref strong{display:block;font-size:10px;color:#3d4459;margin-top:2px}
-        .gm-su-month-title{font-size:9px;color:#7f8696;font-weight:850;text-transform:uppercase;letter-spacing:.05em;margin:8px 0 3px}
-        .gm-su-status{border-radius:12px;padding:8px 10px;font-size:10px;font-weight:750;margin:8px 0 2px}.gm-su-status.ok{background:#f2faf5;border:1px solid #d7eadf;color:#356b46}.gm-su-status.warn{background:#fff9f0;border:1px solid #eadfc4;color:#816422}
+        .gm-su-line-head{display:grid;grid-template-columns:2.25fr 1.05fr 1.05fr 1.15fr repeat(3,1.05fr) 1.05fr;gap:10px;padding:0 12px 6px;margin-top:8px;align-items:end}
+        .gm-su-line-head span{font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:850;letter-spacing:.04em;text-align:center}
+        .gm-su-line-head span:first-child{text-align:left}
+        .gm-su-namebox{min-height:58px;display:flex;flex-direction:column;justify-content:center}
+        .gm-su-name{font-size:13px;font-weight:900;color:#1e2655;line-height:1.2}
+        .gm-su-sub{font-size:9px;color:#8b91a0;margin-top:4px}
+        .gm-su-refbox{min-height:58px;display:flex;flex-direction:column;justify-content:center;text-align:center}
+        .gm-su-refbox span{font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:800}
+        .gm-su-refbox strong{font-size:11px;color:#30384d;margin-top:3px}
+        .gm-su-status{border-radius:10px;padding:8px 6px;font-size:9px;font-weight:800;text-align:center;margin-top:23px;white-space:nowrap}.gm-su-status.ok{background:#f2faf5;border:1px solid #d7eadf;color:#356b46}.gm-su-status.warn{background:#fff9f0;border:1px solid #eadfc4;color:#816422}
         .gm-su-month-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 4px}.gm-su-month-box{background:#fff;border:1px solid #e4e8ef;border-radius:13px;padding:9px 11px}.gm-su-month-box span{display:block;font-size:8px;color:#8e95a4;text-transform:uppercase;font-weight:850}.gm-su-month-box strong{display:block;font-size:12px;color:#1e2655;margin-top:2px}.gm-su-month-box small{font-size:8px;color:#8a90a0}
-        @media(max-width:850px){.gm-su-ref,.gm-su-month-summary{grid-template-columns:1fr}.gm-su-card{padding:12px}}
+        div[data-testid="stVerticalBlockBorderWrapper"]{border-radius:14px!important}
+        @media(max-width:1000px){.gm-su-line-head{display:none}.gm-su-month-summary{grid-template-columns:1fr}.gm-su-status{margin-top:0}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -75,8 +80,18 @@ def aplicar_supervisores_unificados():
         sups = cycle.setdefault('supervisores', {})
         saida = data.copy()
 
-        st.caption('Defina o total e o mês a mês no mesmo card. A soma dos meses deve fechar o total de cada supervisor.')
-        cols = st.columns(2)
+        st.caption('Cada supervisor ocupa uma única linha: referência, meta total e distribuição mensal ficam lado a lado.')
+
+        nomes_meses = [gm.MESES[m] for m in meses]
+        while len(nomes_meses) < 3:
+            nomes_meses.append('')
+        st.markdown(
+            "<div class='gm-su-line-head'>"
+            "<span>Supervisor</span><span>Histórico</span><span>Meta sugerida</span><span>Meta total</span>"
+            + ''.join(f"<span>{nome}</span>" for nome in nomes_meses[:3])
+            + "<span>Status</span></div>",
+            unsafe_allow_html=True,
+        )
 
         for idx, row in data.reset_index(drop=True).iterrows():
             sup = str(row.get('Supervisor', 'Supervisor'))
@@ -90,44 +105,48 @@ def aplicar_supervisores_unificados():
             if not any(abs(_num(mensal.get(str(m)))) > 0.0001 for m in meses):
                 mensal.update(_distribuir(atual, meses, meta_mensal))
 
-            with cols[idx % 2]:
-                st.markdown(
-                    f"""
-                    <div class='gm-su-card'>
-                      <div class='gm-su-head'><div class='gm-su-name'>{sup}</div><div class='gm-su-share'>{part:.1f}% ref.</div></div>
-                      <div class='gm-su-ref'>
-                        <div><span>Histórico recente</span><strong>{_fmt(hist)}</strong></div>
-                        <div><span>Meta sugerida</span><strong>{_fmt(sugerida)}</strong></div>
-                        <div><span>Meta atual</span><strong>{_fmt(atual)}</strong></div>
-                      </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+            with st.container(border=True):
+                specs = [2.25, 1.05, 1.05, 1.15] + [1.05] * len(meses) + [1.05]
+                cols = st.columns(specs, vertical_alignment='center')
 
-                total_novo = st.number_input(
-                    f'Meta total • {sup}', min_value=0.0, value=atual, step=10000.0,
-                    format='%.2f', key=f'gm_su_total_{key}_{idx}'
-                )
+                with cols[0]:
+                    st.markdown(
+                        f"<div class='gm-su-namebox'><div class='gm-su-name'>{sup}</div><div class='gm-su-sub'>{part:.1f}% de participação de referência</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                with cols[1]:
+                    st.markdown(
+                        f"<div class='gm-su-refbox'><span>Histórico recente</span><strong>{_fmt(hist)}</strong></div>",
+                        unsafe_allow_html=True,
+                    )
+                with cols[2]:
+                    st.markdown(
+                        f"<div class='gm-su-refbox'><span>Meta sugerida</span><strong>{_fmt(sugerida)}</strong></div>",
+                        unsafe_allow_html=True,
+                    )
+                with cols[3]:
+                    total_novo = st.number_input(
+                        'Meta total', min_value=0.0, value=atual, step=10000.0,
+                        format='%.2f', key=f'gm_su_total_{key}_{idx}', label_visibility='collapsed'
+                    )
                 saida.loc[saida.index[idx], 'Meta definida'] = float(total_novo)
 
-                st.markdown("<div class='gm-su-month-title'>Distribuição mensal</div>", unsafe_allow_html=True)
-                mcols = st.columns(max(1, len(meses)))
                 novos = {}
                 for j, m in enumerate(meses):
-                    with mcols[j]:
+                    with cols[4 + j]:
                         novos[str(m)] = st.number_input(
                             gm.MESES[m], min_value=0.0, value=_num(mensal.get(str(m))), step=10000.0,
-                            format='%.2f', key=f'gm_su_month_{key}_{idx}_{m}'
+                            format='%.2f', key=f'gm_su_month_{key}_{idx}_{m}', label_visibility='collapsed'
                         )
                 rec['mensal'] = {str(m): float(novos[str(m)]) for m in meses}
                 soma_m = sum(rec['mensal'].values())
                 dif = float(total_novo) - soma_m
                 ok = abs(dif) <= 0.02
-                st.markdown(
-                    f"<div class='gm-su-status {'ok' if ok else 'warn'}'>{'✓' if ok else '!'} Meses: {_fmt(soma_m)} • Diferença: {_fmt(dif)}</div>",
-                    unsafe_allow_html=True,
-                )
+                with cols[-1]:
+                    st.markdown(
+                        f"<div class='gm-su-status {'ok' if ok else 'warn'}'>{'✓ Fechado' if ok else 'Ajustar'}<br><span style='font-weight:600'>{_fmt(dif)}</span></div>",
+                        unsafe_allow_html=True,
+                    )
 
         total = float(pd.to_numeric(saida['Meta definida'], errors='coerce').fillna(0).sum())
         st.divider()
