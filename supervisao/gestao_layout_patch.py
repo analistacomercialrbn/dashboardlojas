@@ -53,6 +53,56 @@ def aplicar_layout_simplificado():
         st.session_state['gm_pivot_cols'] = ['Ano']
         st.session_state['gm_pivot_totals'] = True
 
+    def _flatten_columns(df):
+        out = df.copy()
+        if isinstance(out.columns, pd.MultiIndex):
+            nomes = []
+            usados = {}
+            for col in out.columns:
+                partes = [str(p) for p in col if p not in (None, '', 'VALOR') and str(p) != 'nan']
+                nome = ' | '.join(partes) if partes else 'Faturamento'
+                usados[nome] = usados.get(nome, 0) + 1
+                if usados[nome] > 1:
+                    nome = f'{nome} ({usados[nome]})'
+                nomes.append(nome)
+            out.columns = nomes
+        else:
+            out.columns = [str(c) for c in out.columns]
+        return out
+
+    def _preparar_exibicao(tabela, linhas, totais):
+        if isinstance(tabela, pd.Series):
+            tabela = tabela.to_frame('Faturamento')
+
+        tabela = tabela.copy()
+
+        # Total horizontal antes de transformar o índice em colunas normais.
+        if totais and tabela.shape[1] > 1:
+            tabela['Total'] = tabela.select_dtypes(include='number').sum(axis=1)
+
+        tabela = tabela.reset_index()
+        tabela = _flatten_columns(tabela)
+
+        # Garante tipos homogêneos para o PyArrow/Streamlit.
+        qtd_linhas = len(linhas)
+        label_cols = list(tabela.columns[:qtd_linhas]) if qtd_linhas else []
+        for c in label_cols:
+            tabela[c] = tabela[c].astype('string').fillna('')
+
+        valor_cols = [c for c in tabela.columns if c not in label_cols]
+        for c in valor_cols:
+            tabela[c] = pd.to_numeric(tabela[c], errors='coerce').fillna(0.0).astype(float)
+
+        if totais and valor_cols:
+            total_row = {c: '' for c in tabela.columns}
+            if label_cols:
+                total_row[label_cols[0]] = 'Total'
+            for c in valor_cols:
+                total_row[c] = float(tabela[c].sum())
+            tabela = pd.concat([tabela, pd.DataFrame([total_row])], ignore_index=True)
+
+        return tabela
+
     def _render_tabela_dinamica(base):
         _normalizar_estado()
         st.caption('Tabela dinâmica: escolha os campos das linhas e das colunas. Os filtros do histórico acima continuam sendo respeitados.')
@@ -97,8 +147,14 @@ def aplicar_layout_simplificado():
 
         x = base.copy()
         ordem_meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+        # Todos os campos de dimensão viram texto antes do pivot. Isso evita
+        # mistura de inteiros com o rótulo Total, que quebrava o PyArrow.
+        x['ANO'] = pd.to_numeric(x['ANO'], errors='coerce').astype('Int64').astype('string')
         x['MES'] = pd.Categorical(x['MES'], categories=ordem_meses, ordered=True)
-        x['ANO'] = pd.to_numeric(x['ANO'], errors='coerce').astype('Int64')
+        for c in ['SUPERVISOR', 'RCA', 'DEPARTAMENTO']:
+            x[c] = x[c].astype('string').fillna('')
+        x['VALOR'] = pd.to_numeric(x['VALOR'], errors='coerce').fillna(0.0).astype(float)
 
         idx = [mapa[c] for c in linhas]
         cols = [mapa[c] for c in colunas]
@@ -114,36 +170,16 @@ def aplicar_layout_simplificado():
             kwargs_pivot['index'] = idx
         if cols:
             kwargs_pivot['columns'] = cols
-        if totais and idx and cols:
-            kwargs_pivot['margins'] = True
-            kwargs_pivot['margins_name'] = 'Total'
 
         tabela = pd.pivot_table(x, **kwargs_pivot)
-
-        if totais and idx and not cols:
-            tabela.loc['Total'] = tabela.sum(numeric_only=True)
-        elif totais and cols and not idx:
-            if isinstance(tabela, pd.Series):
-                tabela = tabela.to_frame().T
-            tabela['Total'] = tabela.sum(axis=1, numeric_only=True)
-
-        ren = {v: k for k, v in mapa.items()}
-        if isinstance(tabela, pd.Series):
-            tabela = tabela.to_frame('Faturamento')
-        if isinstance(tabela.index, pd.MultiIndex):
-            tabela.index = tabela.index.set_names([ren.get(n, n) for n in tabela.index.names])
-        else:
-            tabela.index.name = ren.get(tabela.index.name, tabela.index.name)
-        if isinstance(tabela.columns, pd.MultiIndex):
-            tabela.columns = tabela.columns.set_names([ren.get(n, n) for n in tabela.columns.names])
-        else:
-            tabela.columns.name = ren.get(tabela.columns.name, tabela.columns.name)
+        exibicao = _preparar_exibicao(tabela, linhas, totais)
 
         st.caption('Valor exibido: Faturamento (R$) • Você pode inverter Ano/Mês ou detalhar RCA → Departamento.')
         dataframe_original(
-            tabela,
+            exibicao,
             use_container_width=True,
-            height=min(650, max(250, 38 * (len(tabela) + 2))),
+            hide_index=True,
+            height=min(650, max(250, 38 * (len(exibicao) + 2))),
         )
 
     def dataframe(data=None, *args, **kwargs):
