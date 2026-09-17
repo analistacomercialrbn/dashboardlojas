@@ -191,7 +191,6 @@ def render_historico_planejamento(vendas, ativos):
 
     anos = sorted(hist['ANO'].dropna().astype(int).unique().tolist())
     supervisores = sorted(hist['SUPERVISOR'].dropna().astype(str).unique().tolist())
-    departamentos = sorted(hist['DEPARTAMENTO'].dropna().astype(str).unique().tolist())
 
     f1, f2, f3 = st.columns(3)
     anos_sel = f1.multiselect('Ano', anos, default=anos, key='gm_hist_anos')
@@ -227,22 +226,36 @@ def render_historico_planejamento(vendas, ativos):
     melhor_periodo = mensal.idxmax() if not mensal.empty else None
     melhor_valor = float(mensal.max()) if not mensal.empty else 0
 
-    crescimento = pd.NA
-    anos_base = sorted(base['ANO'].dropna().astype(int).unique().tolist())
-    if anos_base:
-        atual = max(anos_base)
-        anterior = atual - 1
-        atual_val = float(base.loc[base['ANO'].eq(atual), 'VALOR'].sum())
-        anterior_val = float(base.loc[base['ANO'].eq(anterior), 'VALOR'].sum())
-        if anterior_val:
-            crescimento = (atual_val / anterior_val - 1) * 100
+    # Crescimento: sempre compara o ano atual acumulado até ontem com o
+    # mesmo intervalo do ano anterior. Ano/Mês dos filtros não alteram este
+    # indicador; Supervisor, RCA e Departamento continuam sendo respeitados.
+    cres_base = hist.copy()
+    if sup_sel:
+        cres_base = cres_base[cres_base['SUPERVISOR'].astype(str).isin(sup_sel)]
+    if rca_sel:
+        cres_base = cres_base[cres_base['RCA'].astype(str).isin(rca_sel)]
+    if dep_sel:
+        cres_base = cres_base[cres_base['DEPARTAMENTO'].astype(str).isin(dep_sel)]
+
+    ontem = pd.Timestamp.now(tz='America/Fortaleza').tz_localize(None).normalize() - pd.Timedelta(days=1)
+    ano_atual = int(ontem.year)
+    ano_anterior = ano_atual - 1
+    inicio_atual = pd.Timestamp(year=ano_atual, month=1, day=1)
+    inicio_anterior = pd.Timestamp(year=ano_anterior, month=1, day=1)
+    fim_anterior = ontem - pd.DateOffset(years=1)
+
+    mask_atual = cres_base['DATA_FAT'].between(inicio_atual, ontem, inclusive='both')
+    mask_anterior = cres_base['DATA_FAT'].between(inicio_anterior, fim_anterior, inclusive='both')
+    atual_val = float(cres_base.loc[mask_atual, 'VALOR'].sum())
+    anterior_val = float(cres_base.loc[mask_anterior, 'VALOR'].sum())
+    crescimento = (atual_val / anterior_val - 1) * 100 if anterior_val else pd.NA
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric('Faturamento filtrado', brl(total))
     k2.metric('Média mensal', brl(media_mensal))
     melhor_nome = '—' if melhor_periodo is None else f"{meses_nomes[int(melhor_periodo.month)]}/{melhor_periodo.year}"
     k3.metric('Melhor mês', brl(melhor_valor), melhor_nome)
-    k4.metric('Crescimento x ano anterior', pct(crescimento))
+    k4.metric(f'Crescimento x ano anterior • até {ontem.strftime("%d/%m")}', pct(crescimento))
 
     pivot = pd.pivot_table(base, index='MES_NUM', columns='ANO', values='VALOR', aggfunc='sum', fill_value=0)
     pivot = pivot.reindex([m for m in range(1,13) if meses_nomes[m] in meses_sel or not meses_sel]).fillna(0)
