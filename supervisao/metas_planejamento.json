@@ -374,7 +374,7 @@
     },
     "2027|10,11,12": {
       "ano": 2027,
-      "atualizado_em": "2026-09-17T20:26:33+00:00",
+      "atualizado_em": "2026-09-17T20:32:10+00:00",
       "criado_em": "2026-09-17T20:26:33+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -382,6 +382,13 @@
         {
           "acao": "SALVAR_META_GLOBAL_E_DISTRIBUICAO_MENSAL",
           "data_hora": "2026-09-17T20:26:33+00:00",
+          "observacao": "Outubro + Novembro + Dezembro/2027 | meta 24500000",
+          "status": "RASCUNHO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_META_GLOBAL_E_DISTRIBUICAO_MENSAL",
+          "data_hora": "2026-09-17T20:32:10+00:00",
           "observacao": "Outubro + Novembro + Dezembro/2027 | meta 24500000",
           "status": "RASCUNHO",
           "usuario": "Coordenação Comercial"
