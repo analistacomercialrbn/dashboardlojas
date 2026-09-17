@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-17T01:39:15+00:00",
+      "atualizado_em": "2026-09-17T01:39:42+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -24,6 +24,13 @@
         {
           "acao": "SALVAR_DISTRIBUICAO_SUPERVISOR",
           "data_hora": "2026-09-17T01:39:15+00:00",
+          "observacao": "",
+          "status": "DISTRIBUIDO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DISTRIBUICAO_SUPERVISOR",
+          "data_hora": "2026-09-17T01:39:42+00:00",
           "observacao": "",
           "status": "DISTRIBUIDO",
           "usuario": "Coordenação Comercial"
