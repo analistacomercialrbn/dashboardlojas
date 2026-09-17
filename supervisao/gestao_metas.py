@@ -258,10 +258,10 @@ def render_gestao_metas(vendas,metas,ativos,usuario,brl,brl_compacto,pct,kpi):
             filtro=st.multiselect('Filtrar supervisor',hist_sup['Supervisor'].tolist(),default=[],placeholder='Todos',key=f'gm2_sup_filter_{key}')
             ana=hist_sup[hist_sup['Supervisor'].isin(filtro)].copy() if filtro else hist_sup.copy()
             _history_chart(ana,'Supervisor','Faturamento por supervisor — comparação de períodos')
-            tbl=ana.copy()
-            st.dataframe(tbl,use_container_width=True,hide_index=True,column_config={'Últimos meses':st.column_config.NumberColumn(format='R$ %.2f'),'Mesmo período A-1':st.column_config.NumberColumn(format='R$ %.2f'),'Part. Últimos meses':st.column_config.NumberColumn(format='%.2f%%'),'Part. Mesmo período A-1':st.column_config.NumberColumn(format='%.2f%%'),'Crescimento recente x A-1':st.column_config.NumberColumn(format='%.2f%%')})
             sup_det=st.selectbox('Ver evolução de um supervisor',['Todos']+ana['Supervisor'].tolist(),key=f'gm2_sup_det_{key}')
             _monthly_chart(vendas,None if sup_det=='Todos' else sup_det)
+            tbl=ana.copy()
+            st.dataframe(tbl,use_container_width=True,hide_index=True,column_config={'Últimos meses':st.column_config.NumberColumn(format='R$ %.2f'),'Mesmo período A-1':st.column_config.NumberColumn(format='R$ %.2f'),'Part. Últimos meses':st.column_config.NumberColumn(format='%.2f%%'),'Part. Mesmo período A-1':st.column_config.NumberColumn(format='%.2f%%'),'Crescimento recente x A-1':st.column_config.NumberColumn(format='%.2f%%')})
 
             st.divider()
             st.markdown('### Distribuição da meta por supervisor')
