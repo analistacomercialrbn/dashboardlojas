@@ -2,6 +2,7 @@ from io import BytesIO
 import copy
 
 import pandas as pd
+import plotly.express as px
 import requests
 import streamlit as st
 
@@ -170,6 +171,102 @@ def load_data():
     return v, rca, met
 
 
+def render_historico_planejamento(vendas, ativos):
+    st.markdown('### Histórico para planejamento')
+    st.caption('Use os filtros para explorar o faturamento antes de definir a meta do ciclo. A visão respeita o escopo de acesso do usuário.')
+
+    permitidos = set(pd.to_numeric(ativos['COD_RCA'], errors='coerce').dropna().astype('Int64').tolist())
+    hist = vendas[vendas['FATURADO']].copy()
+    if permitidos:
+        hist = hist[hist['COD_RCA'].isin(permitidos)]
+
+    if hist.empty:
+        st.info('Sem faturamento histórico disponível para o seu escopo.')
+        return
+
+    hist['ANO'] = hist['DATA_FAT'].dt.year.astype('Int64')
+    hist['MES_NUM'] = hist['DATA_FAT'].dt.month.astype('Int64')
+    meses_nomes = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
+    hist['MES'] = hist['MES_NUM'].map(meses_nomes)
+
+    anos = sorted(hist['ANO'].dropna().astype(int).unique().tolist())
+    supervisores = sorted(hist['SUPERVISOR'].dropna().astype(str).unique().tolist())
+    departamentos = sorted(hist['DEPARTAMENTO'].dropna().astype(str).unique().tolist())
+
+    f1, f2, f3 = st.columns(3)
+    anos_sel = f1.multiselect('Ano', anos, default=anos, key='gm_hist_anos')
+    meses_sel = f2.multiselect('Mês', list(meses_nomes.values()), default=list(meses_nomes.values()), key='gm_hist_meses')
+    sup_sel = f3.multiselect('Supervisor', supervisores, default=[], placeholder='Todos', key='gm_hist_sup')
+
+    base = hist.copy()
+    if anos_sel:
+        base = base[base['ANO'].isin(anos_sel)]
+    if meses_sel:
+        base = base[base['MES'].isin(meses_sel)]
+    if sup_sel:
+        base = base[base['SUPERVISOR'].astype(str).isin(sup_sel)]
+
+    rcas_disp = sorted(base['RCA'].dropna().astype(str).unique().tolist())
+    deps_disp = sorted(base['DEPARTAMENTO'].dropna().astype(str).unique().tolist())
+    f4, f5 = st.columns(2)
+    rca_sel = f4.multiselect('RCA / Vendedor', rcas_disp, default=[], placeholder='Todos', key='gm_hist_rca')
+    dep_sel = f5.multiselect('Departamento', deps_disp, default=[], placeholder='Todos', key='gm_hist_dep')
+    if rca_sel:
+        base = base[base['RCA'].astype(str).isin(rca_sel)]
+    if dep_sel:
+        base = base[base['DEPARTAMENTO'].astype(str).isin(dep_sel)]
+
+    if base.empty:
+        st.warning('Nenhum faturamento encontrado para os filtros selecionados.')
+        return
+
+    total = float(base['VALOR'].sum())
+    meses_com_venda = base['DATA_FAT'].dt.to_period('M').nunique()
+    media_mensal = total / meses_com_venda if meses_com_venda else 0
+    mensal = base.groupby(base['DATA_FAT'].dt.to_period('M'))['VALOR'].sum().sort_index()
+    melhor_periodo = mensal.idxmax() if not mensal.empty else None
+    melhor_valor = float(mensal.max()) if not mensal.empty else 0
+
+    crescimento = pd.NA
+    anos_base = sorted(base['ANO'].dropna().astype(int).unique().tolist())
+    if anos_base:
+        atual = max(anos_base)
+        anterior = atual - 1
+        atual_val = float(base.loc[base['ANO'].eq(atual), 'VALOR'].sum())
+        anterior_val = float(base.loc[base['ANO'].eq(anterior), 'VALOR'].sum())
+        if anterior_val:
+            crescimento = (atual_val / anterior_val - 1) * 100
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric('Faturamento filtrado', brl(total))
+    k2.metric('Média mensal', brl(media_mensal))
+    melhor_nome = '—' if melhor_periodo is None else f"{meses_nomes[int(melhor_periodo.month)]}/{melhor_periodo.year}"
+    k3.metric('Melhor mês', brl(melhor_valor), melhor_nome)
+    k4.metric('Crescimento x ano anterior', pct(crescimento))
+
+    pivot = pd.pivot_table(base, index='MES_NUM', columns='ANO', values='VALOR', aggfunc='sum', fill_value=0)
+    pivot = pivot.reindex([m for m in range(1,13) if meses_nomes[m] in meses_sel or not meses_sel]).fillna(0)
+    pivot.index = [meses_nomes[int(m)] for m in pivot.index]
+    pivot.index.name = 'Mês'
+    pivot.columns = [str(int(c)) for c in pivot.columns]
+    pivot['Total'] = pivot.sum(axis=1)
+    total_row = pd.DataFrame([pivot.sum(axis=0)], index=['Total Geral'])
+    tabela = pd.concat([pivot, total_row])
+
+    st.markdown('#### Faturamento por mês e ano')
+    configs = {c: st.column_config.NumberColumn(c, format='localized') for c in tabela.columns}
+    st.dataframe(tabela, use_container_width=True, column_config=configs)
+
+    graf = base.groupby(['ANO','MES_NUM','MES'], as_index=False)['VALOR'].sum().sort_values(['ANO','MES_NUM'])
+    fig = px.line(graf, x='MES', y='VALOR', color=graf['ANO'].astype(str), markers=True,
+                  category_orders={'MES':list(meses_nomes.values())},
+                  labels={'VALOR':'Faturamento','color':'Ano'},
+                  title='Evolução mensal do faturamento')
+    fig.update_layout(height=360, margin=dict(l=10,r=10,t=50,b=10), separators=',.', yaxis_tickprefix='R$ ')
+    st.plotly_chart(fig, use_container_width=True)
+    st.divider()
+
+
 USUARIO_ATUAL = auth_bootstrap()
 
 if st.sidebar.button('↻ Atualizar bases agora', use_container_width=True):
@@ -205,6 +302,7 @@ if USUARIO_ATUAL.get('perfil') == 'RCA':
     st.stop()
 
 aplicar_formatacao_comparativos()
+render_historico_planejamento(vendas, ativos)
 
 gm.render_gestao_metas(
     vendas=vendas,
