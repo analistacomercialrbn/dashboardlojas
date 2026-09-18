@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-18T14:53:55+00:00",
+      "atualizado_em": "2026-09-18T14:57:08+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -174,6 +174,13 @@
           "observacao": "BALCAO REBANHO",
           "status": "DISTRIBUIDO",
           "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DEPARTAMENTOS",
+          "data_hora": "2026-09-18T14:57:08+00:00",
+          "observacao": "BALCAO REBANHO",
+          "status": "DISTRIBUIDO",
+          "usuario": "Coordenação Comercial"
         }
       ],
       "meses": [
@@ -320,6 +327,8 @@
               "sugerida": 408447.95047078445
             }
           },
+          "departamentos_fechados": true,
+          "departamentos_finalizados": true,
           "incluir_outros": false,
           "justificativa": "",
           "mensal": {
