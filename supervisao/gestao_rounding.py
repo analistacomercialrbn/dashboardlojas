@@ -207,3 +207,38 @@ def sync_month_from_value(rec, month, value, parent_month_value):
     pcts = rec.setdefault('percentual_mensal', {})
     mensal[str(month)] = max(0.0, round(num(value), 2))
     pcts[str(month)] = pct(mensal[str(month)], parent_month_value)
+
+
+def rebalance_matrix(items, parent_total, parent_months, months):
+    """Force a complete row/column rebalance using current cycle targets."""
+    if not items:
+        return
+    parent_total = max(0.0, round(num(parent_total), 2))
+
+    # Make current row totals close the parent exactly; last row absorbs cent residual.
+    current = [max(0.0, round(num(rec.get('meta_ciclo_alvo')), 2)) for _, rec, _ in items]
+    soma = round(sum(current), 2)
+    if abs(soma - parent_total) > 0.02:
+        if soma > 0:
+            scale = parent_total / soma
+            used = 0.0
+            for i, (_, rec, _) in enumerate(items):
+                if i == len(items) - 1:
+                    rec['meta_ciclo_alvo'] = round(max(0.0, parent_total - used), 2)
+                else:
+                    v = round(max(0.0, current[i] * scale), 2)
+                    rec['meta_ciclo_alvo'] = v
+                    used += v
+        else:
+            for i, (_, rec, _) in enumerate(items):
+                rec['meta_ciclo_alvo'] = parent_total if i == len(items) - 1 else 0.0
+
+    columns = _normalized_columns(parent_total, parent_months, months)
+    _allocate_months(items, parent_total, columns, months)
+
+    for _, rec, _ in items:
+        rec['percentual_geral'] = pct(rec.get('meta_ciclo_alvo'), parent_total)
+        rec['percentual_mensal'] = {
+            str(m): pct((rec.get('mensal') or {}).get(str(m)), columns.get(str(m)))
+            for m in months
+        }
