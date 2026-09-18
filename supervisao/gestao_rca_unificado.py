@@ -73,16 +73,24 @@ def _init_rca_targets(rcas, data, srec, meses):
         rr['proposta'] = sum(rr['mensal'].values())
 
 
-def _init_percentuais(rr, deps, meses):
+def _init_percentuais(rr, deps, meses, srec):
     dep_store = rr.setdefault('departamentos', {})
+    sup_mensal = srec.get('mensal') or {}
+    deps_sup = srec.get('departamentos') or {}
     for dep in deps:
         rd = dep_store.setdefault(dep, {})
         pct = rd.setdefault('percentual', {})
         mensal = rd.setdefault('mensal', {})
+        dep_mensal_sup = (deps_sup.get(dep) or {}).get('mensal') or {}
         for m in meses:
             base = _num((rr.get('mensal_alvo') or {}).get(str(m)))
             if str(m) not in pct:
-                pct[str(m)] = (100 * _num(mensal.get(str(m))) / base) if base else 0.0
+                valor_existente = _num(mensal.get(str(m)))
+                if base and valor_existente > 0:
+                    pct[str(m)] = 100 * valor_existente / base
+                else:
+                    base_sup = _num(sup_mensal.get(str(m)))
+                    pct[str(m)] = (100 * _num(dep_mensal_sup.get(str(m))) / base_sup) if base_sup else 0.0
 
 
 def _recalcular_valores_por_pct(rr, deps, meses):
@@ -229,7 +237,7 @@ def aplicar_rcas_unificados():
         escolha = st.selectbox('RCA para distribuir departamentos', opcoes, key=f'gm_ru_detail_rca_{key}_{sup}')
         cod_sel = escolha.split(' - ', 1)[0]
         rr = rcas[cod_sel]
-        _init_percentuais(rr, deps, meses)
+        _init_percentuais(rr, deps, meses, srec)
 
         st.markdown(
             "<div class='gm-ru-pct-head'><span>Departamento</span>"
