@@ -84,33 +84,58 @@ def _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, outros_valor):
         str(m): pct(out['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses
     }
 
-    # Em cada mês, o saldo é redistribuído proporcionalmente entre os formais.
-    for m in meses:
-        alvo = max(0.0, round(num(sup_mensal.get(str(m))), 2))
-        reservado = max(0.0, round(num(out['mensal'].get(str(m))), 2))
-        saldo = round(max(0.0, alvo - reservado), 2)
-
-        total_mes_formal = sum(max(0.0, num((deps[d].get('mensal') or {}).get(str(m)))) for d in formais)
-        usado_mes = 0.0
-        for i, dep in enumerate(formais):
-            rec = deps[dep]
-            if total_mes_formal > 0:
-                peso = max(0.0, num((rec.get('mensal') or {}).get(str(m)))) / total_mes_formal
-            else:
-                peso = pesos_geral.get(dep, 0)
-
-            if i == len(formais) - 1:
-                novo_mes = round(max(0.0, saldo - usado_mes), 2)
-            else:
-                novo_mes = round(max(0.0, saldo * peso), 2)
-                novo_mes = min(novo_mes, max(0.0, saldo - usado_mes))
-                usado_mes += novo_mes
-
-            rec.setdefault('mensal', {})[str(m)] = novo_mes
-            rec.setdefault('percentual_mensal', {})[str(m)] = pct(novo_mes, alvo)
+    _rebalancear_meses(deps, meta_sup, sup_mensal, meses)
 
     # Marca uma nova revisão visual para os widgets nascerem com os valores recalculados.
     return
+
+
+def _rebalancear_meses(deps, meta_sup, sup_mensal, meses):
+    """Faz a matriz fechar ao mesmo tempo por linha (ciclo) e por coluna (mês)."""
+    formais = [d for d in DEPARTAMENTOS_META if d in deps]
+    if not formais:
+        return
+
+    out = deps.get(OUTROS)
+    if out is not None:
+        out_total = max(0.0, num(out.get('meta_ciclo_alvo')))
+        out['mensal'] = rounded_months(out_total, sup_mensal, meses)
+        out['percentual_mensal'] = {
+            str(m): pct(out['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses
+        }
+    else:
+        out_total = 0.0
+
+    alvo_formal_mes = {
+        str(m): round(
+            max(0.0, num(sup_mensal.get(str(m))) - num((out or {}).get('mensal', {}).get(str(m)))),
+            2,
+        )
+        for m in meses
+    }
+
+    # Todos menos o último recebem distribuição comercial arredondada;
+    # o último absorve os resíduos para fechar cada mês e também o ciclo.
+    for dep in formais[:-1]:
+        rec = deps[dep]
+        rec['mensal'] = rounded_months(rec.get('meta_ciclo_alvo'), alvo_formal_mes, meses)
+        rec['percentual_mensal'] = {
+            str(m): pct(rec['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses
+        }
+
+    ultimo = deps[formais[-1]]
+    mensal_ultimo = {}
+    for m in meses:
+        soma_anteriores = sum(
+            num((deps[d].get('mensal') or {}).get(str(m))) for d in formais[:-1]
+        )
+        mensal_ultimo[str(m)] = round(
+            max(0.0, num(alvo_formal_mes.get(str(m))) - soma_anteriores), 2
+        )
+    ultimo['mensal'] = mensal_ultimo
+    ultimo['percentual_mensal'] = {
+        str(m): pct(mensal_ultimo.get(str(m)), sup_mensal.get(str(m))) for m in meses
+    }
 
 
 def _filtrar(data, deps, incluir_outros):
@@ -252,16 +277,16 @@ def aplicar_departamentos_unificados():
                 if dep == OUTROS:
                     return
                 sync_general_from_pct(rec, st.session_state.get(pct_key), meta_sup)
-                rec['mensal'] = rounded_months(rec['meta_ciclo_alvo'], sup_mensal, meses)
-                rec['percentual_mensal'] = {str(m): pct(rec['mensal'][str(m)], sup_mensal.get(str(m))) for m in meses}
+                _rebalancear_meses(deps, meta_sup, sup_mensal, meses)
+                srec['_dep_ui_rev'] = int(srec.get('_dep_ui_rev', 0)) + 1
                 st.session_state[val_key] = rec['meta_ciclo_alvo']
 
             def on_val(rec=rec, dep=dep, pct_key=pct_key, val_key=val_key):
                 if dep == OUTROS:
                     return
                 sync_general_from_value(rec, st.session_state.get(val_key), meta_sup)
-                rec['mensal'] = rounded_months(rec['meta_ciclo_alvo'], sup_mensal, meses)
-                rec['percentual_mensal'] = {str(m): pct(rec['mensal'][str(m)], sup_mensal.get(str(m))) for m in meses}
+                _rebalancear_meses(deps, meta_sup, sup_mensal, meses)
+                srec['_dep_ui_rev'] = int(srec.get('_dep_ui_rev', 0)) + 1
                 st.session_state[pct_key] = rec['percentual_geral']
 
             with st.container(border=True):
@@ -276,9 +301,10 @@ def aplicar_departamentos_unificados():
                 with cols[3]:
                     vg = st.number_input(f'Meta ciclo • {dep}', min_value=0.0, value=max(0.0,num(rec.get('meta_ciclo_alvo'))), step=1000.0, format='%.2f', key=val_key, on_change=on_val, disabled=(dep==OUTROS), label_visibility='collapsed')
 
-                rec['percentual_geral'] = num(pg)
-                rec['meta_ciclo_alvo'] = num(vg)
-                soma_meta += rec['meta_ciclo_alvo']
+                if dep != OUTROS:
+                    rec['percentual_geral'] = num(pg)
+                    rec['meta_ciclo_alvo'] = num(vg)
+                soma_meta += num(rec.get('meta_ciclo_alvo'))
 
                 mensal = rec.setdefault('mensal', {})
                 pcts = rec.setdefault('percentual_mensal', {})
@@ -295,9 +321,10 @@ def aplicar_departamentos_unificados():
 
                     with cols[pos+1]:
                         mv = st.number_input(f'{gm.MESES[m]} R$ • {dep}', min_value=0.0, value=max(0.0,num(mensal.get(str(m)))), step=1000.0, format='%.2f', key=mkey, on_change=on_mes, disabled=(dep==OUTROS), label_visibility='collapsed')
-                    mensal[str(m)] = round(num(mv), 2)
-                    pcts[str(m)] = pct(mensal[str(m)], sup_mensal.get(str(m)))
-                    soma_mes[str(m)] += mensal[str(m)]
+                    if dep != OUTROS:
+                        mensal[str(m)] = round(num(mv), 2)
+                    pcts[str(m)] = pct(mensal.get(str(m)), sup_mensal.get(str(m)))
+                    soma_mes[str(m)] += num(mensal.get(str(m)))
                     pos += 2
 
                 realizado = round(sum(num(mensal.get(str(m))) for m in meses), 2)
