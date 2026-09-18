@@ -6,7 +6,7 @@ import streamlit as st
 
 import gestao_metas as gm
 from gestao_rounding import (
-    initialize_matrix, num, pct, rounded_months,
+    initialize_matrix, num, pct, rounded_months, rebalance_matrix,
     sync_general_from_pct, sync_general_from_value, sync_month_from_value,
 )
 
@@ -48,18 +48,17 @@ def _linha_vazia(nome):
 
 
 def _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, outros_valor):
-    """Reserva OUTROS e redistribui o restante proporcionalmente sem mexer diretamente no session_state."""
+    """Reserva OUTROS e redistribui o restante proporcionalmente entre os departamentos formais."""
     outros_valor = max(0.0, min(num(meta_sup), num(outros_valor)))
     formais = [d for d in DEPARTAMENTOS_META if d in deps]
 
-    pesos_geral = {}
     total_formal = sum(max(0.0, num(deps[d].get('meta_ciclo_alvo'))) for d in formais)
     if total_formal > 0:
-        pesos_geral = {d: max(0.0, num(deps[d].get('meta_ciclo_alvo'))) / total_formal for d in formais}
+        pesos = {d: max(0.0, num(deps[d].get('meta_ciclo_alvo'))) / total_formal for d in formais}
     else:
         refs = [max(0.0, num(deps[d].get('percentual_geral'))) for d in formais]
         soma_ref = sum(refs)
-        pesos_geral = {d: ((refs[i] / soma_ref) if soma_ref > 0 else (1 / len(formais) if formais else 0)) for i, d in enumerate(formais)}
+        pesos = {d: ((refs[i] / soma_ref) if soma_ref > 0 else (1 / len(formais) if formais else 0)) for i, d in enumerate(formais)}
 
     restante = round(max(0.0, num(meta_sup) - outros_valor), 2)
     usado = 0.0
@@ -68,7 +67,7 @@ def _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, outros_valor):
         if i == len(formais) - 1:
             novo = round(max(0.0, restante - usado), 2)
         else:
-            novo = round(max(0.0, restante * pesos_geral.get(dep, 0)), 2)
+            novo = round(max(0.0, restante * pesos.get(dep, 0)), 2)
             novo = min(novo, max(0.0, restante - usado))
             usado += novo
         rec['meta_ciclo_alvo'] = novo
@@ -78,64 +77,17 @@ def _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, outros_valor):
     out['meta_ciclo_alvo'] = round(outros_valor, 2)
     out['percentual_geral'] = pct(outros_valor, meta_sup)
 
-    # Reserva mensal de OUTROS respeitando o peso dos meses do supervisor.
-    out['mensal'] = rounded_months(outros_valor, sup_mensal, meses)
-    out['percentual_mensal'] = {
-        str(m): pct(out['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses
-    }
-
-    _rebalancear_meses(deps, meta_sup, sup_mensal, meses)
-
-    # Marca uma nova revisão visual para os widgets nascerem com os valores recalculados.
-    return
+    items = [(d, deps[d], deps[d].get('meta_ciclo_alvo')) for d in formais]
+    items.append((OUTROS, out, outros_valor))
+    rebalance_matrix(items, meta_sup, sup_mensal, meses)
 
 
 def _rebalancear_meses(deps, meta_sup, sup_mensal, meses):
-    """Faz a matriz fechar ao mesmo tempo por linha (ciclo) e por coluna (mês)."""
     formais = [d for d in DEPARTAMENTOS_META if d in deps]
-    if not formais:
-        return
-
-    out = deps.get(OUTROS)
-    if out is not None:
-        out_total = max(0.0, num(out.get('meta_ciclo_alvo')))
-        out['mensal'] = rounded_months(out_total, sup_mensal, meses)
-        out['percentual_mensal'] = {
-            str(m): pct(out['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses
-        }
-    else:
-        out_total = 0.0
-
-    alvo_formal_mes = {
-        str(m): round(
-            max(0.0, num(sup_mensal.get(str(m))) - num((out or {}).get('mensal', {}).get(str(m)))),
-            2,
-        )
-        for m in meses
-    }
-
-    # Todos menos o último recebem distribuição comercial arredondada;
-    # o último absorve os resíduos para fechar cada mês e também o ciclo.
-    for dep in formais[:-1]:
-        rec = deps[dep]
-        rec['mensal'] = rounded_months(rec.get('meta_ciclo_alvo'), alvo_formal_mes, meses)
-        rec['percentual_mensal'] = {
-            str(m): pct(rec['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses
-        }
-
-    ultimo = deps[formais[-1]]
-    mensal_ultimo = {}
-    for m in meses:
-        soma_anteriores = sum(
-            num((deps[d].get('mensal') or {}).get(str(m))) for d in formais[:-1]
-        )
-        mensal_ultimo[str(m)] = round(
-            max(0.0, num(alvo_formal_mes.get(str(m))) - soma_anteriores), 2
-        )
-    ultimo['mensal'] = mensal_ultimo
-    ultimo['percentual_mensal'] = {
-        str(m): pct(mensal_ultimo.get(str(m)), sup_mensal.get(str(m))) for m in meses
-    }
+    items = [(d, deps[d], deps[d].get('meta_ciclo_alvo')) for d in formais]
+    if OUTROS in deps and num(deps[OUTROS].get('meta_ciclo_alvo')) > 0:
+        items.append((OUTROS, deps[OUTROS], deps[OUTROS].get('meta_ciclo_alvo')))
+    rebalance_matrix(items, meta_sup, sup_mensal, meses)
 
 
 def _filtrar(data, deps, incluir_outros):
@@ -230,7 +182,7 @@ def aplicar_departamentos_unificados():
         if incluir_outros:
             out = deps.setdefault(OUTROS, {})
             reserva_key = f'gm_du_reserva_outros_{key}_{sup}'
-            reserva_padrao = max(0.0, num(out.get('meta_ciclo_alvo')))
+            reserva_padrao = max(0.0, num(out.get('_reserva_aplicada')) or num(out.get('meta_ciclo_alvo')))
             reserva = st.number_input(
                 'Reserva para Outros no ciclo',
                 min_value=0.0,
