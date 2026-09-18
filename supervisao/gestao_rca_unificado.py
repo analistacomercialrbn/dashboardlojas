@@ -36,8 +36,8 @@ def _participacoes(data):
     soma = float(vals.sum())
     if soma <= 0:
         n = len(data)
-        return {str(int(r['COD_RCA'])): (1 / n if n else 0) for _, r in data.iterrows()}
-    return {str(int(r['COD_RCA'])): float(v) / soma for (_, r), v in zip(data.iterrows(), vals)}
+        return {str(int(r['COD_RCA'])): (100 / n if n else 0) for _, r in data.iterrows()}
+    return {str(int(r['COD_RCA'])): 100 * float(v) / soma for (_, r), v in zip(data.iterrows(), vals)}
 
 
 def _deps_ativos(srec, meses):
@@ -50,34 +50,26 @@ def _deps_ativos(srec, meses):
 
 
 def _init_rca_targets(rcas, data, srec, meses):
-    """Mantém a meta mensal do RCA como base e separa dela a distribuição por departamento."""
-    pesos = _participacoes(data)
+    """Inicializa a participação mensal de cada RCA a partir dos valores já salvos ou da referência."""
+    part_ref = _participacoes(data)
     sup_mensal = srec.get('mensal') or {}
     for _, row in data.iterrows():
         cod = str(int(row['COD_RCA']))
         nome = str(row.get('RCA', ''))
         rr = rcas.setdefault(cod, {'rca': nome})
         rr['rca'] = nome
+        pct = rr.setdefault('percentual_mensal', {})
+        mensal_alvo = rr.setdefault('mensal_alvo', {})
+        antigo = rr.get('mensal') or {}
 
-        atual_total = _num(row.get('Meta proposta'))
-        alvo = rr.setdefault('mensal_alvo', {})
-        if not any(abs(_num(alvo.get(str(m)))) > 0.0001 for m in meses):
-            antigo = rr.get('mensal') or {}
-            if any(abs(_num(antigo.get(str(m)))) > 0.0001 for m in meses):
-                for m in meses:
-                    alvo[str(m)] = _num(antigo.get(str(m)))
-            else:
-                for m in meses:
-                    alvo[str(m)] = _num(sup_mensal.get(str(m))) * pesos.get(cod, 0.0)
+        for m in meses:
+            alvo_sup = _num(sup_mensal.get(str(m)))
+            if str(m) not in pct:
+                valor_existente = _num(mensal_alvo.get(str(m))) or _num(antigo.get(str(m)))
+                pct[str(m)] = (100 * valor_existente / alvo_sup) if alvo_sup else part_ref.get(cod, 0.0)
+            mensal_alvo[str(m)] = alvo_sup * _num(pct.get(str(m))) / 100.0
 
-        soma_alvo = sum(_num(alvo.get(str(m))) for m in meses)
-        if soma_alvo <= 0 and atual_total > 0 and meses:
-            base = sum(_num(sup_mensal.get(str(m))) for m in meses)
-            for m in meses:
-                peso_mes = (_num(sup_mensal.get(str(m))) / base) if base else (1 / len(meses))
-                alvo[str(m)] = atual_total * peso_mes
-
-        rr['mensal'] = {str(m): _num(alvo.get(str(m))) for m in meses}
+        rr['mensal'] = dict(mensal_alvo)
         rr['proposta'] = sum(rr['mensal'].values())
 
 
@@ -106,7 +98,7 @@ def _recalcular_valores_por_pct(rr, deps, meses):
 
 
 def aplicar_rcas_unificados():
-    """RCA recebe meta mensal e distribui cada mês por departamento usando percentuais."""
+    """RCAs e departamentos usam a mesma lógica: percentual editável e R$ calculado."""
     st.markdown(
         """
         <style>
@@ -114,7 +106,7 @@ def aplicar_rcas_unificados():
         .gm-ru-panel-top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
         .gm-ru-title{font-size:17px;font-weight:900;color:#1e2655}.gm-ru-sub{font-size:10px;color:#858b99;margin-top:3px}
         .gm-ru-meta{text-align:right}.gm-ru-meta span{display:block;font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:850}.gm-ru-meta strong{font-size:18px;color:#1e2655}
-        .gm-ru-head{display:grid;grid-template-columns:2.2fr .85fr 1.15fr repeat(3,1.08fr) .9fr;gap:11px;padding:0 14px 7px;margin-top:8px;align-items:end}
+        .gm-ru-head{display:grid;grid-template-columns:2.1fr .82fr 1.12fr repeat(3,.72fr 1.05fr) .9fr;gap:9px;padding:0 12px 7px;margin-top:8px;align-items:end}
         .gm-ru-head span,.gm-ru-pct-head span{font-size:8px;color:#9298a6;text-transform:uppercase;font-weight:850;letter-spacing:.04em;text-align:center}.gm-ru-head span:first-child,.gm-ru-pct-head span:first-child{text-align:left}
         .gm-ru-namebox{min-height:48px;display:flex;flex-direction:column;justify-content:center}.gm-ru-name{font-size:12px;font-weight:900;color:#1e2655}.gm-ru-subline{font-size:8px;color:#8b91a0;margin-top:4px}
         .gm-ru-ref{min-height:48px;display:flex;flex-direction:column;justify-content:center;text-align:center}.gm-ru-ref strong{font-size:10px;color:#30384d}.gm-ru-ref span{font-size:8px;color:#9096a4;margin-top:2px}
@@ -123,7 +115,7 @@ def aplicar_rcas_unificados():
         .gm-ru-pct-head{display:grid;grid-template-columns:1.8fr repeat(3,.72fr 1.1fr) .9fr;gap:9px;padding:8px 12px 6px}
         .gm-ru-dep-name{font-size:11px;font-weight:850;color:#273052}.gm-ru-dep-alvo{font-size:8px;color:#8d93a1;margin-top:3px}
         .gm-ru-total,.gm-ru-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0 8px}.gm-ru-total>div,.gm-ru-box{background:#fff;border:1px solid #e4e8ef;border-radius:13px;padding:10px 12px}.gm-ru-total span,.gm-ru-box span{font-size:8px;color:#8e95a4;text-transform:uppercase;font-weight:850}.gm-ru-total strong,.gm-ru-box strong{display:block;font-size:14px;color:#1e2655;margin-top:2px}.gm-ru-box small{font-size:8px;color:#8a90a0}
-        @media(max-width:1100px){.gm-ru-head,.gm-ru-pct-head{display:none}.gm-ru-total,.gm-ru-summary{grid-template-columns:1fr}.gm-ru-meta{text-align:left}}
+        @media(max-width:1200px){.gm-ru-head,.gm-ru-pct-head{display:none}.gm-ru-total,.gm-ru-summary{grid-template-columns:1fr}.gm-ru-meta{text-align:left}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -163,70 +155,75 @@ def aplicar_rcas_unificados():
         st.markdown(
             f"""
             <div class='gm-ru-panel'><div class='gm-ru-panel-top'>
-              <div><div class='gm-ru-title'>Metas mensais dos RCAs</div>
-              <div class='gm-ru-sub'>Primeiro defina quanto cada RCA recebe em cada mês. Depois distribua 100% dessa meta entre os departamentos.</div></div>
+              <div><div class='gm-ru-title'>Participação mensal dos RCAs</div>
+              <div class='gm-ru-sub'>Informe a % de cada RCA em cada mês. O valor em R$ é calculado sobre a meta mensal do supervisor.</div></div>
               <div class='gm-ru-meta'><span>Meta do supervisor</span><strong>{_fmt(meta_sup)}</strong></div>
             </div></div>
             """,
             unsafe_allow_html=True,
         )
 
-        nomes_meses = [gm.MESES[m] for m in meses]
         st.markdown(
             "<div class='gm-ru-head'><span>RCA</span><span>Part. ref.</span><span>Meta total</span>"
-            + ''.join(f"<span>{nome}</span>" for nome in nomes_meses)
+            + ''.join(f"<span>{gm.MESES[m]} %</span><span>{gm.MESES[m]} R$</span>" for m in meses)
             + "<span>Status</span></div>",
             unsafe_allow_html=True,
         )
 
-        rca_month_ok = True
+        pct_rca_somas = {str(m): 0.0 for m in meses}
         for idx, row in saida.reset_index(drop=True).iterrows():
             cod = str(int(row['COD_RCA']))
             nome = str(row.get('RCA', 'RCA'))
             part = _num(row.get('Participação ref. %'))
             rr = rcas[cod]
+            pct_rca = rr.setdefault('percentual_mensal', {})
             alvo = rr.setdefault('mensal_alvo', {})
 
             with st.container(border=True):
-                cols = st.columns([2.2, .85, 1.15] + [1.08] * len(meses) + [.9], vertical_alignment='center', gap='small')
+                specs = [2.1, .82, 1.12] + sum(([.72, 1.05] for _ in meses), []) + [.9]
+                cols = st.columns(specs, vertical_alignment='center', gap='small')
                 with cols[0]:
                     st.markdown(f"<div class='gm-ru-namebox'><div class='gm-ru-name'>{nome}</div><div class='gm-ru-subline'>Código {cod}</div></div>", unsafe_allow_html=True)
                 with cols[1]:
                     st.markdown(f"<div class='gm-ru-ref'><strong>{part:.1f}%</strong><span>referência</span></div>", unsafe_allow_html=True)
 
-                novos_meses = {}
-                for j, m in enumerate(meses):
-                    with cols[3 + j]:
-                        novos_meses[str(m)] = st.number_input(
-                            gm.MESES[m], min_value=0.0, value=_num(alvo.get(str(m))),
-                            step=10000.0, format='%.2f',
-                            key=f'gm_ru_alvo_{key}_{idx}_{m}', label_visibility='collapsed'
+                pos = 3
+                for m in meses:
+                    with cols[pos]:
+                        novo_pct = st.number_input(
+                            f'{gm.MESES[m]} % • {nome}', min_value=0.0, max_value=100.0,
+                            value=_num(pct_rca.get(str(m))), step=1.0, format='%.2f',
+                            key=f'gm_ru_rcapct_{key}_{idx}_{m}', label_visibility='collapsed'
                         )
-                rr['mensal_alvo'] = {str(m): float(novos_meses[str(m)]) for m in meses}
+                    pct_rca[str(m)] = float(novo_pct)
+                    pct_rca_somas[str(m)] += float(novo_pct)
+                    valor = _num(sup_mensal.get(str(m))) * float(novo_pct) / 100.0
+                    alvo[str(m)] = valor
+                    with cols[pos + 1]:
+                        st.markdown(f"<div class='gm-ru-ref'><strong>{_fmt(valor)}</strong><span>calculado</span></div>", unsafe_allow_html=True)
+                    pos += 2
+
+                rr['mensal_alvo'] = {str(m): _num(alvo.get(str(m))) for m in meses}
                 rr['mensal'] = dict(rr['mensal_alvo'])
                 rr['proposta'] = sum(rr['mensal'].values())
                 saida.loc[saida.index[idx], 'Meta proposta'] = rr['proposta']
-
                 with cols[2]:
-                    st.markdown(f"<div class='gm-ru-ref'><strong>{_fmt(rr['proposta'])}</strong><span>total</span></div>", unsafe_allow_html=True)
-
-                soma_pct_ok = True
-                _init_percentuais(rr, deps, meses)
-                for m in meses:
-                    soma_pct = sum(_num(((rr.get('departamentos') or {}).get(dep, {}).get('percentual') or {}).get(str(m))) for dep in deps)
-                    if _num(rr['mensal_alvo'].get(str(m))) > 0 and abs(soma_pct - 100) > 0.01:
-                        soma_pct_ok = False
-                rca_month_ok = rca_month_ok and soma_pct_ok
+                    st.markdown(f"<div class='gm-ru-ref'><strong>{_fmt(rr['proposta'])}</strong><span>total calculado</span></div>", unsafe_allow_html=True)
                 with cols[-1]:
-                    st.markdown(f"<div class='gm-ru-status {'ok' if soma_pct_ok else 'warn'}'>{'✓ 100%' if soma_pct_ok else 'Ajustar %'}</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='gm-ru-status ok'>Calculado<br>por %</div>", unsafe_allow_html=True)
 
-        # valida soma das metas mensais de RCA contra o supervisor
+        rca_month_ok = True
+        pct_rca_cards = []
         for m in meses:
-            soma = sum(_num((r.get('mensal_alvo') or {}).get(str(m))) for r in rcas.values())
-            if abs(soma - _num(sup_mensal.get(str(m)))) > 0.02:
-                rca_month_ok = False
+            soma_pct = pct_rca_somas[str(m)]
+            alvo = _num(sup_mensal.get(str(m)))
+            soma_valor = sum(_num((r.get('mensal_alvo') or {}).get(str(m))) for r in rcas.values())
+            ok = (abs(soma_pct - 100) <= 0.01) if alvo > 0 else abs(soma_pct) <= 0.01
+            rca_month_ok = rca_month_ok and ok
+            pct_rca_cards.append(f"<div class='gm-ru-box'><span>{gm.MESES[m]} • RCAs</span><strong>{soma_pct:.1f}%</strong><small>{_fmt(soma_valor)} de {_fmt(alvo)} • {'Fechado' if ok else 'Ajustar para 100%'}</small></div>")
+        st.markdown("<div class='gm-ru-summary'>" + ''.join(pct_rca_cards) + "</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='gm-ru-detail'><div class='gm-ru-detail-title'>Percentual por departamento</div><div class='gm-ru-detail-sub'>A análise vem da dinâmica: aqui você informa a % decidida. O valor em R$ é calculado automaticamente sobre a meta mensal do RCA.</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='gm-ru-detail'><div class='gm-ru-detail-title'>Percentual por departamento</div><div class='gm-ru-detail-sub'>Escolha um RCA e distribua 100% da meta mensal dele entre os departamentos.</div></div>", unsafe_allow_html=True)
 
         opcoes = [f"{int(r['COD_RCA'])} - {r['RCA']}" for _, r in saida.iterrows()]
         escolha = st.selectbox('RCA para distribuir departamentos', opcoes, key=f'gm_ru_detail_rca_{key}_{sup}')
@@ -283,10 +280,9 @@ def aplicar_rcas_unificados():
             alvo_mes = _num((rr.get('mensal_alvo') or {}).get(str(m)))
             ok = (alvo_mes <= 0 and abs(soma_pct) <= 0.01) or (alvo_mes > 0 and abs(soma_pct - 100) <= 0.01)
             pct_ok = pct_ok and ok
-            pct_cards.append(f"<div class='gm-ru-box'><span>{gm.MESES[m]}</span><strong>{soma_pct:.1f}%</strong><small>{'Fechado' if ok else 'Precisa fechar 100%'}</small></div>")
+            pct_cards.append(f"<div class='gm-ru-box'><span>{gm.MESES[m]} • departamentos</span><strong>{soma_pct:.1f}%</strong><small>{'Fechado' if ok else 'Precisa fechar 100%'}</small></div>")
         st.markdown("<div class='gm-ru-summary'>" + ''.join(pct_cards) + "</div>", unsafe_allow_html=True)
 
-        # fechamento por departamento em R$ entre todos os RCAs
         st.markdown('##### Conferência dos departamentos')
         fechamento_ok = True
         rows_check = []
@@ -313,22 +309,12 @@ def aplicar_rcas_unificados():
         dif_total = meta_sup - total
         st.markdown(f"<div class='gm-ru-total'><div><span>Meta do supervisor</span><strong>{_fmt(meta_sup)}</strong></div><div><span>Distribuído aos RCAs</span><strong>{_fmt(total)}</strong></div><div><span>Diferença</span><strong>{_fmt(dif_total)}</strong></div></div>", unsafe_allow_html=True)
 
-        meses_ok = True
-        cards = []
-        for m in meses:
-            soma = sum(_num((r.get('mensal_alvo') or {}).get(str(m))) for r in rcas.values())
-            alvo = _num(sup_mensal.get(str(m)))
-            ok = abs(soma - alvo) <= 0.02
-            meses_ok = meses_ok and ok
-            cards.append(f"<div class='gm-ru-box'><span>{gm.MESES[m]}</span><strong>{_fmt(soma)}</strong><small>Alvo {_fmt(alvo)} • {'Fechado' if ok else 'Ajustar'}</small></div>")
-        st.markdown("<div class='gm-ru-summary'>" + ''.join(cards) + "</div>", unsafe_allow_html=True)
-
-        tudo_ok = pct_ok and rca_month_ok and fechamento_ok and meses_ok and abs(dif_total) <= 0.02
+        tudo_ok = pct_ok and rca_month_ok and fechamento_ok and abs(dif_total) <= 0.02
         estado['ok'][sup] = tudo_ok
         if tudo_ok:
-            st.success('Distribuição fechada: RCAs, percentuais e departamentos conferem em todos os meses.')
+            st.success('Distribuição fechada: RCAs e departamentos somam 100% em todos os meses.')
         else:
-            st.warning('Ainda há diferenças. As % de cada RCA devem fechar 100% por mês e os departamentos precisam fechar com a meta do supervisor.')
+            st.warning('Ainda há diferenças. RCAs e departamentos precisam fechar 100% em cada mês.')
 
         return saida
 
