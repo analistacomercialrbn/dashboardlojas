@@ -19,61 +19,98 @@ def pct(value, base):
 
 
 def rounded_months(total, parent_months, months):
-    """Commercially round month values while preserving the exact cycle total."""
-    total = round(num(total), 2)
+    total = max(0.0, round(num(total), 2))
     if not months:
         return {}
-    base = sum(num(parent_months.get(str(m))) for m in months)
+    base = sum(max(0.0, num(parent_months.get(str(m)))) for m in months)
+    raw = {}
     if base <= 0:
         raw = {str(m): total / len(months) for m in months}
     else:
-        raw = {str(m): total * num(parent_months.get(str(m))) / base for m in months}
+        raw = {str(m): total * max(0.0, num(parent_months.get(str(m)))) / base for m in months}
 
     out = {}
     used = 0.0
     for m in months[:-1]:
-        v = round_money(raw[str(m)])
-        out[str(m)] = round(v, 2)
+        remaining = max(0.0, total - used)
+        v = min(round_money(raw[str(m)]), remaining)
+        out[str(m)] = round(max(0.0, v), 2)
         used += out[str(m)]
-    out[str(months[-1])] = round(total - used, 2)
+    out[str(months[-1])] = round(max(0.0, total - used), 2)
     return out
 
 
+def _allocate_months(items, parent_months, months):
+    """Allocate each parent month across items, never producing negative residuals."""
+    general = [max(0.0, num(rec.get('meta_ciclo_alvo'))) for _, rec, _ in items]
+    total_general = sum(general)
+
+    for _, rec, _ in items:
+        rec['mensal'] = {}
+
+    for m in months:
+        target = max(0.0, round(num(parent_months.get(str(m))), 2))
+        used = 0.0
+        for i, (_, rec, _) in enumerate(items):
+            if i == len(items) - 1:
+                value = round(max(0.0, target - used), 2)
+            else:
+                weight = (general[i] / total_general) if total_general > 0 else (1 / len(items))
+                raw = target * weight
+                value = min(round_money(raw), max(0.0, target - used))
+                value = round(max(0.0, value), 2)
+                used += value
+            rec['mensal'][str(m)] = value
+
+
 def initialize_matrix(items, parent_total, parent_months, months, marker='round_months_v1'):
-    """
-    items: list of (id, rec, base_general).
-    Initializes general targets and monthly R$ suggestions.
-    The final item absorbs residuals so both cycle total and every month close exactly.
-    Existing initialized matrices are preserved.
-    """
     if not items:
         return
 
-    # General cycle targets.
+    parent_total = max(0.0, round(num(parent_total), 2))
+
+    # General targets: preserve existing values when valid; otherwise seed rounded suggestions.
     used = 0.0
     for _, rec, base in items[:-1]:
+        current = num(rec.get('meta_ciclo_alvo'))
+        if current < 0:
+            current = 0.0
         if 'meta_ciclo_alvo' not in rec:
-            rec['meta_ciclo_alvo'] = round_money(base)
-        used += num(rec.get('meta_ciclo_alvo'))
+            current = round_money(base)
+        rec['meta_ciclo_alvo'] = round(max(0.0, current), 2)
+        used += rec['meta_ciclo_alvo']
 
     _, last_rec, last_base = items[-1]
-    if 'meta_ciclo_alvo' not in last_rec:
-        residual = round(num(parent_total) - used, 2)
-        last_rec['meta_ciclo_alvo'] = residual if residual >= 0 else round_money(last_base)
+    if 'meta_ciclo_alvo' not in last_rec or num(last_rec.get('meta_ciclo_alvo')) < 0:
+        last_rec['meta_ciclo_alvo'] = round(max(0.0, parent_total - used), 2)
 
-    # Monthly values: preserve already-initialized rows; otherwise rebuild suggestions.
+    # If stale general targets exceed the parent, normalize them proportionally.
+    sum_general = sum(max(0.0, num(rec.get('meta_ciclo_alvo'))) for _, rec, _ in items)
+    if parent_total > 0 and sum_general > parent_total + 0.02:
+        scale = parent_total / sum_general
+        used = 0.0
+        for i, (_, rec, _) in enumerate(items):
+            if i == len(items) - 1:
+                rec['meta_ciclo_alvo'] = round(max(0.0, parent_total - used), 2)
+            else:
+                v = round(max(0.0, num(rec.get('meta_ciclo_alvo')) * scale), 2)
+                rec['meta_ciclo_alvo'] = v
+                used += v
+
     initialized = all(bool(rec.get(marker)) for _, rec, _ in items)
-    if not initialized:
-        for _, rec, _ in items[:-1]:
-            rec['mensal'] = rounded_months(rec.get('meta_ciclo_alvo'), parent_months, months)
-
-        # Last row closes every parent month exactly.
-        last_months = {}
+    invalid = False
+    if initialized:
         for m in months:
-            soma = sum(num((rec.get('mensal') or {}).get(str(m))) for _, rec, _ in items[:-1])
-            last_months[str(m)] = round(num(parent_months.get(str(m))) - soma, 2)
-        last_rec['mensal'] = last_months
+            vals = [num((rec.get('mensal') or {}).get(str(m))) for _, rec, _ in items]
+            if any(v < -0.001 for v in vals):
+                invalid = True
+                break
+            if abs(sum(vals) - num(parent_months.get(str(m)))) > 0.02:
+                invalid = True
+                break
 
+    if not initialized or invalid:
+        _allocate_months(items, parent_months, months)
         for _, rec, _ in items:
             rec['percentual_geral'] = pct(rec.get('meta_ciclo_alvo'), parent_total)
             rec['percentual_mensal'] = {
@@ -84,17 +121,17 @@ def initialize_matrix(items, parent_total, parent_months, months, marker='round_
 
 
 def sync_general_from_value(rec, value, parent_total):
-    rec['meta_ciclo_alvo'] = round(num(value), 2)
+    rec['meta_ciclo_alvo'] = max(0.0, round(num(value), 2))
     rec['percentual_geral'] = pct(rec['meta_ciclo_alvo'], parent_total)
 
 
 def sync_general_from_pct(rec, percentage, parent_total):
-    rec['percentual_geral'] = num(percentage)
-    rec['meta_ciclo_alvo'] = round(num(parent_total) * rec['percentual_geral'] / 100.0, 2)
+    rec['percentual_geral'] = max(0.0, num(percentage))
+    rec['meta_ciclo_alvo'] = max(0.0, round(num(parent_total) * rec['percentual_geral'] / 100.0, 2))
 
 
 def sync_month_from_value(rec, month, value, parent_month_value):
     mensal = rec.setdefault('mensal', {})
     pcts = rec.setdefault('percentual_mensal', {})
-    mensal[str(month)] = round(num(value), 2)
+    mensal[str(month)] = max(0.0, round(num(value), 2))
     pcts[str(month)] = pct(mensal[str(month)], parent_month_value)
