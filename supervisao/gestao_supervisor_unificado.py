@@ -87,7 +87,8 @@ def aplicar_supervisores_unificados():
             for m in meses:
                 if str(m) not in pct:
                     alvo = _num(meta_mensal.get(str(m)))
-                    pct[str(m)] = (100 * _num(mensal.get(str(m))) / alvo) if alvo else part_ref
+                    valor_existente = _num(mensal.get(str(m)))
+                    pct[str(m)] = (100 * valor_existente / alvo) if (alvo and valor_existente > 0) else part_ref
 
             with st.container(border=True):
                 specs = [2.05, 1, 1, 1.2] + sum(([.85, 1.18] for _ in meses), []) + [.92]
