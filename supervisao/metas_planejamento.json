@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-18T14:57:19+00:00",
+      "atualizado_em": "2026-09-18T14:57:28+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -186,6 +186,13 @@
           "acao": "SALVAR_DEPARTAMENTOS",
           "data_hora": "2026-09-18T14:57:19+00:00",
           "observacao": "CEARA CENTRO OESTE",
+          "status": "DISTRIBUIDO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DEPARTAMENTOS",
+          "data_hora": "2026-09-18T14:57:28+00:00",
+          "observacao": "CEARA LESTE",
           "status": "DISTRIBUIDO",
           "usuario": "Coordenação Comercial"
         }
@@ -659,6 +666,8 @@
               "sugerida": 945245.8941504797
             }
           },
+          "departamentos_fechados": true,
+          "departamentos_finalizados": true,
           "incluir_outros": true,
           "justificativa": "",
           "mensal": {
