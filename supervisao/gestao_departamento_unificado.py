@@ -159,11 +159,17 @@ def aplicar_departamentos_unificados():
         meta_sup = num(srec.get('meta_ciclo_alvo')) or num(srec.get('proposta')) or sum(num(sup_mensal.get(str(m))) for m in meses)
         deps = srec.setdefault('departamentos', {})
 
-        incluir_padrao = bool(srec.get('incluir_outros', OUTROS in deps))
+        out_existente = deps.get(OUTROS) or {}
+        incluir_padrao = bool(
+            srec.get('incluir_outros')
+            or num(out_existente.get('_reserva_aplicada')) > 0
+            or num(out_existente.get('meta_ciclo_alvo')) > 0
+        )
+        flag_key = f'gm_du_outros_pref_v2_{key}_{sup}'
         incluir_outros = st.toggle(
             'Incluir Outros',
             value=incluir_padrao,
-            key=f'gm_du_outros_pref_{sup}',
+            key=flag_key,
             help='Reserva parte da meta para departamentos sem meta formal.'
         )
         srec['incluir_outros'] = bool(incluir_outros)
@@ -343,9 +349,11 @@ def aplicar_departamentos_unificados():
         if key.startswith('gm2_auto_dep_'):
             return False
         if key.startswith('gm2_save_dep_'):
-            label = 'Salvar departamentos e avançar para RCAs →'
-            if sup and estado['ok'].get(sup) is False:
-                kwargs['disabled'] = True
+            fechado = bool(sup and estado['ok'].get(sup))
+            label = 'Salvar departamentos e avançar para RCAs →' if fechado else 'Salvar departamentos como rascunho'
+            # Salvar deve permanecer disponível mesmo com diferenças.
+            # O fechamento continua sendo validado visualmente e na aprovação.
+            kwargs.pop('disabled', None)
         return button_prev(label, *args, **kwargs)
 
     st.data_editor = data_editor
