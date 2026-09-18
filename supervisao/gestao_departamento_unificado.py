@@ -273,9 +273,9 @@ def aplicar_departamentos_unificados():
                 with cols[3]:
                     vg = st.number_input(f'Meta ciclo • {dep}', min_value=0.0, value=max(0.0,num(rec.get('meta_ciclo_alvo'))), step=1000.0, format='%.2f', key=val_key, on_change=on_val, disabled=(dep==OUTROS), label_visibility='collapsed')
 
-                if dep != OUTROS:
-                    rec['percentual_geral'] = num(pg)
-                    rec['meta_ciclo_alvo'] = num(vg)
+                # O modelo é atualizado apenas pelos callbacks. Não regravamos os valores
+                # retornados pelos widgets aqui, porque o session_state pode conter uma
+                # versão visual antiga após uma redistribuição automática.
                 soma_meta += num(rec.get('meta_ciclo_alvo'))
 
                 mensal = rec.setdefault('mensal', {})
@@ -293,8 +293,8 @@ def aplicar_departamentos_unificados():
 
                     with cols[pos+1]:
                         mv = st.number_input(f'{gm.MESES[m]} R$ • {dep}', min_value=0.0, value=max(0.0,num(mensal.get(str(m)))), step=1000.0, format='%.2f', key=mkey, on_change=on_mes, disabled=(dep==OUTROS), label_visibility='collapsed')
-                    if dep != OUTROS:
-                        mensal[str(m)] = round(num(mv), 2)
+                    # Assim como no ciclo, o valor mensal só altera o modelo no on_change.
+                    # Isso impede widgets antigos de desfazerem o rebalanceamento automático.
                     pcts[str(m)] = pct(mensal.get(str(m)), sup_mensal.get(str(m)))
                     soma_mes[str(m)] += num(mensal.get(str(m)))
                     pos += 2
