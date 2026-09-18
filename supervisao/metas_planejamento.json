@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-17T19:58:03+00:00",
+      "atualizado_em": "2026-09-18T13:15:09+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -118,6 +118,13 @@
           "observacao": "",
           "status": "DISTRIBUIDO",
           "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DEPARTAMENTOS",
+          "data_hora": "2026-09-18T13:15:09+00:00",
+          "observacao": "BALCAO REBANHO",
+          "status": "DISTRIBUIDO",
+          "usuario": "Coordenação Comercial"
         }
       ],
       "meses": [
@@ -147,53 +154,138 @@
           "criterio": "Participação histórica",
           "departamentos": {
             "AGRICULTURA": {
-              "mensal": {},
-              "proposta": 14332.392613389185,
-              "sugerida": 14332.392613389185
+              "mensal": {
+                "10": 5000.0,
+                "11": 5000.0,
+                "12": 4000.0
+              },
+              "meta_ciclo_alvo": 14000.0,
+              "percentual_geral": 1.044776119402985,
+              "percentual_mensal": {
+                "10": 1.075268817204301,
+                "11": 1.075268817204301,
+                "12": 0.975609756097561
+              },
+              "proposta": 14000.0,
+              "round_months_v2": true,
+              "sugerida": 13632.941332345346
             },
             "INGREDIENTES MINERAIS": {
               "mensal": {},
               "proposta": 40687.04125766923,
-              "sugerida": 40687.04125766923
+              "sugerida": 38701.42699930916
             },
             "MAQUINAS E EQUIPAMENTOS": {
               "mensal": {},
               "proposta": 10218.74611831485,
-              "sugerida": 10218.74611831485
+              "sugerida": 9720.04954643613
             },
             "MIX REVENDA": {
-              "mensal": {},
-              "proposta": 37218.5658172497,
-              "sugerida": 37218.5658172497
+              "mensal": {
+                "10": 12000.0,
+                "11": 12000.0,
+                "12": 11000.0
+              },
+              "meta_ciclo_alvo": 35000.0,
+              "percentual_geral": 2.611940298507463,
+              "percentual_mensal": {
+                "10": 2.5806451612903225,
+                "11": 2.5806451612903225,
+                "12": 2.682926829268293
+              },
+              "proposta": 35000.0,
+              "round_months_v2": true,
+              "sugerida": 35402.2205466652
             },
             "NUTRICAO - MONOGASTRICOS": {
-              "mensal": {},
-              "proposta": 317159.32561451214,
-              "sugerida": 317159.32561451214
+              "mensal": {
+                "10": 105000.0,
+                "11": 105000.0,
+                "12": 90000.0
+              },
+              "meta_ciclo_alvo": 300000.0,
+              "percentual_geral": 22.388059701492537,
+              "percentual_mensal": {
+                "10": 22.580645161290324,
+                "11": 22.580645161290324,
+                "12": 21.951219512195124
+              },
+              "proposta": 300000.0,
+              "round_months_v2": true,
+              "sugerida": 301681.27511868416
             },
             "NUTRICAO - RUMINANTES": {
-              "mensal": {},
-              "proposta": 397103.8863645633,
-              "sugerida": 397103.8863645633
+              "mensal": {
+                "10": 135000.0,
+                "11": 130000.0,
+                "12": 115000.0
+              },
+              "meta_ciclo_alvo": 380000.0,
+              "percentual_geral": 28.35820895522388,
+              "percentual_mensal": {
+                "10": 29.032258064516128,
+                "11": 27.956989247311828,
+                "12": 28.048780487804876
+              },
+              "proposta": 380000.0,
+              "round_months_v2": true,
+              "sugerida": 377724.37105839566
             },
             "ORDENHA": {
-              "mensal": {},
-              "proposta": 15550.28836965862,
-              "sugerida": 15550.28836965862
+              "mensal": {
+                "10": 68000.0,
+                "11": 68000.0,
+                "12": 65000.0
+              },
+              "meta_ciclo_alvo": 201000.0,
+              "percentual_geral": 15.0,
+              "percentual_mensal": {
+                "10": 14.623655913978494,
+                "11": 14.623655913978494,
+                "12": 15.853658536585366
+              },
+              "proposta": 201000.0,
+              "round_months_v2": true,
+              "sugerida": 14791.401182142006
             },
             "RACOES": {
               "mensal": {},
               "proposta": 147075.98501948063,
-              "sugerida": 147075.98501948063
+              "sugerida": 139898.36374523802
             },
             "SAUDE ANIMAL": {
-              "mensal": {},
-              "proposta": 429403.7688251624,
-              "sugerida": 429403.7688251624
+              "mensal": {
+                "10": 140000.0,
+                "11": 145000.0,
+                "12": 125000.0
+              },
+              "meta_ciclo_alvo": 410000.0,
+              "percentual_geral": 30.597014925373134,
+              "percentual_mensal": {
+                "10": 30.107526881720432,
+                "11": 31.182795698924732,
+                "12": 30.48780487804878
+              },
+              "proposta": 410000.0,
+              "round_months_v2": true,
+              "sugerida": 408447.95047078445
             }
           },
+          "incluir_outros": false,
           "justificativa": "",
-          "proposta": 1408750.0,
+          "mensal": {
+            "10": 465000.0,
+            "11": 465000.0,
+            "12": 410000.0
+          },
+          "meta_ciclo_alvo": 1340000.0,
+          "percentual_geral": 5.469387755102041,
+          "percentual_mensal": {
+            "10": 5.470588235294118,
+            "11": 5.470588235294118,
+            "12": 5.466666666666667
+          },
+          "proposta": 1340000.0,
           "rcas": {
             "115": {
               "criterio": "Participação histórica",
@@ -210,6 +302,7 @@
               "sugerida": 1177335.8861477564
             }
           },
+          "round_months_v2": true,
           "status": "EM_PREENCHIMENTO",
           "sugerida": 1344537.2534604534
         },
@@ -258,8 +351,21 @@
             }
           },
           "justificativa": "",
-          "proposta": 9065000.0,
+          "mensal": {
+            "10": 3140000.0,
+            "11": 3140000.0,
+            "12": 2770000.0
+          },
+          "meta_ciclo_alvo": 9050000.0,
+          "percentual_geral": 36.93877551020408,
+          "percentual_mensal": {
+            "10": 36.94117647058823,
+            "11": 36.94117647058823,
+            "12": 36.93333333333333
+          },
+          "proposta": 9050000.0,
           "rcas": {},
+          "round_months_v2": true,
           "status": "EM_PREENCHIMENTO",
           "sugerida": 9054014.61010195
         },
@@ -308,8 +414,21 @@
             }
           },
           "justificativa": "",
-          "proposta": 8942500.0,
+          "mensal": {
+            "10": 2990000.0,
+            "11": 3000000.0,
+            "12": 2640000.0
+          },
+          "meta_ciclo_alvo": 8630000.0,
+          "percentual_geral": 35.224489795918366,
+          "percentual_mensal": {
+            "10": 35.1764705882353,
+            "11": 35.294117647058826,
+            "12": 35.2
+          },
+          "proposta": 8630000.0,
           "rcas": {},
+          "round_months_v2": true,
           "status": "EM_PREENCHIMENTO",
           "sugerida": 8626481.076422658
         },
@@ -363,8 +482,21 @@
             }
           },
           "justificativa": "",
-          "proposta": 5083750.0,
+          "mensal": {
+            "10": 1905000.0,
+            "11": 1895000.0,
+            "12": 1680000.0
+          },
+          "meta_ciclo_alvo": 5480000.0,
+          "percentual_geral": 22.367346938775512,
+          "percentual_mensal": {
+            "10": 22.41176470588235,
+            "11": 22.294117647058822,
+            "12": 22.4
+          },
+          "proposta": 5480000.0,
           "rcas": {},
+          "round_months_v2": true,
           "status": "EM_PREENCHIMENTO",
           "sugerida": 5474967.060014942
         }
