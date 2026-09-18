@@ -47,93 +47,70 @@ def _linha_vazia(nome):
     }
 
 
-def _redistribuir_valor_geral_outros(deps, meta_sup, sup_mensal, meses, outros_valor, key):
-    """Reserva OUTROS e redistribui o restante proporcionalmente entre os seis departamentos formais."""
+def _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, outros_valor):
+    """Reserva OUTROS e redistribui o restante proporcionalmente sem mexer diretamente no session_state."""
     outros_valor = max(0.0, min(num(meta_sup), num(outros_valor)))
     formais = [d for d in DEPARTAMENTOS_META if d in deps]
-    atual_total = sum(num(deps[d].get('meta_ciclo_alvo')) for d in formais)
 
-    pesos = {}
-    if atual_total > 0:
-        pesos = {d: num(deps[d].get('meta_ciclo_alvo')) / atual_total for d in formais}
+    pesos_geral = {}
+    total_formal = sum(max(0.0, num(deps[d].get('meta_ciclo_alvo'))) for d in formais)
+    if total_formal > 0:
+        pesos_geral = {d: max(0.0, num(deps[d].get('meta_ciclo_alvo'))) / total_formal for d in formais}
     else:
-        refs = [num(deps[d].get('percentual_geral')) for d in formais]
+        refs = [max(0.0, num(deps[d].get('percentual_geral'))) for d in formais]
         soma_ref = sum(refs)
-        pesos = {d: ((refs[i] / soma_ref) if soma_ref > 0 else (1 / len(formais) if formais else 0)) for i, d in enumerate(formais)}
+        pesos_geral = {d: ((refs[i] / soma_ref) if soma_ref > 0 else (1 / len(formais) if formais else 0)) for i, d in enumerate(formais)}
 
-    restante = round(num(meta_sup) - outros_valor, 2)
+    restante = round(max(0.0, num(meta_sup) - outros_valor), 2)
     usado = 0.0
     for i, dep in enumerate(formais):
         rec = deps[dep]
-        if i < len(formais) - 1:
-            novo = round(restante * pesos.get(dep, 0), 2)
-            usado += novo
+        if i == len(formais) - 1:
+            novo = round(max(0.0, restante - usado), 2)
         else:
-            novo = round(restante - usado, 2)
+            novo = round(max(0.0, restante * pesos_geral.get(dep, 0)), 2)
+            novo = min(novo, max(0.0, restante - usado))
+            usado += novo
         rec['meta_ciclo_alvo'] = novo
         rec['percentual_geral'] = pct(novo, meta_sup)
-        st.session_state[f'gm_du_val_v4_{key}_{i}'] = novo
-        st.session_state[f'gm_du_geral_v4_{key}_{i}'] = rec['percentual_geral']
 
     out = deps.setdefault(OUTROS, {})
-    out['meta_ciclo_alvo'] = outros_valor
+    out['meta_ciclo_alvo'] = round(outros_valor, 2)
     out['percentual_geral'] = pct(outros_valor, meta_sup)
-    out_idx = len(formais)
-    st.session_state[f'gm_du_val_v4_{key}_{out_idx}'] = outros_valor
-    st.session_state[f'gm_du_geral_v4_{key}_{out_idx}'] = out['percentual_geral']
 
-    # Reparte também os meses para que todos já continuem fechados.
+    # Reserva mensal de OUTROS respeitando o peso dos meses do supervisor.
     out['mensal'] = rounded_months(outros_valor, sup_mensal, meses)
-    out['percentual_mensal'] = {str(m): pct(out['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses}
+    out['percentual_mensal'] = {
+        str(m): pct(out['mensal'].get(str(m)), sup_mensal.get(str(m))) for m in meses
+    }
 
+    # Em cada mês, o saldo é redistribuído proporcionalmente entre os formais.
     for m in meses:
-        alvo_mes = round(num(sup_mensal.get(str(m))), 2)
-        reservado = round(num(out['mensal'].get(str(m))), 2)
-        restante_mes = round(alvo_mes - reservado, 2)
-        atual_mes_total = sum(num((deps[d].get('mensal') or {}).get(str(m))) for d in formais)
-        usados_mes = 0.0
+        alvo = max(0.0, round(num(sup_mensal.get(str(m))), 2))
+        reservado = max(0.0, round(num(out['mensal'].get(str(m))), 2))
+        saldo = round(max(0.0, alvo - reservado), 2)
+
+        total_mes_formal = sum(max(0.0, num((deps[d].get('mensal') or {}).get(str(m)))) for d in formais)
+        usado_mes = 0.0
         for i, dep in enumerate(formais):
             rec = deps[dep]
-            if atual_mes_total > 0:
-                peso_mes = num((rec.get('mensal') or {}).get(str(m))) / atual_mes_total
+            if total_mes_formal > 0:
+                peso = max(0.0, num((rec.get('mensal') or {}).get(str(m)))) / total_mes_formal
             else:
-                peso_mes = pesos.get(dep, 0)
-            if i < len(formais) - 1:
-                novo_mes = round(restante_mes * peso_mes, 2)
-                usados_mes += novo_mes
+                peso = pesos_geral.get(dep, 0)
+
+            if i == len(formais) - 1:
+                novo_mes = round(max(0.0, saldo - usado_mes), 2)
             else:
-                novo_mes = round(restante_mes - usados_mes, 2)
+                novo_mes = round(max(0.0, saldo * peso), 2)
+                novo_mes = min(novo_mes, max(0.0, saldo - usado_mes))
+                usado_mes += novo_mes
+
             rec.setdefault('mensal', {})[str(m)] = novo_mes
-            rec.setdefault('percentual_mensal', {})[str(m)] = pct(novo_mes, alvo_mes)
-            st.session_state[f'gm_du_mesval_v4_{key}_{i}_{m}'] = novo_mes
+            rec.setdefault('percentual_mensal', {})[str(m)] = pct(novo_mes, alvo)
 
-        st.session_state[f'gm_du_mesval_v4_{key}_{out_idx}_{m}'] = reservado
-
-
-def _redistribuir_mes_outros(deps, mes, alvo_mes, outros_mes, key):
-    """Ao editar OUTROS em um mês, ajusta os demais proporcionalmente e fecha exatamente o mês."""
-    formais = [d for d in DEPARTAMENTOS_META if d in deps]
-    outros_mes = max(0.0, min(num(alvo_mes), num(outros_mes)))
-    restante = round(num(alvo_mes) - outros_mes, 2)
-    atual_total = sum(num((deps[d].get('mensal') or {}).get(str(mes))) for d in formais)
-    usado = 0.0
-
-    for i, dep in enumerate(formais):
-        rec = deps[dep]
-        peso = (num((rec.get('mensal') or {}).get(str(mes))) / atual_total) if atual_total > 0 else (1 / len(formais) if formais else 0)
-        if i < len(formais) - 1:
-            novo = round(restante * peso, 2)
-            usado += novo
-        else:
-            novo = round(restante - usado, 2)
-        rec.setdefault('mensal', {})[str(mes)] = novo
-        rec.setdefault('percentual_mensal', {})[str(mes)] = pct(novo, alvo_mes)
-        st.session_state[f'gm_du_mesval_v4_{key}_{i}_{mes}'] = novo
-
-    out = deps.setdefault(OUTROS, {})
-    out.setdefault('mensal', {})[str(mes)] = outros_mes
-    out.setdefault('percentual_mensal', {})[str(mes)] = pct(outros_mes, alvo_mes)
-    st.session_state[f'gm_du_mesval_v4_{key}_{len(formais)}_{mes}'] = outros_mes
+    # Marca uma nova revisão visual para os widgets nascerem com os valores recalculados.
+    return
 
 
 def _filtrar(data, deps, incluir_outros):
@@ -212,6 +189,28 @@ def aplicar_departamentos_unificados():
         )
         saida = _filtrar(data, deps, incluir_outros)
 
+        if incluir_outros:
+            out = deps.setdefault(OUTROS, {})
+            reserva_key = f'gm_du_reserva_outros_{key}_{sup}'
+            reserva_padrao = max(0.0, num(out.get('meta_ciclo_alvo')))
+            reserva = st.number_input(
+                'Reserva para Outros no ciclo',
+                min_value=0.0,
+                max_value=max(0.0, num(meta_sup)),
+                value=reserva_padrao,
+                step=1000.0,
+                format='%.2f',
+                key=reserva_key,
+                help='Ao alterar este valor, os seis departamentos formais são recalculados proporcionalmente.'
+            )
+            aplicada = num(out.get('_reserva_aplicada'))
+            if abs(num(reserva) - aplicada) > 0.01:
+                _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, reserva)
+                out['_reserva_aplicada'] = num(reserva)
+                srec['_dep_ui_rev'] = int(srec.get('_dep_ui_rev', 0)) + 1
+
+        rev = int(srec.get('_dep_ui_rev', 0))
+
         items = []
         for _, row in saida.reset_index(drop=True).iterrows():
             dep = str(row.get('Departamento', 'Departamento'))
@@ -223,7 +222,7 @@ def aplicar_departamentos_unificados():
         st.markdown(
             f"<div class='gm-du-panel'><div class='gm-du-panel-top'><div>"
             f"<div class='gm-du-panel-title'>Participação dos departamentos</div>"
-            f"<div class='gm-du-panel-sub'>Meta do ciclo e meses já vêm sugeridos em valores redondos. Ao preencher Outros, o restante é redistribuído proporcionalmente entre os seis departamentos.</div>"
+            f"<div class='gm-du-panel-sub'>Meta do ciclo e meses já vêm sugeridos em valores redondos. Use a reserva de Outros acima; o restante é redistribuído proporcionalmente entre os seis departamentos.</div>"
             f"</div><div class='gm-du-panel-meta'><span>Meta do supervisor no ciclo</span><strong>{_fmt(meta_sup)}</strong></div></div></div>",
             unsafe_allow_html=True,
         )
@@ -244,26 +243,24 @@ def aplicar_departamentos_unificados():
             rec = deps[dep]
             part_ref = num(row.get('Participação ref. %'))
 
-            pct_key = f'gm_du_geral_v4_{key}_{idx}'
-            val_key = f'gm_du_val_v4_{key}_{idx}'
+            pct_key = f'gm_du_geral_v5_{key}_{rev}_{idx}'
+            val_key = f'gm_du_val_v5_{key}_{rev}_{idx}'
 
             def on_pct(rec=rec, dep=dep, pct_key=pct_key, val_key=val_key):
-                sync_general_from_pct(rec, st.session_state.get(pct_key), meta_sup)
                 if dep == OUTROS:
-                    _redistribuir_valor_geral_outros(deps, meta_sup, sup_mensal, meses, rec['meta_ciclo_alvo'], key)
-                else:
-                    rec['mensal'] = rounded_months(rec['meta_ciclo_alvo'], sup_mensal, meses)
-                    rec['percentual_mensal'] = {str(m): pct(rec['mensal'][str(m)], sup_mensal.get(str(m))) for m in meses}
-                    st.session_state[val_key] = rec['meta_ciclo_alvo']
+                    return
+                sync_general_from_pct(rec, st.session_state.get(pct_key), meta_sup)
+                rec['mensal'] = rounded_months(rec['meta_ciclo_alvo'], sup_mensal, meses)
+                rec['percentual_mensal'] = {str(m): pct(rec['mensal'][str(m)], sup_mensal.get(str(m))) for m in meses}
+                st.session_state[val_key] = rec['meta_ciclo_alvo']
 
             def on_val(rec=rec, dep=dep, pct_key=pct_key, val_key=val_key):
-                sync_general_from_value(rec, st.session_state.get(val_key), meta_sup)
                 if dep == OUTROS:
-                    _redistribuir_valor_geral_outros(deps, meta_sup, sup_mensal, meses, rec['meta_ciclo_alvo'], key)
-                else:
-                    rec['mensal'] = rounded_months(rec['meta_ciclo_alvo'], sup_mensal, meses)
-                    rec['percentual_mensal'] = {str(m): pct(rec['mensal'][str(m)], sup_mensal.get(str(m))) for m in meses}
-                    st.session_state[pct_key] = rec['percentual_geral']
+                    return
+                sync_general_from_value(rec, st.session_state.get(val_key), meta_sup)
+                rec['mensal'] = rounded_months(rec['meta_ciclo_alvo'], sup_mensal, meses)
+                rec['percentual_mensal'] = {str(m): pct(rec['mensal'][str(m)], sup_mensal.get(str(m))) for m in meses}
+                st.session_state[pct_key] = rec['percentual_geral']
 
             with st.container(border=True):
                 cols = st.columns([1.8,.7,.8,1]+sum(([.66,.92] for _ in meses),[])+[.78], vertical_alignment='center', gap='small')
@@ -273,9 +270,9 @@ def aplicar_departamentos_unificados():
                 with cols[1]:
                     st.markdown(f"<div class='gm-du-val'><strong>{part_ref:.2f}%</strong><span>referência</span></div>", unsafe_allow_html=True)
                 with cols[2]:
-                    pg = st.number_input(f'% geral • {dep}', min_value=0.0, max_value=100.0, value=num(rec.get('percentual_geral')), step=0.01, format='%.2f', key=pct_key, on_change=on_pct, label_visibility='collapsed')
+                    pg = st.number_input(f'% geral • {dep}', min_value=0.0, max_value=100.0, value=max(0.0,num(rec.get('percentual_geral'))), step=0.01, format='%.2f', key=pct_key, on_change=on_pct, disabled=(dep==OUTROS), label_visibility='collapsed')
                 with cols[3]:
-                    vg = st.number_input(f'Meta ciclo • {dep}', min_value=0.0, value=num(rec.get('meta_ciclo_alvo')), step=1000.0, format='%.2f', key=val_key, on_change=on_val, label_visibility='collapsed')
+                    vg = st.number_input(f'Meta ciclo • {dep}', min_value=0.0, value=max(0.0,num(rec.get('meta_ciclo_alvo'))), step=1000.0, format='%.2f', key=val_key, on_change=on_val, disabled=(dep==OUTROS), label_visibility='collapsed')
 
                 rec['percentual_geral'] = num(pg)
                 rec['meta_ciclo_alvo'] = num(vg)
@@ -291,13 +288,11 @@ def aplicar_departamentos_unificados():
                     mkey = f'gm_du_mesval_v4_{key}_{idx}_{m}'
 
                     def on_mes(rec=rec, dep=dep, m=m, mkey=mkey):
-                        if dep == OUTROS:
-                            _redistribuir_mes_outros(deps, m, sup_mensal.get(str(m)), st.session_state.get(mkey), key)
-                        else:
+                        if dep != OUTROS:
                             sync_month_from_value(rec, m, st.session_state.get(mkey), sup_mensal.get(str(m)))
 
                     with cols[pos+1]:
-                        mv = st.number_input(f'{gm.MESES[m]} R$ • {dep}', min_value=0.0, value=num(mensal.get(str(m))), step=1000.0, format='%.2f', key=mkey, on_change=on_mes, label_visibility='collapsed')
+                        mv = st.number_input(f'{gm.MESES[m]} R$ • {dep}', min_value=0.0, value=max(0.0,num(mensal.get(str(m)))), step=1000.0, format='%.2f', key=mkey, on_change=on_mes, disabled=(dep==OUTROS), label_visibility='collapsed')
                     mensal[str(m)] = round(num(mv), 2)
                     pcts[str(m)] = pct(mensal[str(m)], sup_mensal.get(str(m)))
                     soma_mes[str(m)] += mensal[str(m)]
