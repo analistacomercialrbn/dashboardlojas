@@ -160,8 +160,9 @@ def aplicar_departamentos_unificados():
         deps = srec.setdefault('departamentos', {})
 
         out_existente = deps.get(OUTROS) or {}
+        incluir_anterior = bool(srec.get('incluir_outros'))
         incluir_padrao = bool(
-            srec.get('incluir_outros')
+            incluir_anterior
             or num(out_existente.get('_reserva_aplicada')) > 0
             or num(out_existente.get('meta_ciclo_alvo')) > 0
         )
@@ -173,6 +174,8 @@ def aplicar_departamentos_unificados():
             help='Reserva parte da meta para departamentos sem meta formal.'
         )
         srec['incluir_outros'] = bool(incluir_outros)
+        if bool(incluir_outros) != incluir_anterior:
+            srec['departamentos_finalizados'] = False
         saida = _filtrar(data, deps, incluir_outros)
 
         items = []
@@ -209,8 +212,11 @@ def aplicar_departamentos_unificados():
 
             # A reserva é uma regra persistente do supervisor: reaplica em todo rerun.
             # Isso evita que initialize_matrix ou a troca de supervisor recupere um residual antigo.
+            reserva_anterior = num(out.get('_reserva_aplicada'))
             _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, reserva)
             out['_reserva_aplicada'] = num(reserva)
+            if abs(num(reserva) - reserva_anterior) > 0.01:
+                srec['departamentos_finalizados'] = False
 
             depois = {
                 d: (
@@ -255,6 +261,7 @@ def aplicar_departamentos_unificados():
                 if dep == OUTROS:
                     return
                 sync_general_from_pct(rec, st.session_state.get(pct_key), meta_sup)
+                srec['departamentos_finalizados'] = False
                 _rebalancear_meses(deps, meta_sup, sup_mensal, meses)
                 srec['_dep_ui_rev'] = int(srec.get('_dep_ui_rev', 0)) + 1
                 st.session_state[val_key] = rec['meta_ciclo_alvo']
@@ -263,6 +270,7 @@ def aplicar_departamentos_unificados():
                 if dep == OUTROS:
                     return
                 sync_general_from_value(rec, st.session_state.get(val_key), meta_sup)
+                srec['departamentos_finalizados'] = False
                 _rebalancear_meses(deps, meta_sup, sup_mensal, meses)
                 srec['_dep_ui_rev'] = int(srec.get('_dep_ui_rev', 0)) + 1
                 st.session_state[pct_key] = rec['percentual_geral']
@@ -296,6 +304,7 @@ def aplicar_departamentos_unificados():
                     def on_mes(rec=rec, dep=dep, m=m, mkey=mkey):
                         if dep != OUTROS:
                             sync_month_from_value(rec, m, st.session_state.get(mkey), sup_mensal.get(str(m)))
+                            srec['departamentos_finalizados'] = False
 
                     with cols[pos+1]:
                         mv = st.number_input(f'{gm.MESES[m]} R$ • {dep}', min_value=0.0, value=max(0.0,num(mensal.get(str(m)))), step=1000.0, format='%.2f', key=mkey, on_change=on_mes, disabled=(dep==OUTROS), label_visibility='collapsed')
@@ -336,6 +345,7 @@ def aplicar_departamentos_unificados():
 
         tudo_ok = abs(dif_total) <= 0.02 and meses_ok and linhas_ok
         estado['ok'][sup] = tudo_ok
+        srec['departamentos_fechados'] = bool(tudo_ok)
         if tudo_ok:
             st.success('Metas do ciclo e valores mensais dos departamentos fechados.')
         else:
@@ -350,10 +360,15 @@ def aplicar_departamentos_unificados():
             return False
         if key.startswith('gm2_save_dep_'):
             fechado = bool(sup and estado['ok'].get(sup))
-            label = 'Salvar departamentos e avançar para RCAs →' if fechado else 'Salvar departamentos como rascunho'
-            # Salvar deve permanecer disponível mesmo com diferenças.
-            # O fechamento continua sendo validado visualmente e na aprovação.
+            label = 'Finalizar este supervisor e liberar RCAs →' if fechado else 'Salvar este supervisor como rascunho'
             kwargs.pop('disabled', None)
+            clicou = button_prev(label, *args, **kwargs)
+            if clicou and sup:
+                cycle = ctx.get('cycle') or {}
+                srec = (cycle.get('supervisores') or {}).get(sup) or {}
+                srec['departamentos_fechados'] = fechado
+                srec['departamentos_finalizados'] = fechado
+            return clicou
         return button_prev(label, *args, **kwargs)
 
     st.data_editor = data_editor
