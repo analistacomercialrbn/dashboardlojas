@@ -2,7 +2,7 @@
   "cycles": {
     "2026|10,11,12": {
       "ano": 2026,
-      "atualizado_em": "2026-09-18T14:53:10+00:00",
+      "atualizado_em": "2026-09-18T14:53:26+00:00",
       "criado_em": "2026-09-16T23:59:14+00:00",
       "criado_por": "Coordenação Comercial",
       "criterio_sugestao": "Média 50/50",
@@ -151,6 +151,13 @@
           "acao": "SALVAR_DEPARTAMENTOS",
           "data_hora": "2026-09-18T14:53:10+00:00",
           "observacao": "CEARA CENTRO OESTE",
+          "status": "DISTRIBUIDO",
+          "usuario": "Coordenação Comercial"
+        },
+        {
+          "acao": "SALVAR_DEPARTAMENTOS",
+          "data_hora": "2026-09-18T14:53:26+00:00",
+          "observacao": "CEARA LESTE",
           "status": "DISTRIBUIDO",
           "usuario": "Coordenação Comercial"
         }
@@ -491,46 +498,136 @@
           "criterio": "Participação histórica",
           "departamentos": {
             "AGRICULTURA": {
-              "mensal": {},
-              "proposta": 1609650.0,
-              "sugerida": 405856.3381844649
+              "mensal": {
+                "10": 135000.0,
+                "11": 135000.0,
+                "12": 120000.0
+              },
+              "meta_ciclo_alvo": 390000.0,
+              "percentual_geral": 4.519119351100811,
+              "percentual_mensal": {
+                "10": 4.51505016722408,
+                "11": 4.5,
+                "12": 4.545454545454546
+              },
+              "proposta": 390000.0,
+              "round_months_v2": true,
+              "sugerida": 391673.49158869794
             },
             "INGREDIENTES MINERAIS": {
               "mensal": {},
               "proposta": 89425.0,
-              "sugerida": 31356.738264512038
+              "sugerida": 30260.961836481838
             },
             "MAQUINAS E EQUIPAMENTOS": {
               "mensal": {},
               "proposta": 0.0,
-              "sugerida": 35891.655973444635
+              "sugerida": 34637.40464644419
             },
             "MIX REVENDA": {
-              "mensal": {},
-              "proposta": 447125.0,
-              "sugerida": 413420.20912289
+              "mensal": {
+                "10": 140000.0,
+                "11": 140000.0,
+                "12": 120000.0
+              },
+              "meta_ciclo_alvo": 400000.0,
+              "percentual_geral": 4.634994206257242,
+              "percentual_mensal": {
+                "10": 4.682274247491639,
+                "11": 4.666666666666667,
+                "12": 4.545454545454546
+              },
+              "proposta": 400000.0,
+              "round_months_v2": true,
+              "sugerida": 398973.03938837466
             },
             "NUTRICAO - MONOGASTRICOS": {
-              "mensal": {},
-              "proposta": 1341375.0,
-              "sugerida": 1742414.50209366
+              "mensal": {
+                "10": 580000.0,
+                "11": 590000.0,
+                "12": 510000.0
+              },
+              "meta_ciclo_alvo": 1680000.0,
+              "percentual_geral": 19.466975666280415,
+              "percentual_mensal": {
+                "10": 19.39799331103679,
+                "11": 19.666666666666668,
+                "12": 19.318181818181817
+              },
+              "proposta": 1680000.0,
+              "round_months_v2": true,
+              "sugerida": 1681524.9821714603
             },
             "NUTRICAO - RUMINANTES": {
-              "mensal": {},
-              "proposta": 4024125.0,
-              "sugerida": 4628880.011254484
+              "mensal": {
+                "10": 1550000.0,
+                "11": 1550000.0,
+                "12": 1370000.0
+              },
+              "meta_ciclo_alvo": 4470000.0,
+              "percentual_geral": 51.79606025492468,
+              "percentual_mensal": {
+                "10": 51.83946488294314,
+                "11": 51.666666666666664,
+                "12": 51.89393939393939
+              },
+              "proposta": 4470000.0,
+              "round_months_v2": true,
+              "sugerida": 4467121.5540538095
             },
             "ORDENHA": {
-              "mensal": {},
-              "proposta": 581262.5,
-              "sugerida": 705206.4537460969
+              "mensal": {
+                "10": 235000.0,
+                "11": 235000.0,
+                "12": 210000.0
+              },
+              "meta_ciclo_alvo": 680000.0,
+              "percentual_geral": 7.879490150637312,
+              "percentual_mensal": {
+                "10": 7.8595317725752505,
+                "11": 7.833333333333333,
+                "12": 7.954545454545454
+              },
+              "proposta": 680000.0,
+              "round_months_v2": true,
+              "sugerida": 680562.6721642512
+            },
+            "OUTROS": {
+              "_reserva_aplicada": 60000.0,
+              "mensal": {
+                "10": 20000.0,
+                "11": 20000.0,
+                "12": 20000.0
+              },
+              "meta_ciclo_alvo": 60000.0,
+              "percentual_geral": 0.6952491309385863,
+              "percentual_mensal": {
+                "10": 0.6688963210702341,
+                "11": 0.6666666666666666,
+                "12": 0.7575757575757576
+              },
+              "proposta": 60000.0,
+              "round_months_v2": true
             },
             "SAUDE ANIMAL": {
-              "mensal": {},
-              "proposta": 849537.5,
-              "sugerida": 979474.0913604478
+              "mensal": {
+                "10": 330000.0,
+                "11": 330000.0,
+                "12": 290000.0
+              },
+              "meta_ciclo_alvo": 950000.0,
+              "percentual_geral": 11.00811123986095,
+              "percentual_mensal": {
+                "10": 11.036789297658864,
+                "11": 11.0,
+                "12": 10.984848484848484
+              },
+              "proposta": 950000.0,
+              "round_months_v2": true,
+              "sugerida": 945245.8941504797
             }
           },
+          "incluir_outros": true,
           "justificativa": "",
           "mensal": {
             "10": 2990000.0,
