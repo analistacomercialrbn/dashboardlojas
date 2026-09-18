@@ -13,6 +13,7 @@ from gestao_aprovacao_visual import aplicar_visual_aprovacao
 from gestao_mensal_integrado import aplicar_mensal_integrado
 from gestao_supervisor_unificado import aplicar_supervisores_unificados
 from gestao_departamento_unificado import aplicar_departamentos_unificados
+from gestao_rca_unificado import aplicar_rcas_unificados
 
 
 def aplicar_formatacao_comparativos():
@@ -31,3 +32,4 @@ def aplicar_formatacao_comparativos():
     aplicar_mensal_integrado()
     aplicar_supervisores_unificados()
     aplicar_departamentos_unificados()
+    aplicar_rcas_unificados()
