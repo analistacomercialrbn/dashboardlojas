@@ -335,10 +335,14 @@ def render_gestao_metas(vendas,metas,ativos,usuario,brl,brl_compacto,pct,kpi):
 
     with tabs[3]:
         st.markdown('### Distribuição da meta do supervisor entre RCAs')
-        sups=sorted(cycle.get('supervisores',{}).keys())
+        sups=[
+            s for s,r in sorted(cycle.get('supervisores',{}).items())
+            if bool((r or {}).get('departamentos_finalizados'))
+        ]
         if perfil=='SUPERVISOR':
             vis=set(ativos['SUPERVISOR'].dropna().astype(str)); sups=[s for s in sups if s in vis]
-        if not sups: st.info('Primeiro distribua a meta entre os supervisores.')
+        if not sups:
+            st.info('Finalize os departamentos de pelo menos um supervisor para liberar a distribuição dos RCAs.')
         else:
             sup=st.selectbox('Supervisor para distribuir RCAs',sups,key=f'gm2_rca_sup_{key}')
             suprec=cycle['supervisores'][sup]; meta_sup=_num(suprec.get('proposta'))
