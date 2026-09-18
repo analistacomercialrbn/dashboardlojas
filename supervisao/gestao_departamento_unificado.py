@@ -87,15 +87,66 @@ def _filtrar_departamentos(data, deps, incluir_outros):
     return saida[data.columns]
 
 
+def _pct2(v):
+    return round(_num(v) + 1e-10, 2)
+
+
+def _money2(v):
+    return round(_num(v) + 1e-10, 2)
+
+
 def _sincronizar_meses(rec, meses, pct_geral):
     pct = rec.setdefault('percentual_mensal', {})
-    anterior = _num(rec.get('percentual_geral_anterior', pct_geral))
+    anterior = _pct2(rec.get('percentual_geral_anterior', pct_geral))
+    pct_geral = _pct2(pct_geral)
     for m in meses:
         k = str(m)
-        if k not in pct or abs(_num(pct.get(k)) - anterior) <= 0.001:
+        if k not in pct or abs(_pct2(pct.get(k)) - anterior) <= 0.001:
             pct[k] = pct_geral
+        else:
+            pct[k] = _pct2(pct.get(k))
     rec['percentual_geral_anterior'] = pct_geral
     return pct
+
+
+def _corrigir_residuo_outros(saida, deps, meses, sup_mensal, meta_sup):
+    """Usa OUTROS apenas para absorver resíduos de arredondamento de até 0,05 p.p."""
+    nomes = [str(x) for x in saida['Departamento'].tolist()]
+    if OUTROS not in nomes or OUTROS not in deps:
+        return
+
+    outros = deps[OUTROS]
+    soma_sem_outros = 0.0
+    for dep in nomes:
+        if dep == OUTROS:
+            continue
+        rec = deps.setdefault(dep, {})
+        if 'percentual_geral' not in rec:
+            continue
+        rec['percentual_geral'] = _pct2(rec.get('percentual_geral'))
+        soma_sem_outros += rec['percentual_geral']
+
+    atual_outros = _pct2(outros.get('percentual_geral'))
+    total_atual = _pct2(soma_sem_outros + atual_outros)
+    residuo = _pct2(100.0 - total_atual)
+    if abs(residuo) <= 0.05:
+        outros['percentual_geral'] = _pct2(atual_outros + residuo)
+
+    for m in meses:
+        soma_sem = 0.0
+        for dep in nomes:
+            if dep == OUTROS:
+                continue
+            pct = (deps.setdefault(dep, {}).setdefault('percentual_mensal', {}))
+            if str(m) in pct:
+                pct[str(m)] = _pct2(pct.get(str(m)))
+                soma_sem += pct[str(m)]
+        pct_out = outros.setdefault('percentual_mensal', {})
+        atual = _pct2(pct_out.get(str(m)))
+        total = _pct2(soma_sem + atual)
+        residuo_m = _pct2(100.0 - total)
+        if abs(residuo_m) <= 0.05:
+            pct_out[str(m)] = _pct2(atual + residuo_m)
 
 
 def aplicar_departamentos_unificados():
@@ -140,16 +191,26 @@ def aplicar_departamentos_unificados():
 
         st.markdown("<div class='gm-du-head'><span>Departamento</span><span>Ref. %</span><span>% geral</span><span>Meta ciclo</span>"+''.join(f"<span>{gm.MESES[m]} %</span><span>{gm.MESES[m]} R$</span>" for m in meses)+"<span>Status</span></div>",unsafe_allow_html=True)
 
+        # Inicializa tudo com as mesmas 2 casas exibidas na tela e corrige apenas o resíduo de arredondamento em OUTROS.
+        for _, row_init in saida.reset_index(drop=True).iterrows():
+            dep_init=str(row_init.get('Departamento','Departamento'))
+            rec_init=deps.setdefault(dep_init,{})
+            part_ref_init=_pct2(row_init.get('Participação ref. %'))
+            if 'percentual_geral' not in rec_init:
+                valor_existente=_num(rec_init.get('proposta')) or _num(row_init.get('Meta proposta'))
+                rec_init['percentual_geral']=_pct2((100*valor_existente/meta_sup) if (meta_sup and valor_existente>0) else part_ref_init)
+            else:
+                rec_init['percentual_geral']=_pct2(rec_init.get('percentual_geral'))
+            _sincronizar_meses(rec_init,meses,rec_init['percentual_geral'])
+        _corrigir_residuo_outros(saida,deps,meses,sup_mensal,meta_sup)
+
         soma_geral=0.0
         pct_somas={str(m):0.0 for m in meses}
         linhas_ok=True
 
         for idx,row in saida.reset_index(drop=True).iterrows():
             dep=str(row.get('Departamento','Departamento')); rec=deps.setdefault(dep,{})
-            part_ref=_num(row.get('Participação ref. %'))
-            if 'percentual_geral' not in rec:
-                valor_existente=_num(rec.get('proposta')) or _num(row.get('Meta proposta'))
-                rec['percentual_geral']=(100*valor_existente/meta_sup) if (meta_sup and valor_existente>0) else part_ref
+            part_ref=_pct2(row.get('Participação ref. %'))
 
             with st.container(border=True):
                 cols=st.columns([1.9,.8,.95,1.08]+sum(([.72,1] for _ in meses),[])+[.88],vertical_alignment='center',gap='small')
@@ -159,9 +220,9 @@ def aplicar_departamentos_unificados():
                 with cols[1]:
                     st.markdown(f"<div class='gm-du-val'><strong>{part_ref:.2f}%</strong><span>referência</span></div>",unsafe_allow_html=True)
                 with cols[2]:
-                    pct_geral=st.number_input(f'% geral • {dep}',min_value=0.0,max_value=100.0,value=_num(rec.get('percentual_geral')),step=0.1,format='%.2f',key=f'gm_du_geral_{key}_{idx}',label_visibility='collapsed')
-                rec['percentual_geral']=float(pct_geral); soma_geral+=float(pct_geral)
-                meta_alvo=meta_sup*float(pct_geral)/100.0
+                    pct_geral=st.number_input(f'% geral • {dep}',min_value=0.0,max_value=100.0,value=_pct2(rec.get('percentual_geral')),step=0.01,format='%.2f',key=f'gm_du_geral_v2_{key}_{idx}',label_visibility='collapsed')
+                rec['percentual_geral']=_pct2(pct_geral); soma_geral=_pct2(soma_geral+rec['percentual_geral'])
+                meta_alvo=_money2(meta_sup*rec['percentual_geral']/100.0)
                 with cols[3]:
                     st.markdown(f"<div class='gm-du-val'><strong>{_fmt(meta_alvo)}</strong><span>pela % geral</span></div>",unsafe_allow_html=True)
 
@@ -170,15 +231,15 @@ def aplicar_departamentos_unificados():
                 pos=4
                 for m in meses:
                     with cols[pos]:
-                        pm=st.number_input(f'{gm.MESES[m]} % • {dep}',min_value=0.0,max_value=100.0,value=_num(pct.get(str(m))),step=0.1,format='%.2f',key=f'gm_du_mes_{key}_{idx}_{m}',label_visibility='collapsed')
-                    pct[str(m)]=float(pm); pct_somas[str(m)]+=float(pm)
-                    valor=_num(sup_mensal.get(str(m)))*float(pm)/100.0
+                        pm=st.number_input(f'{gm.MESES[m]} % • {dep}',min_value=0.0,max_value=100.0,value=_pct2(pct.get(str(m))),step=0.01,format='%.2f',key=f'gm_du_mes_v2_{key}_{idx}_{m}',label_visibility='collapsed')
+                    pct[str(m)]=_pct2(pm); pct_somas[str(m)]=_pct2(pct_somas[str(m)]+pct[str(m)])
+                    valor=_money2(_num(sup_mensal.get(str(m)))*pct[str(m)]/100.0)
                     mensal[str(m)]=valor
                     with cols[pos+1]:
                         st.markdown(f"<div class='gm-du-val'><strong>{_fmt(valor)}</strong><span>calculado</span></div>",unsafe_allow_html=True)
                     pos+=2
 
-                realizado=sum(_num(mensal.get(str(m))) for m in meses)
+                realizado=_money2(sum(_money2(mensal.get(str(m))) for m in meses))
                 rec['mensal']={str(m):_num(mensal.get(str(m))) for m in meses}
                 rec['proposta']=realizado
                 saida.loc[saida.index[idx],'Meta proposta']=realizado
@@ -187,19 +248,21 @@ def aplicar_departamentos_unificados():
                 with cols[-1]:
                     st.markdown(f"<div class='gm-du-status {'ok' if ok_linha else 'warn'}'>{'✓ Fechado' if ok_linha else 'Ajustar ciclo'}</div>",unsafe_allow_html=True)
 
-        total=float(pd.to_numeric(saida['Meta proposta'],errors='coerce').fillna(0).sum()); dif_total=meta_sup-total
+        total=_money2(pd.to_numeric(saida['Meta proposta'],errors='coerce').fillna(0).sum()); dif_total=_money2(meta_sup-total)
         st.markdown(f"<div class='gm-du-total'><div><span>Meta do supervisor</span><strong>{_fmt(meta_sup)}</strong></div><div><span>Distribuído</span><strong>{_fmt(total)}</strong></div><div><span>Diferença</span><strong>{_fmt(dif_total)}</strong></div></div>",unsafe_allow_html=True)
 
         cards=[]; meses_ok=True
         for m in meses:
-            soma_pct=pct_somas[str(m)]; alvo=_num(sup_mensal.get(str(m)))
-            ok=(abs(soma_pct-100)<=0.01) if alvo>0 else abs(soma_pct)<=0.01
+            soma_pct=_pct2(pct_somas[str(m)]); alvo=_money2(sup_mensal.get(str(m)))
+            soma_valor=_money2(sum(_money2((deps.get(str(r['Departamento']),{}).get('mensal') or {}).get(str(m))) for _,r in saida.iterrows()))
+            dif_mes=_money2(alvo-soma_valor)
+            ok=((soma_pct==100.00) if alvo>0 else soma_pct==0.00) and abs(dif_mes)<=0.01
             meses_ok=meses_ok and ok
-            cards.append(f"<div class='gm-du-box'><span>{gm.MESES[m]}</span><strong>{soma_pct:.1f}%</strong><small>{'Fechado' if ok else 'Ajustar para 100%'}</small></div>")
+            cards.append(f"<div class='gm-du-box'><span>{gm.MESES[m]}</span><strong>{soma_pct:.2f}%</strong><small>{_fmt(soma_valor)} de {_fmt(alvo)} • {'Fechado' if ok else 'Dif. '+_fmt(dif_mes)}</small></div>")
         if cards: st.markdown("<div class='gm-du-summary'>"+''.join(cards)+"</div>",unsafe_allow_html=True)
 
-        geral_ok=abs(soma_geral-100)<=0.01 if meta_sup>0 else True
-        tudo_ok=geral_ok and meses_ok and linhas_ok and abs(dif_total)<=0.02
+        geral_ok=(_pct2(soma_geral)==100.00) if meta_sup>0 else True
+        tudo_ok=geral_ok and meses_ok and linhas_ok and abs(dif_total)<=0.01
         estado['ok'][sup]=tudo_ok
         if tudo_ok: st.success('Participação geral e mensal dos departamentos fechada.')
         else: st.warning(f'Geral: {soma_geral:.2f}%. A soma geral deve fechar 100%, cada mês deve fechar 100% e o total mensal de cada departamento deve respeitar sua % geral.')
