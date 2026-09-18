@@ -158,7 +158,8 @@ def _filtrar(data, deps, incluir_outros):
         deps.setdefault(OUTROS, {})
         linhas.append(_linha_vazia(OUTROS))
     else:
-        deps.pop(OUTROS, None)
+        # Mantém os dados de OUTROS guardados para o supervisor; apenas não exibe a linha.
+        pass
 
     saida = pd.DataFrame(linhas)
     for col in data.columns:
@@ -206,12 +207,14 @@ def aplicar_departamentos_unificados():
         meta_sup = num(srec.get('meta_ciclo_alvo')) or num(srec.get('proposta')) or sum(num(sup_mensal.get(str(m))) for m in meses)
         deps = srec.setdefault('departamentos', {})
 
+        incluir_padrao = bool(srec.get('incluir_outros', OUTROS in deps))
         incluir_outros = st.toggle(
             'Incluir Outros',
-            value=OUTROS in deps,
-            key=f'gm_du_outros_v4_{key}_{sup}',
+            value=incluir_padrao,
+            key=f'gm_du_outros_pref_{sup}',
             help='Reserva parte da meta para departamentos sem meta formal.'
         )
+        srec['incluir_outros'] = bool(incluir_outros)
         saida = _filtrar(data, deps, incluir_outros)
 
         items = []
@@ -238,10 +241,27 @@ def aplicar_departamentos_unificados():
                 key=reserva_key,
                 help='Ao alterar este valor, os seis departamentos formais são recalculados proporcionalmente.'
             )
-            aplicada = num(out.get('_reserva_aplicada'))
-            if abs(num(reserva) - aplicada) > 0.01:
-                _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, reserva)
-                out['_reserva_aplicada'] = num(reserva)
+            antes = {
+                d: (
+                    round(num((deps.get(d) or {}).get('meta_ciclo_alvo')), 2),
+                    tuple(round(num(((deps.get(d) or {}).get('mensal') or {}).get(str(m))), 2) for m in meses),
+                )
+                for d in DEPARTAMENTOS_META + [OUTROS] if d in deps
+            }
+
+            # A reserva é uma regra persistente do supervisor: reaplica em todo rerun.
+            # Isso evita que initialize_matrix ou a troca de supervisor recupere um residual antigo.
+            _aplicar_reserva_outros(deps, meta_sup, sup_mensal, meses, reserva)
+            out['_reserva_aplicada'] = num(reserva)
+
+            depois = {
+                d: (
+                    round(num((deps.get(d) or {}).get('meta_ciclo_alvo')), 2),
+                    tuple(round(num(((deps.get(d) or {}).get('mensal') or {}).get(str(m))), 2) for m in meses),
+                )
+                for d in DEPARTAMENTOS_META + [OUTROS] if d in deps
+            }
+            if antes != depois:
                 srec['_dep_ui_rev'] = int(srec.get('_dep_ui_rev', 0)) + 1
 
         rev = int(srec.get('_dep_ui_rev', 0))
