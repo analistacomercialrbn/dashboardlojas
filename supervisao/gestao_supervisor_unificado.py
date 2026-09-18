@@ -152,26 +152,44 @@ def aplicar_supervisores_unificados():
 
                 pct_mensal = _sync_months(rec, meses, rec['percentual_geral'])
                 mensal = rec.setdefault('mensal', {})
+                overrides = rec.setdefault('percentual_mensal_override', {})
+                pct_exata_geral = (100 * rec['meta_ciclo_alvo'] / meta_ciclo) if meta_ciclo else 0.0
                 pos = 5
                 for m in meses:
+                    mes_key = f'gm_su_mes_v3_{key}_{idx}_{m}'
+
+                    def on_mes_change(rec=rec, m=m, mes_key=mes_key):
+                        rec.setdefault('percentual_mensal_override', {})[str(m)] = True
+                        rec.setdefault('percentual_mensal', {})[str(m)] = _num(st.session_state.get(mes_key))
+
+                    valor_exibido = _num(pct_mensal.get(str(m)))
+                    if not overrides.get(str(m), False):
+                        valor_exibido = pct_exata_geral
+
                     with cols[pos]:
                         pm = st.number_input(
                             f'{gm.MESES[m]} % • {sup}', min_value=0.0, max_value=100.0,
-                            value=_num(pct_mensal.get(str(m))), step=0.01, format='%.2f',
-                            key=f'gm_su_mes_v2_{key}_{idx}_{m}', label_visibility='collapsed'
+                            value=valor_exibido, step=0.01, format='%.2f',
+                            key=mes_key, on_change=on_mes_change, label_visibility='collapsed'
                         )
-                    pct_mensal[str(m)] = float(pm)
-                    soma_mes_pct[str(m)] += float(pm)
-                    valor = _num(meta_mensal.get(str(m))) * float(pm) / 100.0
+
+                    if overrides.get(str(m), False):
+                        pct_usada = float(pm)
+                    else:
+                        pct_usada = pct_exata_geral
+                        pct_mensal[str(m)] = pct_exata_geral
+
+                    soma_mes_pct[str(m)] += pct_usada
+                    valor = round(_num(meta_mensal.get(str(m))) * pct_usada / 100.0, 2)
                     mensal[str(m)] = valor
                     with cols[pos+1]:
-                        st.markdown(f"<div class='gm-su-val'><strong>{_fmt(valor)}</strong><span>calculado</span></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='gm-su-val'><strong>{_fmt(valor)}</strong><span>{'ajustado' if overrides.get(str(m), False) else 'herdado da % geral'}</span></div>", unsafe_allow_html=True)
                     pos += 2
 
-                realizado = sum(_num(mensal.get(str(m))) for m in meses)
-                rec['mensal'] = {str(m): _num(mensal.get(str(m))) for m in meses}
-                rec['proposta'] = realizado
-                saida.loc[saida.index[idx], 'Meta definida'] = realizado
+                realizado = round(sum(_num(mensal.get(str(m))) for m in meses), 2)
+                rec['mensal'] = {str(m): round(_num(mensal.get(str(m))), 2) for m in meses}
+                rec['proposta'] = rec['meta_ciclo_alvo']
+                saida.loc[saida.index[idx], 'Meta definida'] = rec['meta_ciclo_alvo']
 
                 ok_linha = abs(realizado - rec['meta_ciclo_alvo']) <= 0.02
                 linhas_ok = linhas_ok and ok_linha
@@ -194,7 +212,7 @@ def aplicar_supervisores_unificados():
         if geral_ok and valor_ok and meses_ok and linhas_ok:
             st.success('Participação geral, valores e distribuição mensal fechados.')
         else:
-            st.warning(f'Geral: {soma_geral:.2f}% • Metas: {_fmt(soma_meta)} de {_fmt(meta_ciclo)}. Ajuste %/valor e os meses até fechar.')
+            st.warning(f'Geral: {soma_geral:.2f}% • Metas do ciclo: {_fmt(soma_meta)} de {_fmt(meta_ciclo)}. Os valores gerais já fecham; ajuste apenas os meses marcados como exceção quando necessário.')
 
         return saida
 
