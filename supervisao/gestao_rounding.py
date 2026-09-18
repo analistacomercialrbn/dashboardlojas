@@ -40,27 +40,85 @@ def rounded_months(total, parent_months, months):
     return out
 
 
-def _allocate_months(items, parent_months, months):
-    """Allocate each parent month across items, never producing negative residuals."""
-    general = [max(0.0, num(rec.get('meta_ciclo_alvo'))) for _, rec, _ in items]
-    total_general = sum(general)
+def _normalized_columns(parent_total, parent_months, months):
+    """Return monthly column targets whose sum equals the parent cycle total."""
+    out = {str(m): max(0.0, round(num(parent_months.get(str(m))), 2)) for m in months}
+    if not months:
+        return out
+    total = round(max(0.0, num(parent_total)), 2)
+    current = round(sum(out.values()), 2)
+    diff = round(total - current, 2)
+    if abs(diff) > 0.001:
+        last = str(months[-1])
+        out[last] = round(max(0.0, out[last] + diff), 2)
+    return out
+
+
+def _allocate_one_row(row_total, col_remaining, months):
+    """Allocate one row with commercial rounding while respecting remaining column capacity."""
+    result = {}
+    remaining = round(max(0.0, num(row_total)), 2)
+    month_keys = [str(m) for m in months]
+
+    for pos, key in enumerate(month_keys):
+        cap = round(max(0.0, num(col_remaining.get(key))), 2)
+        later_capacity = round(sum(max(0.0, num(col_remaining.get(k))) for k in month_keys[pos + 1:]), 2)
+
+        if pos == len(month_keys) - 1:
+            value = min(cap, remaining)
+        else:
+            total_cap = round(cap + later_capacity, 2)
+            raw = (remaining * cap / total_cap) if total_cap > 0 else 0.0
+            desired = round_money(raw)
+            minimum = max(0.0, round(remaining - later_capacity, 2))
+            maximum = min(cap, remaining)
+            value = min(max(desired, minimum), maximum)
+
+        value = round(max(0.0, value), 2)
+        result[key] = value
+        remaining = round(max(0.0, remaining - value), 2)
+
+    # Any cent residual goes into the last month with capacity.
+    if remaining > 0.001:
+        for key in reversed(month_keys):
+            room = round(max(0.0, num(col_remaining.get(key)) - result.get(key, 0.0)), 2)
+            if room <= 0:
+                continue
+            add = min(room, remaining)
+            result[key] = round(result.get(key, 0.0) + add, 2)
+            remaining = round(remaining - add, 2)
+            if remaining <= 0.001:
+                break
+    return result
+
+
+def _allocate_months(items, parent_total, parent_months, months):
+    """
+    Transportation-style allocator.
+    It preserves every row cycle total AND every monthly column total.
+    """
+    if not items:
+        return
+
+    columns = _normalized_columns(parent_total, parent_months, months)
+    col_remaining = dict(columns)
 
     for _, rec, _ in items:
         rec['mensal'] = {}
 
-    for m in months:
-        target = max(0.0, round(num(parent_months.get(str(m))), 2))
-        used = 0.0
-        for i, (_, rec, _) in enumerate(items):
-            if i == len(items) - 1:
-                value = round(max(0.0, target - used), 2)
-            else:
-                weight = (general[i] / total_general) if total_general > 0 else (1 / len(items))
-                raw = target * weight
-                value = min(round_money(raw), max(0.0, target - used))
-                value = round(max(0.0, value), 2)
-                used += value
-            rec['mensal'][str(m)] = value
+    for i, (_, rec, _) in enumerate(items):
+        row_total = round(max(0.0, num(rec.get('meta_ciclo_alvo'))), 2)
+
+        if i == len(items) - 1:
+            # Last row closes every month exactly.
+            allocation = {str(m): round(max(0.0, num(col_remaining.get(str(m)))), 2) for m in months}
+        else:
+            allocation = _allocate_one_row(row_total, col_remaining, months)
+
+        rec['mensal'] = allocation
+        for m in months:
+            k = str(m)
+            col_remaining[k] = round(max(0.0, num(col_remaining.get(k)) - num(allocation.get(k))), 2)
 
 
 def initialize_matrix(items, parent_total, parent_months, months, marker='round_months_v1'):
@@ -69,7 +127,7 @@ def initialize_matrix(items, parent_total, parent_months, months, marker='round_
 
     parent_total = max(0.0, round(num(parent_total), 2))
 
-    # General targets: preserve existing values when valid; otherwise seed rounded suggestions.
+    # General targets.
     used = 0.0
     for _, rec, base in items[:-1]:
         current = num(rec.get('meta_ciclo_alvo'))
@@ -84,40 +142,54 @@ def initialize_matrix(items, parent_total, parent_months, months, marker='round_
     if 'meta_ciclo_alvo' not in last_rec or num(last_rec.get('meta_ciclo_alvo')) < 0:
         last_rec['meta_ciclo_alvo'] = round(max(0.0, parent_total - used), 2)
 
-    # If stale general targets exceed the parent, normalize them proportionally.
-    sum_general = sum(max(0.0, num(rec.get('meta_ciclo_alvo'))) for _, rec, _ in items)
-    if parent_total > 0 and sum_general > parent_total + 0.02:
-        scale = parent_total / sum_general
-        used = 0.0
-        for i, (_, rec, _) in enumerate(items):
-            if i == len(items) - 1:
-                rec['meta_ciclo_alvo'] = round(max(0.0, parent_total - used), 2)
-            else:
-                v = round(max(0.0, num(rec.get('meta_ciclo_alvo')) * scale), 2)
-                rec['meta_ciclo_alvo'] = v
-                used += v
+    # Normalize stale general targets if they do not close the parent.
+    sum_general = round(sum(max(0.0, num(rec.get('meta_ciclo_alvo'))) for _, rec, _ in items), 2)
+    if parent_total > 0 and abs(sum_general - parent_total) > 0.02:
+        if sum_general > 0:
+            scale = parent_total / sum_general
+            used = 0.0
+            for i, (_, rec, _) in enumerate(items):
+                if i == len(items) - 1:
+                    rec['meta_ciclo_alvo'] = round(max(0.0, parent_total - used), 2)
+                else:
+                    v = round(max(0.0, num(rec.get('meta_ciclo_alvo')) * scale), 2)
+                    rec['meta_ciclo_alvo'] = v
+                    used += v
 
+    columns = _normalized_columns(parent_total, parent_months, months)
     initialized = all(bool(rec.get(marker)) for _, rec, _ in items)
-    invalid = False
+    invalid = not initialized
+
     if initialized:
-        for m in months:
-            vals = [num((rec.get('mensal') or {}).get(str(m))) for _, rec, _ in items]
-            if any(v < -0.001 for v in vals):
-                invalid = True
-                break
-            if abs(sum(vals) - num(parent_months.get(str(m)))) > 0.02:
+        # Validate every row against its cycle target.
+        for _, rec, _ in items:
+            row_sum = round(sum(num((rec.get('mensal') or {}).get(str(m))) for m in months), 2)
+            if abs(row_sum - num(rec.get('meta_ciclo_alvo'))) > 0.02:
                 invalid = True
                 break
 
-    if not initialized or invalid:
-        _allocate_months(items, parent_months, months)
-        for _, rec, _ in items:
-            rec['percentual_geral'] = pct(rec.get('meta_ciclo_alvo'), parent_total)
-            rec['percentual_mensal'] = {
-                str(m): pct((rec.get('mensal') or {}).get(str(m)), parent_months.get(str(m)))
-                for m in months
-            }
-            rec[marker] = True
+        # Validate every month against the parent target.
+        if not invalid:
+            for m in months:
+                k = str(m)
+                vals = [num((rec.get('mensal') or {}).get(k)) for _, rec, _ in items]
+                if any(v < -0.001 for v in vals):
+                    invalid = True
+                    break
+                if abs(round(sum(vals), 2) - num(columns.get(k))) > 0.02:
+                    invalid = True
+                    break
+
+    if invalid:
+        _allocate_months(items, parent_total, columns, months)
+
+    for _, rec, _ in items:
+        rec['percentual_geral'] = pct(rec.get('meta_ciclo_alvo'), parent_total)
+        rec['percentual_mensal'] = {
+            str(m): pct((rec.get('mensal') or {}).get(str(m)), columns.get(str(m)))
+            for m in months
+        }
+        rec[marker] = True
 
 
 def sync_general_from_value(rec, value, parent_total):
