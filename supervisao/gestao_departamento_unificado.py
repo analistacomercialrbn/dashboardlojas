@@ -178,7 +178,7 @@ def aplicar_departamentos_unificados():
 
         srec = (cycle.get('supervisores') or {}).get(sup) or {}
         sup_mensal = srec.get('mensal') or {}
-        meta_sup = sum(num(sup_mensal.get(str(m))) for m in meses) or num(srec.get('proposta'))
+        meta_sup = num(srec.get('meta_ciclo_alvo')) or num(srec.get('proposta')) or sum(num(sup_mensal.get(str(m))) for m in meses)
         deps = srec.setdefault('departamentos', {})
 
         incluir_outros = st.toggle(
@@ -189,6 +189,16 @@ def aplicar_departamentos_unificados():
         )
         saida = _filtrar(data, deps, incluir_outros)
 
+        items = []
+        for _, row in saida.reset_index(drop=True).iterrows():
+            dep = str(row.get('Departamento', 'Departamento'))
+            rec = deps.setdefault(dep, {})
+            base = num(row.get('Meta sugerida')) or num(rec.get('proposta')) or num(row.get('Meta proposta')) or (meta_sup * num(row.get('Participação ref. %')) / 100.0)
+            items.append((dep, rec, base))
+        initialize_matrix(items, meta_sup, sup_mensal, meses, marker='round_months_v2')
+
+        # Só depois de a matriz inicial estar pronta aplicamos a reserva de Outros,
+        # preservando a proporção real/sugerida dos departamentos formais.
         if incluir_outros:
             out = deps.setdefault(OUTROS, {})
             reserva_key = f'gm_du_reserva_outros_{key}_{sup}'
@@ -210,14 +220,6 @@ def aplicar_departamentos_unificados():
                 srec['_dep_ui_rev'] = int(srec.get('_dep_ui_rev', 0)) + 1
 
         rev = int(srec.get('_dep_ui_rev', 0))
-
-        items = []
-        for _, row in saida.reset_index(drop=True).iterrows():
-            dep = str(row.get('Departamento', 'Departamento'))
-            rec = deps.setdefault(dep, {})
-            base = num(row.get('Meta sugerida')) or num(rec.get('proposta')) or num(row.get('Meta proposta')) or (meta_sup * num(row.get('Participação ref. %')) / 100.0)
-            items.append((dep, rec, base))
-        initialize_matrix(items, meta_sup, sup_mensal, meses, marker='round_months_v2')
 
         st.markdown(
             f"<div class='gm-du-panel'><div class='gm-du-panel-top'><div>"
@@ -285,7 +287,7 @@ def aplicar_departamentos_unificados():
                     pcts[str(m)] = pct(mensal.get(str(m)), sup_mensal.get(str(m)))
                     with cols[pos]:
                         st.markdown(f"<div class='gm-du-val'><strong>{pcts[str(m)]:.2f}%</strong><span>calculada</span></div>", unsafe_allow_html=True)
-                    mkey = f'gm_du_mesval_v4_{key}_{idx}_{m}'
+                    mkey = f'gm_du_mesval_v5_{key}_{rev}_{idx}_{m}'
 
                     def on_mes(rec=rec, dep=dep, m=m, mkey=mkey):
                         if dep != OUTROS:
