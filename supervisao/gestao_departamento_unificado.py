@@ -138,7 +138,7 @@ def aplicar_departamentos_unificados():
 
     data_editor_prev = st.data_editor
     button_prev = st.button
-    estado = {'ok': {}}
+    estado = {'ok': {}, 'ultimo_sup': None}
 
     def data_editor(data=None, *args, **kwargs):
         key = str(kwargs.get('key') or '')
@@ -153,6 +153,7 @@ def aplicar_departamentos_unificados():
         sup = str(ctx.get('sup') or '')
         if not sup:
             return data_editor_prev(data, *args, **kwargs)
+        estado['ultimo_sup'] = sup
 
         srec = (cycle.get('supervisores') or {}).get(sup) or {}
         sup_mensal = srec.get('mensal') or {}
@@ -355,11 +356,13 @@ def aplicar_departamentos_unificados():
     def button(label, *args, **kwargs):
         key = str(kwargs.get('key') or '')
         ctx = _ctx()
-        sup = str(ctx.get('sup') or '')
+        sup_ctx = str(ctx.get('sup') or '')
+        sup = str(estado.get('ultimo_sup') or sup_ctx)
         if key.startswith('gm2_auto_dep_'):
             return False
         if key.startswith('gm2_save_dep_'):
-            fechado = bool(sup and estado['ok'].get(sup))
+            # O status válido é o calculado na própria tabela recém-renderizada.
+            fechado = bool(estado['ok'].get(sup, False))
             label = 'Finalizar este supervisor e liberar RCAs →' if fechado else 'Salvar este supervisor como rascunho'
             kwargs.pop('disabled', None)
             clicou = button_prev(label, *args, **kwargs)
