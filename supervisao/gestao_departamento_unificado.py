@@ -110,7 +110,7 @@ def _sincronizar_meses(rec, meses, pct_geral):
 
 
 def _corrigir_residuo_outros(saida, deps, meses, sup_mensal, meta_sup):
-    """Usa OUTROS apenas para absorver resíduos de arredondamento de até 0,05 p.p."""
+    """Usa OUTROS para absorver resíduos pequenos de percentual e centavos."""
     nomes = [str(x) for x in saida['Departamento'].tolist()]
     if OUTROS not in nomes or OUTROS not in deps:
         return
@@ -147,6 +147,37 @@ def _corrigir_residuo_outros(saida, deps, meses, sup_mensal, meta_sup):
         residuo_m = _pct2(100.0 - total)
         if abs(residuo_m) <= 0.05:
             pct_out[str(m)] = _pct2(atual + residuo_m)
+
+
+def _corrigir_centavos_outros(saida, deps, meses, sup_mensal, meta_sup):
+    """Fecha exatamente os centavos no mês e no ciclo usando OUTROS, sem alterar a % exibida."""
+    nomes = [str(x) for x in saida['Departamento'].tolist()]
+    if OUTROS not in nomes or OUTROS not in deps:
+        return
+
+    outros = deps[OUTROS]
+    mensal_outros = outros.setdefault('mensal', {})
+
+    for m in meses:
+        alvo = _money2(sup_mensal.get(str(m)))
+        soma_sem = _money2(sum(
+            _money2((deps.get(dep, {}).get('mensal') or {}).get(str(m)))
+            for dep in nomes if dep != OUTROS
+        ))
+        mensal_outros[str(m)] = _money2(alvo - soma_sem)
+
+    outros['mensal'] = {str(m): _money2(mensal_outros.get(str(m))) for m in meses}
+    outros['proposta'] = _money2(sum(outros['mensal'].values()))
+
+    total_sem = _money2(sum(
+        _money2(deps.get(dep, {}).get('proposta'))
+        for dep in nomes if dep != OUTROS
+    ))
+    residuo_ciclo = _money2(meta_sup - total_sem - outros['proposta'])
+    if abs(residuo_ciclo) <= 0.05 and meses:
+        ultimo = str(meses[-1])
+        outros['mensal'][ultimo] = _money2(outros['mensal'][ultimo] + residuo_ciclo)
+        outros['proposta'] = _money2(sum(outros['mensal'].values()))
 
 
 def aplicar_departamentos_unificados():
@@ -240,13 +271,18 @@ def aplicar_departamentos_unificados():
                     pos+=2
 
                 realizado=_money2(sum(_money2(mensal.get(str(m))) for m in meses))
-                rec['mensal']={str(m):_num(mensal.get(str(m))) for m in meses}
+                rec['mensal']={str(m):_money2(mensal.get(str(m))) for m in meses}
                 rec['proposta']=realizado
                 saida.loc[saida.index[idx],'Meta proposta']=realizado
                 ok_linha=abs(realizado-meta_alvo)<=0.02
                 linhas_ok=linhas_ok and ok_linha
                 with cols[-1]:
                     st.markdown(f"<div class='gm-du-status {'ok' if ok_linha else 'warn'}'>{'✓ Fechado' if ok_linha else 'Ajustar ciclo'}</div>",unsafe_allow_html=True)
+
+        _corrigir_centavos_outros(saida,deps,meses,sup_mensal,meta_sup)
+        if OUTROS in [str(x) for x in saida['Departamento'].tolist()] and OUTROS in deps:
+            mask_outros = saida['Departamento'].astype(str).eq(OUTROS)
+            saida.loc[mask_outros,'Meta proposta'] = _money2(deps[OUTROS].get('proposta'))
 
         total=_money2(pd.to_numeric(saida['Meta proposta'],errors='coerce').fillna(0).sum()); dif_total=_money2(meta_sup-total)
         st.markdown(f"<div class='gm-du-total'><div><span>Meta do supervisor</span><strong>{_fmt(meta_sup)}</strong></div><div><span>Distribuído</span><strong>{_fmt(total)}</strong></div><div><span>Diferença</span><strong>{_fmt(dif_total)}</strong></div></div>",unsafe_allow_html=True)
