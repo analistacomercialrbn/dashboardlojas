@@ -139,7 +139,8 @@ def aplicar_departamentos_unificados():
             for m in meses:
                 if str(m) not in pct:
                     alvo=_num(sup_mensal.get(str(m)))
-                    pct[str(m)]=(100*_num(mensal.get(str(m)))/alvo) if alvo else part_ref
+                    valor_existente=_num(mensal.get(str(m)))
+                    pct[str(m)]=(100*valor_existente/alvo) if (alvo and valor_existente>0) else part_ref
 
             with st.container(border=True):
                 cols=st.columns([2]+sum(([.78,1.15] for _ in meses),[])+[1.15,.9],vertical_alignment='center',gap='small')
