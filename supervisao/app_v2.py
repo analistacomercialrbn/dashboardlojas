@@ -578,94 +578,284 @@ if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
                 f"abaixo da mediana do grupo ({dec(_mix_mediana)}). Há espaço para venda cruzada na carteira já positivada."
             ))
 
-st.markdown("<div class='exec-section'></div>", unsafe_allow_html=True)
-st.subheader('Leitura executiva')
-
-if _ano_mes_exec and pd.notna(_exec['corte']):
-    _nota_corte = f"Indicadores de ritmo calculados até {_exec['corte'].strftime('%d/%m/%Y')}. Dias úteis consideram segunda a sexta-feira."
-else:
-    _nota_corte = "Selecione um único mês e ano para habilitar projeção de fechamento, ritmo e necessidade diária."
-st.markdown(f"<div class='exec-note'>{_nota_corte}</div>", unsafe_allow_html=True)
-
-e1,e2,e3,e4,e5,e6 = st.columns(6)
-e1.markdown(kpi('Projeção fechamento', brl_compacto(_exec['projecao']) if pd.notna(_exec['projecao']) else '—',
-                brl(_exec['projecao']) if pd.notna(_exec['projecao']) else 'Mês atual'), unsafe_allow_html=True)
-e2.markdown(kpi('Gap projetado', brl_compacto(_exec['gap_proj']) if pd.notna(_exec['gap_proj']) else '—',
-                'Meta - projeção' if pd.notna(_exec['gap_proj']) else 'Disponível no mês atual'), unsafe_allow_html=True)
-e3.markdown(kpi('Ritmo da meta', pct(_exec['ritmo']) if pd.notna(_exec['ritmo']) else '—',
-                '100% = ritmo necessário'), unsafe_allow_html=True)
-e4.markdown(kpi('Necessário / dia útil', brl_compacto(_exec['necessario_dia']) if pd.notna(_exec['necessario_dia']) else '—',
-                f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else '—'), unsafe_allow_html=True)
-e5.markdown(kpi('Crescimento x A-1', pct(_exec['crescimento_a1']) if pd.notna(_exec['crescimento_a1']) else '—',
-                'Mesmo período do ano anterior'), unsafe_allow_html=True)
-_rca_ritmo_txt = f"{_exec['rcas_em_ritmo']}/{_exec['rcas_com_meta']}" if _exec['rcas_com_meta'] else '—'
-e6.markdown(kpi('RCAs em ritmo', _rca_ritmo_txt, 'Ritmo ≥ 100%'), unsafe_allow_html=True)
-
-st.markdown('#### Pontos de atenção e oportunidades')
-ia, io = st.columns(2, gap='large')
-with ia:
-    st.markdown('**⚠️ Pontos de atenção**')
-    if _atencoes:
-        for _titulo, _texto in _atencoes[:4]:
-            with st.container(border=True):
-                st.markdown(f"**{_titulo}**")
-                st.write(_texto)
-    else:
-        st.success('Nenhum alerta relevante foi identificado pelas regras atuais para este recorte.')
-
-with io:
-    st.markdown('**💡 Oportunidades sugeridas**')
-    if _oportunidades:
-        for _titulo, _texto in _oportunidades[:4]:
-            with st.container(border=True):
-                st.markdown(f"**{_titulo}**")
-                st.write(_texto)
-    else:
-        st.info('Não há oportunidade automática forte neste recorte. Use os gráficos abaixo para aprofundar a análise.')
-
 st.caption(f'Fonte de vendas: {BASE_VENDAS_VERSAO} • Competência definida pela Data de Faturamento.')
-st.caption('Dica: clique nas barras de Supervisor, RCA ou Departamento para cruzar o filtro em todo o dashboard, inclusive no mapa.')
+st.caption('Clique nos rankings e ações da Visão Geral para aprofundar a análise sem precisar refazer os filtros.')
 
 aba1,aba2,aba3,aba4 = st.tabs(['Visão Geral','Carteira','Mix e Oportunidades','Cidades 🗺️'])
 
 with aba1:
-    st.subheader('Resultado por supervisão')
-    s = r.groupby('SUPERVISOR',as_index=False).agg(FATURAMENTO=('FATURAMENTO','sum'),META=('META','sum'))
-    s['ATINGIMENTO'] = s.FATURAMENTO.div(s.META.replace(0,pd.NA))*100
-    fig = go.Figure()
-    fig.add_bar(x=s.SUPERVISOR,y=s.META,name='Meta',marker_color='#C8CEE1')
-    fig.add_bar(x=s.SUPERVISOR,y=s.FATURAMENTO,name='Faturamento',marker_color=NAVY)
-    fig.update_layout(barmode='group',title='Faturamento x Meta por supervisão',yaxis_tickprefix='R$ ',yaxis_tickformat='.2s')
-    plot_crossfilter(chart_layout(fig,390), 'xf_graf_supervisao', 'xf_supervisor', 'x')
+    st.subheader('Cockpit comercial')
+    if _ano_mes_exec and pd.notna(_exec['corte']):
+        st.caption(
+            f"Leitura do período até {_exec['corte'].strftime('%d/%m/%Y')} • "
+            "use os controles abaixo para investigar rapidamente onde agir."
+        )
+    else:
+        st.caption('Selecione um único mês e ano para habilitar projeções e leitura de ritmo.')
 
-    c1,c2 = st.columns(2)
-    with c1:
-        rr = r.sort_values('ATINGIMENTO')
-        fig = px.bar(rr,x='ATINGIMENTO',y='RCA',orientation='h',title='Atingimento de meta por RCA',text=rr.ATINGIMENTO.map(pct))
-        fig.update_traces(marker_color=NAVY,textposition='outside')
-        fig.add_vline(x=100,line_dash='dash',line_color=GREEN)
-        plot_crossfilter(chart_layout(fig,max(430,28*len(rr)+100),'v'), 'xf_graf_rca_ating', 'xf_rca', 'y')
-    with c2:
-        dep_real = fat.groupby('DEPARTAMENTO',as_index=False).VALOR.sum().rename(columns={'VALOR':'REALIZADO'})
-        dep_meta = meta.groupby('DEPARTAMENTO',as_index=False).META.sum()
-        dep = dep_real.merge(dep_meta,on='DEPARTAMENTO',how='outer').fillna(0)
-        dep['ATINGIMENTO'] = dep.REALIZADO.div(dep.META.replace(0,pd.NA))*100
-        dep = dep.sort_values('REALIZADO')
+    # 1) KPIs executivos essenciais.
+    cx1,cx2,cx3,cx4,cx5 = st.columns(5)
+    cx1.metric('Faturamento', brl(F), pct(A) + ' da meta' if pd.notna(A) else 'Sem meta')
+    cx2.metric('Meta', brl(M), 'Recorte selecionado')
+    cx3.metric(
+        'Projeção de fechamento',
+        brl(_exec['projecao']) if pd.notna(_exec['projecao']) else '—',
+        ('Acima da meta' if pd.notna(_exec['gap_proj']) and float(_exec['gap_proj']) <= 0 else 'Abaixo da meta')
+        if pd.notna(_exec['gap_proj']) else None
+    )
+    cx4.metric(
+        'Gap projetado',
+        brl(_exec['gap_proj']) if pd.notna(_exec['gap_proj']) else '—',
+        f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else None
+    )
+    cx5.metric(
+        'Ritmo da meta',
+        pct(_exec['ritmo']) if pd.notna(_exec['ritmo']) else '—',
+        '100% = ritmo necessário'
+    )
+
+    # 2) Linha de progresso: realizado, esperado no dia, projeção e meta.
+    if _ano_mes_exec and pd.notna(_exec['projecao']) and M:
+        _fracao_exec = (_exec['dias_passados'] / _exec['dias_total']) if _exec['dias_total'] else 0
+        _esperado_exec = float(M) * _fracao_exec
+        _limite_exec = max(float(M), float(_exec['projecao']), float(F), 1.0) * 1.08
+        fig_exec = go.Figure()
+        fig_exec.add_trace(go.Bar(
+            x=[float(F)], y=['Período'], orientation='h', name='Realizado',
+            marker_color=NAVY, hovertemplate='Realizado: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_exec.add_trace(go.Scatter(
+            x=[_esperado_exec], y=['Período'], mode='markers', name='Esperado hoje',
+            marker=dict(size=15, symbol='diamond', color='#C58A2E'),
+            hovertemplate='Esperado hoje: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_exec.add_trace(go.Scatter(
+            x=[float(_exec['projecao'])], y=['Período'], mode='markers', name='Projeção',
+            marker=dict(size=16, symbol='circle', color=GREEN if float(_exec['projecao']) >= float(M) else RED),
+            hovertemplate='Projeção: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_exec.add_vline(x=float(M), line_width=3, line_dash='dash', line_color=NAVY_2,
+                           annotation_text='Meta', annotation_position='top')
+        fig_exec.update_layout(
+            title='Trajetória do mês',
+            barmode='overlay',
+            height=240,
+            xaxis=dict(range=[0,_limite_exec], tickprefix='R$ ', tickformat='.2s', showgrid=True, gridcolor='#ECEEF4'),
+            yaxis=dict(showticklabels=False),
+            margin=dict(l=8,r=8,t=58,b=10),
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, x=0),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+        )
+        st.plotly_chart(fig_exec, use_container_width=True, key='cockpit_trajetoria')
+
+    # 3) Central de prioridades clicável.
+    st.markdown('### Prioridades agora')
+    st.caption('As ações abaixo são priorizadas pelo impacto projetado. Clique para aplicar o recorte correspondente.')
+
+    _prioridades = []
+    if '_rca_exec' in globals() and isinstance(_rca_exec, pd.DataFrame) and not _rca_exec.empty:
+        _risco_rca = _rca_exec[_rca_exec['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
+        if not _risco_rca.empty:
+            _p = _risco_rca.iloc[0]
+            _prioridades.append({
+                'nivel':'Crítico',
+                'titulo':f"RCA: {_p['RCA']}",
+                'texto':f"Gap projetado de {brl(_p['GAP_PROJ'])} • projeção {brl(_p['PROJECAO'])}",
+                'tipo':'RCA','alvo':str(_p['RCA'])
+            })
+    if '_dep_exec_df' in globals() and isinstance(_dep_exec_df, pd.DataFrame) and not _dep_exec_df.empty:
+        _risco_dep = _dep_exec_df[_dep_exec_df['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
+        if not _risco_dep.empty:
+            _p = _risco_dep.iloc[0]
+            _prioridades.append({
+                'nivel':'Atenção',
+                'titulo':f"Departamento: {_p['DEPARTAMENTO']}",
+                'texto':f"Gap projetado de {brl(_p['GAP_PROJ'])} • projeção {brl(_p['PROJECAO'])}",
+                'tipo':'Departamento','alvo':str(_p['DEPARTAMENTO'])
+            })
+    if pd.notna(_exec['crescimento_a1']):
+        _cres = float(_exec['crescimento_a1'])
+        _prioridades.append({
+            'nivel':'Oportunidade' if _cres >= 0 else 'Atenção',
+            'titulo':'Comparativo com o ano anterior',
+            'texto':f"{pct(_cres)} no mesmo período • use os rankings para localizar quem explica a variação",
+            'tipo':'Nenhum','alvo':None
+        })
+    if not _prioridades and _atencoes:
+        _prioridades.append({'nivel':'Atenção','titulo':_atencoes[0][0],'texto':_atencoes[0][1],'tipo':'Nenhum','alvo':None})
+
+    if _prioridades:
+        _cols_prio = st.columns(min(3, len(_prioridades)))
+        for _i, _prio in enumerate(_prioridades[:3]):
+            with _cols_prio[_i]:
+                with st.container(border=True):
+                    st.caption(_prio['nivel'].upper())
+                    st.markdown(f"**{_prio['titulo']}**")
+                    st.write(_prio['texto'])
+                    if _prio['tipo'] != 'Nenhum':
+                        if st.button(
+                            f"Analisar {_prio['tipo']}",
+                            key=f"cockpit_prio_{_i}",
+                            use_container_width=True
+                        ):
+                            if _prio['tipo'] == 'RCA':
+                                st.session_state['xf_rca'] = _prio['alvo']
+                            elif _prio['tipo'] == 'Departamento':
+                                st.session_state['xf_departamento'] = _prio['alvo']
+                            st.rerun()
+    else:
+        st.success('Nenhuma prioridade automática forte foi identificada no recorte atual.')
+
+    # 4) Ranking RCA interativo.
+    st.markdown('### Ranking interativo de RCA')
+    _ranking_opcao = st.radio(
+        'Indicador',
+        ['Gap', 'Ritmo', 'Atingimento', 'Faturamento', 'Clientes', 'Mix'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='cockpit_ranking_indicador'
+    )
+
+    _rank = r[['COD_RCA','RCA','SUPERVISOR','FATURAMENTO','META','ATINGIMENTO','POSITIVADOS','MIX_PRODUTOS_CLIENTE']].copy()
+    if _ano_mes_exec and _exec['dias_passados'] and _exec['dias_total']:
+        _fator_proj = _exec['dias_total'] / _exec['dias_passados']
+        _rank['PROJECAO'] = _rank['FATURAMENTO'] * _fator_proj
+        _rank['GAP'] = _rank['META'] - _rank['PROJECAO']
+        _frac_rank = _exec['dias_passados'] / _exec['dias_total']
+        _rank['RITMO'] = _rank['FATURAMENTO'].div((_rank['META'] * _frac_rank).replace(0,pd.NA)) * 100
+    else:
+        _rank['PROJECAO'] = _rank['FATURAMENTO']
+        _rank['GAP'] = _rank['META'] - _rank['FATURAMENTO']
+        _rank['RITMO'] = _rank['ATINGIMENTO']
+
+    _map_rank = {
+        'Gap':('GAP','Gap para meta',True,'R$ '),
+        'Ritmo':('RITMO','Ritmo da meta',False,''),
+        'Atingimento':('ATINGIMENTO','Atingimento',False,''),
+        'Faturamento':('FATURAMENTO','Faturamento',False,'R$ '),
+        'Clientes':('POSITIVADOS','Clientes positivados',False,''),
+        'Mix':('MIX_PRODUTOS_CLIENTE','Mix médio',False,''),
+    }
+    _col_rank,_titulo_rank,_asc_rank,_prefix_rank = _map_rank[_ranking_opcao]
+    _rank_show = _rank[_rank[_col_rank].notna()].sort_values(_col_rank, ascending=_asc_rank).head(15).copy()
+
+    if not _rank_show.empty:
+        fig_rank = px.bar(
+            _rank_show.sort_values(_col_rank, ascending=not _asc_rank),
+            x=_col_rank, y='RCA', orientation='h',
+            title=f'{_titulo_rank} por RCA',
+            text=_rank_show.sort_values(_col_rank, ascending=not _asc_rank)[_col_rank].map(
+                lambda v: brl_compacto(v) if _ranking_opcao in ('Gap','Faturamento')
+                else (pct(v) if _ranking_opcao in ('Ritmo','Atingimento') else dec(v))
+            )
+        )
+        fig_rank.update_traces(marker_color=NAVY, textposition='outside')
+        if _ranking_opcao in ('Ritmo','Atingimento'):
+            fig_rank.add_vline(x=100, line_dash='dash', line_color=GREEN)
+        if _ranking_opcao in ('Gap','Faturamento'):
+            fig_rank.update_xaxes(tickprefix='R$ ', tickformat='.2s')
+        plot_crossfilter(
+            chart_layout(fig_rank, max(430, 30*len(_rank_show)+120), 'v'),
+            f'cockpit_rank_{_ranking_opcao}',
+            'xf_rca',
+            'y'
+        )
+        st.caption('Clique em uma barra para filtrar o dashboard inteiro pelo RCA selecionado.')
+    else:
+        st.info('Sem dados suficientes para montar o ranking neste recorte.')
+
+    # 5) Onde está o gap? Alterna dimensão sem poluir a tela.
+    st.markdown('### Onde está o gap?')
+    _dim_gap = st.radio(
+        'Dimensão',
+        ['Supervisor','Departamento','RCA'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='cockpit_dim_gap'
+    )
+
+    _fator_gap = (_exec['dias_total'] / _exec['dias_passados']) if _exec['dias_passados'] else 1.0
+    if _dim_gap == 'Supervisor':
+        _real_g = fat.groupby('SUPERVISOR', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO'})
+        _meta_g = meta.groupby('SUPERVISOR', as_index=False)['META'].sum()
+        _g = _meta_g.merge(_real_g, on='SUPERVISOR', how='outer').fillna(0)
+        _g['PROJECAO'] = _g['REALIZADO'] * _fator_gap
+        _g['GAP'] = (_g['META'] - _g['PROJECAO']).clip(lower=0)
+        _g = _g.sort_values('GAP', ascending=False)
+        _campo_gap='SUPERVISOR'; _state_gap='xf_supervisor'
+    elif _dim_gap == 'Departamento':
+        _real_g = fat.groupby('DEPARTAMENTO', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO'})
+        _meta_g = meta.groupby('DEPARTAMENTO', as_index=False)['META'].sum()
+        _g = _meta_g.merge(_real_g, on='DEPARTAMENTO', how='outer').fillna(0)
+        _g['PROJECAO'] = _g['REALIZADO'] * _fator_gap
+        _g['GAP'] = (_g['META'] - _g['PROJECAO']).clip(lower=0)
+        _g = _g.sort_values('GAP', ascending=False)
+        _campo_gap='DEPARTAMENTO'; _state_gap='xf_departamento'
+    else:
+        _g = _rank[['RCA','META','PROJECAO','GAP']].copy()
+        _g['GAP'] = _g['GAP'].clip(lower=0)
+        _g = _g.sort_values('GAP', ascending=False)
+        _campo_gap='RCA'; _state_gap='xf_rca'
+
+    _g = _g[_g['GAP'].gt(0)].head(15)
+    if not _g.empty:
+        fig_gap = px.bar(
+            _g.sort_values('GAP'),
+            x='GAP', y=_campo_gap, orientation='h',
+            title=f'Gap projetado por {_dim_gap.lower()}',
+            text=_g.sort_values('GAP')['GAP'].map(brl_compacto)
+        )
+        fig_gap.update_traces(marker_color=RED, textposition='outside')
+        fig_gap.update_xaxes(tickprefix='R$ ', tickformat='.2s')
+        plot_crossfilter(
+            chart_layout(fig_gap, max(400, 32*len(_g)+110), 'v'),
+            f'cockpit_gap_{_dim_gap}',
+            _state_gap,
+            'y'
+        )
+        st.caption(f'Clique em uma barra para aplicar o filtro de {_dim_gap.lower()} em todo o dashboard.')
+    else:
+        st.success('Nenhum gap positivo relevante nesta dimensão para o recorte atual.')
+
+    # 6) Detalhes ficam recolhidos; o cockpit permanece limpo.
+    with st.expander('Ver análises detalhadas', expanded=False):
+        st.markdown('#### Resultado por supervisão')
+        s = r.groupby('SUPERVISOR',as_index=False).agg(FATURAMENTO=('FATURAMENTO','sum'),META=('META','sum'))
+        s['ATINGIMENTO'] = s.FATURAMENTO.div(s.META.replace(0,pd.NA))*100
         fig = go.Figure()
-        fig.add_bar(y=dep.DEPARTAMENTO,x=dep.META,name='Meta',orientation='h',marker_color='#C8CEE1',customdata=dep[['ATINGIMENTO']])
-        fig.add_bar(y=dep.DEPARTAMENTO,x=dep.REALIZADO,name='Realizado',orientation='h',marker_color=NAVY_2,customdata=dep[['ATINGIMENTO']])
-        fig.update_layout(barmode='group',title='Meta x realizado por departamento',xaxis_tickprefix='R$ ',xaxis_tickformat='.2s')
-        fig.update_traces(hovertemplate='<b>%{y}</b><br>Valor: R$ %{x:,.2f}<br>Atingimento: %{customdata[0]:.1f}%<extra>%{fullData.name}</extra>')
-        plot_crossfilter(chart_layout(fig,max(430,38*len(dep)+100),'v'), 'xf_graf_departamento', 'xf_departamento', 'y')
+        fig.add_bar(x=s.SUPERVISOR,y=s.META,name='Meta',marker_color='#C8CEE1')
+        fig.add_bar(x=s.SUPERVISOR,y=s.FATURAMENTO,name='Faturamento',marker_color=NAVY)
+        fig.update_layout(barmode='group',title='Faturamento x Meta por supervisão',yaxis_tickprefix='R$ ',yaxis_tickformat='.2s')
+        plot_crossfilter(chart_layout(fig,390), 'xf_graf_supervisao', 'xf_supervisor', 'x')
 
-    st.subheader('Painel por RCA')
-    tabela = pd.DataFrame({
-        'RCA':r.RCA,'Supervisor':r.SUPERVISOR,'Faturamento':r.FATURAMENTO.map(brl),'Meta':r.META.map(brl),
-        'Atingimento':r.ATINGIMENTO.map(pct),'Clientes':r.POSITIVADOS.map(nint),'Ticket médio':r.TICKET.map(brl),
-        'Mix prod./cliente':r.MIX_PRODUTOS_CLIENTE.map(dec),'Margem':r.MARGEM_CALC.map(pct),
-        'Desconto (R$)':r.DESCONTO_VALOR.map(brl),'% Desconto':r.DESCONTO_PCT_CALC.map(pct)
-    })
-    st.dataframe(tabela,use_container_width=True,hide_index=True,height=min(620,40+35*len(tabela)))
+        c1,c2 = st.columns(2)
+        with c1:
+            rr = r.sort_values('ATINGIMENTO')
+            fig = px.bar(rr,x='ATINGIMENTO',y='RCA',orientation='h',title='Atingimento de meta por RCA',text=rr.ATINGIMENTO.map(pct))
+            fig.update_traces(marker_color=NAVY,textposition='outside')
+            fig.add_vline(x=100,line_dash='dash',line_color=GREEN)
+            plot_crossfilter(chart_layout(fig,max(430,28*len(rr)+100),'v'), 'xf_graf_rca_ating', 'xf_rca', 'y')
+        with c2:
+            dep_real = fat.groupby('DEPARTAMENTO',as_index=False).VALOR.sum().rename(columns={'VALOR':'REALIZADO'})
+            dep_meta = meta.groupby('DEPARTAMENTO',as_index=False).META.sum()
+            dep = dep_real.merge(dep_meta,on='DEPARTAMENTO',how='outer').fillna(0)
+            dep['ATINGIMENTO'] = dep.REALIZADO.div(dep.META.replace(0,pd.NA))*100
+            dep = dep.sort_values('REALIZADO')
+            fig = go.Figure()
+            fig.add_bar(y=dep.DEPARTAMENTO,x=dep.META,name='Meta',orientation='h',marker_color='#C8CEE1',customdata=dep[['ATINGIMENTO']])
+            fig.add_bar(y=dep.DEPARTAMENTO,x=dep.REALIZADO,name='Realizado',orientation='h',marker_color=NAVY_2,customdata=dep[['ATINGIMENTO']])
+            fig.update_layout(barmode='group',title='Meta x realizado por departamento',xaxis_tickprefix='R$ ',xaxis_tickformat='.2s')
+            fig.update_traces(hovertemplate='<b>%{y}</b><br>Valor: R$ %{x:,.2f}<br>Atingimento: %{customdata[0]:.1f}%<extra>%{fullData.name}</extra>')
+            plot_crossfilter(chart_layout(fig,max(430,38*len(dep)+100),'v'), 'xf_graf_departamento', 'xf_departamento', 'y')
+
+        st.markdown('#### Painel por RCA')
+        tabela = pd.DataFrame({
+            'RCA':r.RCA,'Supervisor':r.SUPERVISOR,'Faturamento':r.FATURAMENTO.map(brl),'Meta':r.META.map(brl),
+            'Atingimento':r.ATINGIMENTO.map(pct),'Clientes':r.POSITIVADOS.map(nint),'Ticket médio':r.TICKET.map(brl),
+            'Mix prod./cliente':r.MIX_PRODUTOS_CLIENTE.map(dec),'Margem':r.MARGEM_CALC.map(pct),
+            'Desconto (R$)':r.DESCONTO_VALOR.map(brl),'% Desconto':r.DESCONTO_PCT_CALC.map(pct)
+        })
+        st.dataframe(tabela,use_container_width=True,hide_index=True,height=min(620,40+35*len(tabela)))
 
 with aba2:
     st.subheader('Saúde da carteira')
