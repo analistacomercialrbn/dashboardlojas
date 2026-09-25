@@ -55,6 +55,9 @@ h1,h2,h3 {{ color:{NAVY}; letter-spacing:-.02em; }}
 [data-baseweb="tab-list"] {{ gap:22px; }}
 [data-baseweb="tab-highlight"] {{ background-color:{NAVY}; }}
 div[data-testid="stDataFrame"] {{ border:1px solid #E5E7EF; border-radius:14px; overflow:hidden; width:100% !important; }}
+.exec-section {{ margin-top:18px; }}
+.exec-note {{ color:{MUTED}; font-size:12px; margin-top:-5px; margin-bottom:12px; }}
+
 div[data-testid="stPlotlyChart"] {{ width:100% !important; }}
 div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
 
@@ -367,6 +370,258 @@ k3.markdown(kpi('Atingimento',pct(A),'Faturamento ÷ meta'),unsafe_allow_html=Tr
 k4.markdown(kpi('Clientes positivados',nint(C),'Clientes únicos no mês'),unsafe_allow_html=True)
 k5.markdown(kpi('Ticket médio',brl_compacto(F/P if P else 0),'Por pedido faturado'),unsafe_allow_html=True)
 k6.markdown(kpi('Mix médio',dec(mix_geral),'Produtos distintos por cliente'),unsafe_allow_html=True)
+
+# -------------------------------------------------------------------------
+# LEITURA EXECUTIVA E PONTOS DE ATENÇÃO AUTOMÁTICOS
+# -------------------------------------------------------------------------
+# Quando existe um único mês/ano selecionado, o painel compara o ritmo de
+# faturamento com o avanço do mês. Dias úteis aqui significam segunda a
+# sexta-feira; feriados não são descontados.
+_ano_mes_exec = None
+try:
+    if 'ano_sel' in globals() and 'mes_sel' in globals():
+        if ano_sel != 'Todos' and len(mes_sel) == 1:
+            _ano_mes_exec = (int(ano_sel), int(meses_nome[mes_sel[0]]))
+    elif 'mes' in globals():
+        _p_exec = pd.Period(mes)
+        _ano_mes_exec = (_p_exec.year, _p_exec.month)
+except Exception:
+    _ano_mes_exec = None
+
+_exec = {
+    'projecao': pd.NA, 'gap_proj': pd.NA, 'ritmo': pd.NA,
+    'necessario_dia': pd.NA, 'crescimento_a1': pd.NA,
+    'rcas_em_ritmo': 0, 'rcas_com_meta': 0, 'corte': None,
+    'dias_passados': 0, 'dias_total': 0, 'dias_restantes': 0,
+}
+_atencoes = []
+_oportunidades = []
+
+if _ano_mes_exec:
+    _ano_exec, _mes_exec = _ano_mes_exec
+    _inicio_exec = pd.Timestamp(year=_ano_exec, month=_mes_exec, day=1)
+    _fim_exec = _inicio_exec + pd.offsets.MonthEnd(0)
+    _hoje_exec = pd.Timestamp.now(tz='America/Fortaleza').tz_localize(None).normalize()
+    _ontem_exec = _hoje_exec - pd.Timedelta(days=1)
+    _mes_corrente = (_ano_exec == _hoje_exec.year and _mes_exec == _hoje_exec.month)
+
+    # O comparativo respeita exatamente o escopo atual de RCA/Departamento.
+    _cod_exec = set(pd.to_numeric(base['COD_RCA'], errors='coerce').dropna().astype('Int64'))
+    _dep_exec = [str(xf_dep)] if xf_dep else [str(x) for x in ds_eff]
+    _cmp = vendas[
+        vendas['FATURADO']
+        & vendas['COD_RCA'].isin(_cod_exec)
+        & vendas['DEPARTAMENTO'].astype(str).isin(_dep_exec)
+    ].copy()
+
+    _max_data = _cmp.loc[
+        _cmp['DATA_FAT'].between(_inicio_exec, _fim_exec, inclusive='both'),
+        'DATA_FAT'
+    ].max()
+    if _mes_corrente:
+        _corte_exec = min(_ontem_exec, _fim_exec)
+        if pd.notna(_max_data):
+            _corte_exec = min(_corte_exec, pd.Timestamp(_max_data).normalize())
+    else:
+        _corte_exec = _fim_exec
+
+    _exec['corte'] = _corte_exec
+    _atual_exec = _cmp[
+        _cmp['DATA_FAT'].between(_inicio_exec, _corte_exec, inclusive='both')
+    ].copy() if pd.notna(_corte_exec) else _cmp.iloc[0:0].copy()
+    _fat_corte = float(_atual_exec['VALOR'].sum())
+
+    _inicio_a1 = _inicio_exec - pd.DateOffset(years=1)
+    _corte_a1 = _corte_exec - pd.DateOffset(years=1) if pd.notna(_corte_exec) else _inicio_a1
+    _fat_a1 = float(_cmp.loc[
+        _cmp['DATA_FAT'].between(_inicio_a1, _corte_a1, inclusive='both'),
+        'VALOR'
+    ].sum())
+    _exec['crescimento_a1'] = (_fat_corte / _fat_a1 - 1) * 100 if _fat_a1 else pd.NA
+
+    if _mes_corrente and pd.notna(_corte_exec):
+        _dias_total = len(pd.bdate_range(_inicio_exec, _fim_exec))
+        _dias_passados = len(pd.bdate_range(_inicio_exec, _corte_exec))
+        _dias_restantes = max(_dias_total - _dias_passados, 0)
+        _fracao_tempo = (_dias_passados / _dias_total) if _dias_total else 0
+
+        _exec.update({
+            'dias_passados': _dias_passados,
+            'dias_total': _dias_total,
+            'dias_restantes': _dias_restantes,
+        })
+
+        if _dias_passados:
+            _proj = (_fat_corte / _dias_passados) * _dias_total
+            _exec['projecao'] = _proj
+            _exec['gap_proj'] = float(M) - _proj if M else pd.NA
+        if M and _fracao_tempo:
+            _esperado_hoje = float(M) * _fracao_tempo
+            _exec['ritmo'] = (_fat_corte / _esperado_hoje) * 100 if _esperado_hoje else pd.NA
+        if M and _dias_restantes > 0:
+            _exec['necessario_dia'] = max(float(M) - _fat_corte, 0) / _dias_restantes
+        elif M and _fat_corte >= float(M):
+            _exec['necessario_dia'] = 0.0
+
+        # Projeção por RCA.
+        _real_rca = _atual_exec.groupby('COD_RCA', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO_CORTE'})
+        _meta_rca = meta.groupby('COD_RCA', as_index=False)['META'].sum()
+        _rca_exec = base[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA').merge(
+            _real_rca, on='COD_RCA', how='left'
+        ).merge(_meta_rca, on='COD_RCA', how='left').fillna({'REALIZADO_CORTE':0,'META':0})
+        _rca_exec = _rca_exec[_rca_exec['META'].gt(0)].copy()
+        if not _rca_exec.empty and _dias_passados:
+            _rca_exec['PROJECAO'] = _rca_exec['REALIZADO_CORTE'] / _dias_passados * _dias_total
+            _rca_exec['GAP_PROJ'] = _rca_exec['META'] - _rca_exec['PROJECAO']
+            _rca_exec['RITMO'] = _rca_exec['REALIZADO_CORTE'].div((_rca_exec['META'] * _fracao_tempo).replace(0,pd.NA)) * 100
+            _exec['rcas_com_meta'] = int(len(_rca_exec))
+            _exec['rcas_em_ritmo'] = int((_rca_exec['RITMO'] >= 100).sum())
+
+            _riscos = _rca_exec[_rca_exec['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
+            if not _riscos.empty:
+                _rr = _riscos.iloc[0]
+                _need_rca = max(float(_rr['META']) - float(_rr['REALIZADO_CORTE']), 0)
+                _need_rca_dia = _need_rca / _dias_restantes if _dias_restantes else 0
+                _atencoes.append((
+                    'RCA com maior gap projetado',
+                    f"{_rr['RCA']} projeta fechamento de {brl(_rr['PROJECAO'])}, "
+                    f"com gap de {brl(_rr['GAP_PROJ'])}. "
+                    + (f"Precisa de aproximadamente {brl(_need_rca_dia)} por dia útil restante." if _dias_restantes else "")
+                ))
+
+            _destaques = _rca_exec[_rca_exec['PROJECAO'].gt(_rca_exec['META'] * 1.03)].sort_values('PROJECAO', ascending=False)
+            if not _destaques.empty:
+                _rd = _destaques.iloc[0]
+                _oportunidades.append((
+                    'RCA acima da trajetória',
+                    f"{_rd['RCA']} está em ritmo para fechar próximo de {brl(_rd['PROJECAO'])}, "
+                    f"acima da meta de {brl(_rd['META'])}. Vale identificar os clientes e linhas que estão puxando esse resultado."
+                ))
+
+        # Projeção por departamento e participação no gap.
+        _real_dep = _atual_exec.groupby('DEPARTAMENTO', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO_CORTE'})
+        _meta_dep = meta.groupby('DEPARTAMENTO', as_index=False)['META'].sum()
+        _dep_exec_df = _meta_dep.merge(_real_dep, on='DEPARTAMENTO', how='outer').fillna(0)
+        if not _dep_exec_df.empty and _dias_passados:
+            _dep_exec_df['PROJECAO'] = _dep_exec_df['REALIZADO_CORTE'] / _dias_passados * _dias_total
+            _dep_exec_df['GAP_PROJ'] = _dep_exec_df['META'] - _dep_exec_df['PROJECAO']
+            _gaps_pos = _dep_exec_df[_dep_exec_df['GAP_PROJ'].gt(0)].copy()
+            _gap_total_dep = float(_gaps_pos['GAP_PROJ'].sum())
+            if not _gaps_pos.empty:
+                _dr = _gaps_pos.sort_values('GAP_PROJ', ascending=False).iloc[0]
+                _part_gap = float(_dr['GAP_PROJ']) / _gap_total_dep * 100 if _gap_total_dep else 0
+                _atencoes.append((
+                    'Departamento que mais pressiona a meta',
+                    f"{_dr['DEPARTAMENTO']} concentra {pct(_part_gap)} do gap positivo projetado entre departamentos "
+                    f"({brl(_dr['GAP_PROJ'])})."
+                ))
+
+            _dep_acima = _dep_exec_df[_dep_exec_df['PROJECAO'].gt(_dep_exec_df['META'] * 1.03)].sort_values('PROJECAO', ascending=False)
+            if not _dep_acima.empty:
+                _do = _dep_acima.iloc[0]
+                _oportunidades.append((
+                    'Departamento com tração',
+                    f"{_do['DEPARTAMENTO']} projeta {brl(_do['PROJECAO'])} para uma meta de {brl(_do['META'])}. "
+                    "Use o detalhamento por RCA para identificar onde replicar o desempenho."
+                ))
+
+        if pd.notna(_exec['gap_proj']) and float(_exec['gap_proj']) > 0:
+            _atencoes.insert(0, (
+                'Risco de fechamento abaixo da meta',
+                f"No ritmo dos dias úteis, a projeção é {brl(_exec['projecao'])}, "
+                f"com gap aproximado de {brl(_exec['gap_proj'])}. "
+                + (f"O recorte precisa gerar {brl(_exec['necessario_dia'])} por dia útil restante para atingir a meta." if pd.notna(_exec['necessario_dia']) else "")
+            ))
+        elif pd.notna(_exec['gap_proj']) and float(_exec['gap_proj']) <= 0:
+            _oportunidades.insert(0, (
+                'Ritmo suficiente para a meta',
+                f"A projeção atual é {brl(_exec['projecao'])}, "
+                f"{brl(abs(float(_exec['gap_proj'])))} acima da meta do recorte."
+            ))
+
+    # Comparativo com o mesmo período do ano anterior.
+    if pd.notna(_exec['crescimento_a1']):
+        if float(_exec['crescimento_a1']) < -3:
+            _atencoes.append((
+                'Queda frente ao mesmo período do ano anterior',
+                f"O faturamento até {_corte_exec.strftime('%d/%m')} está {pct(abs(float(_exec['crescimento_a1'])))} abaixo do mesmo período de {_ano_exec-1}."
+            ))
+        elif float(_exec['crescimento_a1']) > 3:
+            _oportunidades.append((
+                'Crescimento sobre o ano anterior',
+                f"O recorte está {pct(float(_exec['crescimento_a1']))} acima do mesmo período de {_ano_exec-1}. "
+                "Vale identificar quais RCAs, departamentos e clientes sustentam esse avanço."
+            ))
+
+# Sinais adicionais de carteira e mix.
+if inativos_total > novos_total and inativos_total > 0:
+    _atencoes.append((
+        'Pressão na carteira',
+        f"Há {nint(inativos_total)} clientes inativados contra {nint(novos_total)} novos no recorte. "
+        "Priorize os inativos de maior histórico antes de ampliar prospecção sem foco."
+    ))
+elif novos_total > inativos_total and novos_total > 0:
+    _oportunidades.append((
+        'Renovação positiva da carteira',
+        f"O período registra {nint(novos_total)} novos clientes contra {nint(inativos_total)} inativados."
+    ))
+
+if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
+    _mix_mediana = float(r.loc[r['MIX_PRODUTOS_CLIENTE'].gt(0), 'MIX_PRODUTOS_CLIENTE'].median()) if r['MIX_PRODUTOS_CLIENTE'].gt(0).any() else 0
+    _mix_cands = r[(r['POSITIVADOS'] >= 3) & r['MIX_PRODUTOS_CLIENTE'].gt(0)].sort_values('MIX_PRODUTOS_CLIENTE')
+    if _mix_mediana and not _mix_cands.empty:
+        _mx = _mix_cands.iloc[0]
+        if float(_mx['MIX_PRODUTOS_CLIENTE']) < _mix_mediana * 0.80:
+            _oportunidades.append((
+                'Oportunidade de aumento de mix',
+                f"{_mx['RCA']} tem mix médio de {dec(_mx['MIX_PRODUTOS_CLIENTE'])} produtos por cliente, "
+                f"abaixo da mediana do grupo ({dec(_mix_mediana)}). Há espaço para venda cruzada na carteira já positivada."
+            ))
+
+st.markdown("<div class='exec-section'></div>", unsafe_allow_html=True)
+st.subheader('Leitura executiva')
+
+if _ano_mes_exec and pd.notna(_exec['corte']):
+    _nota_corte = f"Indicadores de ritmo calculados até {_exec['corte'].strftime('%d/%m/%Y')}. Dias úteis consideram segunda a sexta-feira."
+else:
+    _nota_corte = "Selecione um único mês e ano para habilitar projeção de fechamento, ritmo e necessidade diária."
+st.markdown(f"<div class='exec-note'>{_nota_corte}</div>", unsafe_allow_html=True)
+
+e1,e2,e3,e4,e5,e6 = st.columns(6)
+e1.markdown(kpi('Projeção fechamento', brl_compacto(_exec['projecao']) if pd.notna(_exec['projecao']) else '—',
+                brl(_exec['projecao']) if pd.notna(_exec['projecao']) else 'Mês atual'), unsafe_allow_html=True)
+e2.markdown(kpi('Gap projetado', brl_compacto(_exec['gap_proj']) if pd.notna(_exec['gap_proj']) else '—',
+                'Meta - projeção' if pd.notna(_exec['gap_proj']) else 'Disponível no mês atual'), unsafe_allow_html=True)
+e3.markdown(kpi('Ritmo da meta', pct(_exec['ritmo']) if pd.notna(_exec['ritmo']) else '—',
+                '100% = ritmo necessário'), unsafe_allow_html=True)
+e4.markdown(kpi('Necessário / dia útil', brl_compacto(_exec['necessario_dia']) if pd.notna(_exec['necessario_dia']) else '—',
+                f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else '—'), unsafe_allow_html=True)
+e5.markdown(kpi('Crescimento x A-1', pct(_exec['crescimento_a1']) if pd.notna(_exec['crescimento_a1']) else '—',
+                'Mesmo período do ano anterior'), unsafe_allow_html=True)
+_rca_ritmo_txt = f"{_exec['rcas_em_ritmo']}/{_exec['rcas_com_meta']}" if _exec['rcas_com_meta'] else '—'
+e6.markdown(kpi('RCAs em ritmo', _rca_ritmo_txt, 'Ritmo ≥ 100%'), unsafe_allow_html=True)
+
+st.markdown('#### Pontos de atenção e oportunidades')
+ia, io = st.columns(2, gap='large')
+with ia:
+    st.markdown('**⚠️ Pontos de atenção**')
+    if _atencoes:
+        for _titulo, _texto in _atencoes[:4]:
+            with st.container(border=True):
+                st.markdown(f"**{_titulo}**")
+                st.write(_texto)
+    else:
+        st.success('Nenhum alerta relevante foi identificado pelas regras atuais para este recorte.')
+
+with io:
+    st.markdown('**💡 Oportunidades sugeridas**')
+    if _oportunidades:
+        for _titulo, _texto in _oportunidades[:4]:
+            with st.container(border=True):
+                st.markdown(f"**{_titulo}**")
+                st.write(_texto)
+    else:
+        st.info('Não há oportunidade automática forte neste recorte. Use os gráficos abaixo para aprofundar a análise.')
 
 st.caption(f'Fonte de vendas: {BASE_VENDAS_VERSAO} • Competência definida pela Data de Faturamento.')
 st.caption('Dica: clique nas barras de Supervisor, RCA ou Departamento para cruzar o filtro em todo o dashboard, inclusive no mapa.')
