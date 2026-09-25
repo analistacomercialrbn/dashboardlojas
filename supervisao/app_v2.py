@@ -858,45 +858,258 @@ with aba1:
         st.dataframe(tabela,use_container_width=True,hide_index=True,height=min(620,40+35*len(tabela)))
 
 with aba2:
-    st.subheader('Saúde da carteira')
-    x1,x2,x3,x4 = st.columns(4)
-    x1.markdown(kpi('Positivados',nint(C),'Clientes que compraram no mês'),unsafe_allow_html=True)
-    x2.markdown(kpi('Novos',nint(novos_total),'Primeira compra encontrada em 2026'),unsafe_allow_html=True)
+    st.subheader('Carteira e oportunidades')
+    st.caption('Leitura da saúde da carteira com foco em clientes que precisam de ação e espaço para ampliar relacionamento.')
+
+    _pc_carteira = (
+        fat.groupby(['COD_RCA','RCA','CODCLI'])
+        .agg(
+            PRODUTOS=('CODPROD','nunique'),
+            FATURAMENTO=('VALOR','sum'),
+            PEDIDOS=('NUMPED','nunique')
+        )
+        .reset_index()
+        if not fat.empty else
+        pd.DataFrame(columns=['COD_RCA','RCA','CODCLI','PRODUTOS','FATURAMENTO','PEDIDOS'])
+    )
+    _mono = int((_pc_carteira['PRODUTOS'] == 1).sum()) if not _pc_carteira.empty else 0
+    _ate3 = int((_pc_carteira['PRODUTOS'] <= 3).sum()) if not _pc_carteira.empty else 0
+    _mix_clientes = float(_pc_carteira['PRODUTOS'].mean()) if not _pc_carteira.empty else 0
+    _pct_mono = (_mono / len(_pc_carteira) * 100) if len(_pc_carteira) else 0
+
+    x1,x2,x3,x4,x5,x6 = st.columns(6)
+    x1.markdown(kpi('Positivados',nint(C),'Clientes que compraram no período'),unsafe_allow_html=True)
+    x2.markdown(kpi('Novos',nint(novos_total),'Primeira compra no período'),unsafe_allow_html=True)
     x3.markdown(kpi('Inativados',nint(inativos_total),'Sem faturamento há 90+ dias'),unsafe_allow_html=True)
-    x4.markdown(kpi('Ticket médio',brl_compacto(F/P if P else 0),'Por pedido faturado'),unsafe_allow_html=True)
-    c1,c2 = st.columns(2)
-    with c1:
-        cr = r.sort_values('POSITIVADOS')
-        fig = px.bar(cr,x='POSITIVADOS',y='RCA',orientation='h',title='Clientes positivados por RCA',text='POSITIVADOS')
-        fig.update_traces(marker_color=NAVY,textposition='outside')
-        plot_crossfilter(chart_layout(fig,max(430,28*len(cr)+100),'v'), 'xf_graf_rca_pos', 'xf_rca', 'y')
-    with c2:
-        ci = r[['RCA','NOVOS','INATIVADOS']].sort_values('INATIVADOS')
-        fig = go.Figure()
-        fig.add_bar(y=ci.RCA,x=ci.NOVOS,name='Novos',orientation='h',marker_color=GREEN)
-        fig.add_bar(y=ci.RCA,x=ci.INATIVADOS,name='Inativados',orientation='h',marker_color=RED)
-        fig.update_layout(barmode='group',title='Novos x Inativados por RCA')
-        plot_crossfilter(chart_layout(fig,max(430,28*len(ci)+100)), 'xf_graf_rca_carteira', 'xf_rca', 'y')
+    x4.markdown(kpi('Mix por cliente',dec(_mix_clientes),'Produtos distintos por cliente'),unsafe_allow_html=True)
+    x5.markdown(kpi('Clientes 1 produto',nint(_mono),pct(_pct_mono)+' dos positivados'),unsafe_allow_html=True)
+    x6.markdown(kpi('Até 3 produtos',nint(_ate3),'Potencial de venda cruzada'),unsafe_allow_html=True)
+
+    _car_dim = st.radio(
+        'Visualizar carteira por',
+        ['Positivados','Novos x Inativados','Mix baixo'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='carteira_visual'
+    )
+
+    if _car_dim == 'Positivados':
+        _cr = r.sort_values('POSITIVADOS')
+        _fig = px.bar(
+            _cr,x='POSITIVADOS',y='RCA',orientation='h',
+            title='Clientes positivados por RCA',
+            text='POSITIVADOS'
+        )
+        _fig.update_traces(marker_color=NAVY,textposition='outside')
+        plot_crossfilter(chart_layout(_fig,max(430,28*len(_cr)+100),'v'), 'xf_graf_rca_pos', 'xf_rca', 'y')
+
+    elif _car_dim == 'Novos x Inativados':
+        _ci = r[['RCA','NOVOS','INATIVADOS']].sort_values('INATIVADOS')
+        _fig = go.Figure()
+        _fig.add_bar(y=_ci.RCA,x=_ci.NOVOS,name='Novos',orientation='h',marker_color=GREEN)
+        _fig.add_bar(y=_ci.RCA,x=_ci.INATIVADOS,name='Inativados',orientation='h',marker_color=RED)
+        _fig.update_layout(barmode='group',title='Novos x inativados por RCA')
+        plot_crossfilter(chart_layout(_fig,max(430,28*len(_ci)+100),'v'), 'xf_graf_rca_carteira', 'xf_rca', 'y')
+
+    else:
+        if not _pc_carteira.empty:
+            _mix_rca_car = _pc_carteira.groupby('RCA',as_index=False).agg(
+                CLIENTES=('CODCLI','nunique'),
+                MIX=('PRODUTOS','mean'),
+                CLIENTES_ATE3=('PRODUTOS',lambda s:int((s<=3).sum()))
+            )
+            _mix_rca_car['PCT_ATE3'] = _mix_rca_car['CLIENTES_ATE3'].div(_mix_rca_car['CLIENTES'].replace(0,pd.NA))*100
+            _mix_rca_car = _mix_rca_car.sort_values('PCT_ATE3')
+            _fig = px.bar(
+                _mix_rca_car,x='PCT_ATE3',y='RCA',orientation='h',
+                title='Clientes com até 3 produtos por RCA',
+                text=_mix_rca_car.PCT_ATE3.map(pct)
+            )
+            _fig.update_traces(marker_color=NAVY_2,textposition='outside')
+            _fig.update_xaxes(title='% da carteira positivada')
+            plot_crossfilter(chart_layout(_fig,max(430,28*len(_mix_rca_car)+100),'v'), 'xf_graf_rca_mixbaixo', 'xf_rca', 'y')
+        else:
+            st.info('Sem clientes positivados no recorte.')
+
+    st.markdown('### Clientes com maior espaço para ampliar mix')
+    if not _pc_carteira.empty:
+        _oport_cli = _pc_carteira[_pc_carteira['PRODUTOS'].le(3)].copy()
+        _oport_cli = _oport_cli.sort_values(['FATURAMENTO','PRODUTOS'],ascending=[False,True]).head(25)
+        _nomes_cli = (
+            clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI')
+            if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE'])
+        )
+        _oport_cli = _oport_cli.merge(_nomes_cli,on='CODCLI',how='left')
+        _tab_oport = pd.DataFrame({
+            'Cliente': _oport_cli['CLIENTE'].fillna(_oport_cli['CODCLI'].astype(str)) if 'CLIENTE' in _oport_cli.columns else _oport_cli['CODCLI'].astype(str),
+            'RCA': _oport_cli['RCA'],
+            'Produtos comprados': _oport_cli['PRODUTOS'].map(nint),
+            'Pedidos': _oport_cli['PEDIDOS'].map(nint),
+            'Faturamento': _oport_cli['FATURAMENTO'].map(brl),
+        })
+        st.dataframe(_tab_oport,use_container_width=True,hide_index=True,height=min(520,40+35*len(_tab_oport)))
+        st.caption('Prioridade sugerida: clientes com poucos produtos, ordenados pelo maior faturamento do período.')
+    else:
+        st.info('Sem dados de carteira no recorte atual.')
+
 
 with aba3:
-    st.subheader('Mix por cliente')
-    st.markdown("<div class='section-note'>Mix = média de produtos distintos comprados por cada cliente do RCA no mês. Cada cliente pesa uma vez.</div>",unsafe_allow_html=True)
-    mixr = r.sort_values('MIX_PRODUTOS_CLIENTE')
-    fig = px.bar(mixr,x='MIX_PRODUTOS_CLIENTE',y='RCA',orientation='h',title='Mix médio de produtos por cliente — RCA',text=mixr.MIX_PRODUTOS_CLIENTE.map(dec))
-    fig.update_traces(marker_color=NAVY,textposition='outside')
-    plot_crossfilter(chart_layout(fig,max(430,30*len(mixr)+100),'v'), 'xf_graf_rca_mix', 'xf_rca', 'y')
-    if not fat.empty:
-        pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
-        c1,c2 = st.columns(2)
-        with c1:
-            fig = px.histogram(pc_det,x='PRODUTOS',nbins=min(20,max(6,int(pc_det.PRODUTOS.max()))),title='Distribuição do mix entre clientes')
-            fig.update_traces(marker_color=NAVY_2)
-            st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True)
-        with c2:
-            faixas = pd.cut(pc_det.PRODUTOS,bins=[0,1,3,5,10,float('inf')],labels=['1 produto','2–3','4–5','6–10','11+'],include_lowest=True)
-            dist = faixas.value_counts(sort=False).reset_index(); dist.columns=['Faixa','Clientes']
-            fig = px.pie(dist,names='Faixa',values='Clientes',hole=.58,title='Clientes por faixa de mix',color_discrete_sequence=[NAVY,NAVY_2,'#59659A','#8991B7','#BAC0D8'])
-            st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True)
+    st.subheader('Mix, produtos e oportunidades')
+    st.caption('Explore amplitude de mix, desempenho dos produtos e onde existe espaço para venda cruzada.')
+
+    _produtos_distintos = int(fat['CODPROD'].nunique()) if not fat.empty else 0
+    _linhas_produto = (
+        fat.groupby('NUMPED')['CODPROD'].nunique().mean()
+        if not fat.empty and 'NUMPED' in fat.columns else 0
+    )
+    _prod_perf = (
+        fat.groupby('CODPROD',as_index=False)
+        .agg(
+            FATURAMENTO=('VALOR','sum'),
+            CLIENTES=('CODCLI','nunique'),
+            PEDIDOS=('NUMPED','nunique'),
+            RCAS=('COD_RCA','nunique')
+        )
+        if not fat.empty else
+        pd.DataFrame(columns=['CODPROD','FATURAMENTO','CLIENTES','PEDIDOS','RCAS'])
+    )
+    if not _prod_perf.empty:
+        _prod_perf['PRODUTO'] = _prod_perf['CODPROD'].map(lambda x: f"Produto {int(x)}" if pd.notna(x) else 'Sem código')
+        _top10_share = _prod_perf.nlargest(10,'FATURAMENTO')['FATURAMENTO'].sum() / max(float(_prod_perf['FATURAMENTO'].sum()),1) * 100
+    else:
+        _top10_share = 0
+
+    m1,m2,m3,m4,m5,m6 = st.columns(6)
+    m1.markdown(kpi('Produtos distintos',nint(_produtos_distintos),'Códigos vendidos no período'),unsafe_allow_html=True)
+    m2.markdown(kpi('Mix médio',dec(mix_geral),'Produtos por cliente'),unsafe_allow_html=True)
+    m3.markdown(kpi('Produtos por pedido',dec(_linhas_produto),'Média de códigos distintos'),unsafe_allow_html=True)
+    m4.markdown(kpi('Clientes 1 produto',nint(_mono),'Maior potencial de cross-sell'),unsafe_allow_html=True)
+    m5.markdown(kpi('Top 10 produtos',pct(_top10_share),'Participação no faturamento'),unsafe_allow_html=True)
+    m6.markdown(kpi('Clientes até 3 prod.',nint(_ate3),'Base para expansão de mix'),unsafe_allow_html=True)
+
+    _modo_mix = st.radio(
+        'Explorar',
+        ['RCAs','Produtos','Seções','Clientes'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='mix_explorar'
+    )
+
+    if _modo_mix == 'RCAs':
+        mixr = r.sort_values('MIX_PRODUTOS_CLIENTE')
+        fig = px.bar(
+            mixr,x='MIX_PRODUTOS_CLIENTE',y='RCA',orientation='h',
+            title='Mix médio de produtos por cliente — RCA',
+            text=mixr.MIX_PRODUTOS_CLIENTE.map(dec)
+        )
+        fig.update_traces(marker_color=NAVY,textposition='outside')
+        plot_crossfilter(chart_layout(fig,max(430,30*len(mixr)+100),'v'), 'xf_graf_rca_mix', 'xf_rca', 'y')
+        st.caption('Clique em uma barra para filtrar o dashboard inteiro pelo RCA.')
+
+    elif _modo_mix == 'Produtos':
+        if _prod_perf.empty:
+            st.info('Sem produtos no recorte atual.')
+        else:
+            _met_prod = st.radio(
+                'Ranking de produtos',
+                ['Faturamento','Clientes','Pedidos','RCAs'],
+                horizontal=True,
+                key='mix_prod_metrica'
+            )
+            _map_prod = {
+                'Faturamento':('FATURAMENTO','Faturamento','R$ '),
+                'Clientes':('CLIENTES','Clientes',''),
+                'Pedidos':('PEDIDOS','Pedidos',''),
+                'RCAs':('RCAS','RCAs que venderam',''),
+            }
+            _cp,_tp,_pref = _map_prod[_met_prod]
+            _top_prod = _prod_perf.nlargest(20,_cp).sort_values(_cp)
+            _fig = px.bar(
+                _top_prod,x=_cp,y='PRODUTO',orientation='h',
+                title=f'Top 20 produtos por {_tp.lower()}',
+                text=_top_prod[_cp].map(lambda v: brl_compacto(v) if _met_prod=='Faturamento' else nint(v))
+            )
+            _fig.update_traces(marker_color=NAVY_2,textposition='outside')
+            if _met_prod == 'Faturamento':
+                _fig.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(chart_layout(_fig,max(500,29*len(_top_prod)+120),'v'),use_container_width=True,key='mix_produtos_rank')
+
+            _prod_sel = st.selectbox(
+                'Analisar um produto',
+                _prod_perf.sort_values('FATURAMENTO',ascending=False)['PRODUTO'].tolist(),
+                key='mix_produto_detalhe'
+            )
+            _cod_sel = int(_prod_sel.replace('Produto ',''))
+            _fp = fat[fat['CODPROD'].eq(_cod_sel)].copy()
+            if not _fp.empty:
+                p1,p2,p3,p4 = st.columns(4)
+                p1.metric('Faturamento',brl(_fp['VALOR'].sum()))
+                p2.metric('Clientes',nint(_fp['CODCLI'].nunique()))
+                p3.metric('Pedidos',nint(_fp['NUMPED'].nunique()))
+                p4.metric('RCAs',nint(_fp['COD_RCA'].nunique()))
+                _por_rca = _fp.groupby('RCA',as_index=False)['VALOR'].sum().sort_values('VALOR')
+                _figp = px.bar(_por_rca,x='VALOR',y='RCA',orientation='h',title=f'{_prod_sel} por RCA',text=_por_rca.VALOR.map(brl_compacto))
+                _figp.update_traces(marker_color=NAVY,textposition='outside')
+                _figp.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                plot_crossfilter(chart_layout(_figp,max(360,28*len(_por_rca)+100),'v'),'mix_prod_rca','xf_rca','y')
+
+    elif _modo_mix == 'Seções':
+        if fat.empty or 'SECAO' not in fat.columns:
+            st.info('Sem informação de seção no recorte.')
+        else:
+            _sec = fat.groupby('SECAO',as_index=False).agg(
+                FATURAMENTO=('VALOR','sum'),
+                PRODUTOS=('CODPROD','nunique'),
+                CLIENTES=('CODCLI','nunique')
+            ).sort_values('FATURAMENTO')
+            _fig = px.bar(
+                _sec,x='FATURAMENTO',y='SECAO',orientation='h',
+                title='Faturamento por seção',
+                text=_sec.FATURAMENTO.map(brl_compacto),
+                custom_data=['PRODUTOS','CLIENTES']
+            )
+            _fig.update_traces(
+                marker_color=NAVY,
+                textposition='outside',
+                hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Produtos: %{customdata[0]:.0f}<br>Clientes: %{customdata[1]:.0f}<extra></extra>'
+            )
+            _fig.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(chart_layout(_fig,max(430,30*len(_sec)+120),'v'),use_container_width=True,key='mix_secao')
+
+    else:
+        if fat.empty:
+            st.info('Sem clientes no recorte.')
+        else:
+            _pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(
+                PRODUTOS=('CODPROD','nunique'),
+                FATURAMENTO=('VALOR','sum'),
+                PEDIDOS=('NUMPED','nunique')
+            ).reset_index()
+            _faixas = pd.cut(
+                _pc_det.PRODUTOS,
+                bins=[0,1,3,5,10,float('inf')],
+                labels=['1 produto','2–3','4–5','6–10','11+'],
+                include_lowest=True
+            )
+            _dist = _faixas.value_counts(sort=False).reset_index()
+            _dist.columns=['Faixa','Clientes']
+            _fig = px.bar(_dist,x='Faixa',y='Clientes',title='Clientes por faixa de mix',text='Clientes')
+            _fig.update_traces(marker_color=NAVY_2,textposition='outside')
+            st.plotly_chart(chart_layout(_fig,390,'v'),use_container_width=True,key='mix_clientes_faixa')
+
+    with st.expander('Distribuição detalhada do mix', expanded=False):
+        if not fat.empty:
+            pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
+            c1,c2 = st.columns(2)
+            with c1:
+                fig = px.histogram(pc_det,x='PRODUTOS',nbins=min(20,max(6,int(pc_det.PRODUTOS.max()))),title='Distribuição do mix entre clientes')
+                fig.update_traces(marker_color=NAVY_2)
+                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True)
+            with c2:
+                faixas = pd.cut(pc_det.PRODUTOS,bins=[0,1,3,5,10,float('inf')],labels=['1 produto','2–3','4–5','6–10','11+'],include_lowest=True)
+                dist = faixas.value_counts(sort=False).reset_index(); dist.columns=['Faixa','Clientes']
+                fig = px.pie(dist,names='Faixa',values='Clientes',hole=.58,title='Clientes por faixa de mix',color_discrete_sequence=[NAVY,NAVY_2,'#59659A','#8991B7','#BAC0D8'])
+                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True)
 
 with aba4:
     st.subheader('Cobertura municipal — Nordeste')
