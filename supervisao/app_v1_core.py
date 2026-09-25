@@ -193,7 +193,7 @@ with aba4:
         pares['KEY']=[x[0] for x in resolvidos]; pares['CIDADE_OFICIAL']=[x[1] for x in resolvidos]; pares['MATCH_CIDADE']=[x[2] for x in resolvidos]
         loc=loc.merge(pares,on=['UF','CIDADE'],how='left'); loc['CIDADE_ORIGINAL']=loc['CIDADE']; loc['CIDADE']=loc['CIDADE_OFICIAL'].fillna(loc['CIDADE'])
 
-        city = loc.groupby(['KEY','CIDADE','UF'], dropna=False).agg(FATURAMENTO=('VALOR','sum'),CLIENTES=('CODCLI','nunique'),PEDIDOS=('NUMPED','nunique')).reset_index()
+        city = loc.groupby(['KEY','CIDADE','UF'], dropna=False).agg(FATURAMENTO=('VALOR','sum'),CLIENTES=('CODCLI','nunique'),PEDIDOS=('NUMPED','nunique'),PRODUTOS=('CODPROD','nunique')).reset_index()
         cmix = loc.groupby(['KEY','CODCLI']).CODPROD.nunique().rename('MIXCLI').reset_index(); cmix=cmix.groupby('KEY').MIXCLI.mean().rename('MIX').reset_index(); city=city.merge(cmix,on='KEY',how='left')
 
         features=all_features
@@ -201,16 +201,33 @@ with aba4:
         geojson={'type':'FeatureCollection','features':features}
         munis=pd.DataFrame([{'KEY':ft['properties']['key'],'CIDADE_MAPA':ft['properties'].get('name',''),'UF_MAPA':ft['properties'].get('uf','')} for ft in features])
         mapa=munis.merge(city,on='KEY',how='left'); mapa['CIDADE']=mapa['CIDADE'].fillna(mapa['CIDADE_MAPA']); mapa['UF']=mapa['UF'].fillna(mapa['UF_MAPA'])
-        for c in ['FATURAMENTO','CLIENTES','PEDIDOS','MIX']: mapa[c]=pd.to_numeric(mapa[c],errors='coerce').fillna(0)
+        for c in ['FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']: mapa[c]=pd.to_numeric(mapa[c],errors='coerce').fillna(0)
 
         vendidos=city[city.FATURAMENTO.gt(0)].copy(); maior=vendidos.loc[vendidos.FATURAMENTO.idxmax(),'CIDADE'] if len(vendidos) else '—'; titulo_regiao=estado_label if estado_uf else 'Nordeste'
-        z1,z2,z3,z4=st.columns(4); z1.markdown(kpi('Cidades atendidas',nint(vendidos.shape[0]),periodo_label),unsafe_allow_html=True); z2.markdown(kpi('Municípios no mapa',nint(mapa.shape[0]),titulo_regiao),unsafe_allow_html=True); z3.markdown(kpi('Maior cidade',maior,'Por faturamento'),unsafe_allow_html=True); z4.markdown(kpi(f'Faturamento {estado_uf or "Nordeste"}',brl_compacto(city.FATURAMENTO.sum()),periodo_label),unsafe_allow_html=True)
+        z1,z2,z3,z4,z5=st.columns(5)
+        z1.markdown(kpi('Cidades atendidas',nint(vendidos.shape[0]),periodo_label),unsafe_allow_html=True)
+        z2.markdown(kpi('Clientes',nint(loc.CODCLI.nunique()),'Positivados no mapa'),unsafe_allow_html=True)
+        z3.markdown(kpi('Produtos distintos',nint(loc.CODPROD.nunique()),'Códigos vendidos'),unsafe_allow_html=True)
+        z4.markdown(kpi('Maior cidade',maior,'Por faturamento'),unsafe_allow_html=True)
+        z5.markdown(kpi(f'Faturamento {estado_uf or "Nordeste"}',brl_compacto(city.FATURAMENTO.sum()),periodo_label),unsafe_allow_html=True)
 
+        metrica_mapa = st.radio(
+            'Colorir mapa por',
+            ['Faturamento','Clientes','Produtos'],
+            horizontal=True,
+            label_visibility='collapsed',
+            key=f'metrica_mapa_{estado_uf or "ne"}'
+        )
         mapa_sem=mapa[mapa.FATURAMENTO.le(0)].copy(); mapa_com=mapa[mapa.FATURAMENTO.gt(0)].copy(); fig=go.Figure()
         if not mapa_sem.empty:
-            custom_sem=mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy(); fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_sem.KEY,z=[0]*len(mapa_sem),featureidkey='properties.key',zmin=0,zmax=1,colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],showscale=False,marker_line_color='#AFA8A0',marker_line_width=.65 if estado_uf else .4,customdata=custom_sem,hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',name='Sem faturamento'))
+            custom_sem=mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy(); fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_sem.KEY,z=[0]*len(mapa_sem),featureidkey='properties.key',zmin=0,zmax=1,colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],showscale=False,marker_line_color='#AFA8A0',marker_line_width=.65 if estado_uf else .4,customdata=custom_sem,hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',name='Sem faturamento'))
         if not mapa_com.empty:
-            zmax=max(float(mapa_com.FATURAMENTO.quantile(.95)),1.0); custom_com=mapa_com[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','MIX']].to_numpy(); fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_com.KEY,z=mapa_com.FATURAMENTO,featureidkey='properties.key',zmin=0,zmax=zmax,colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]],marker_line_color='#8994B6',marker_line_width=.65 if estado_uf else .4,customdata=custom_com,colorbar=dict(title='Faturamento (R$)',thickness=12,len=.34,orientation='h',x=.72,y=.01,xanchor='center',yanchor='bottom'),hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Mix: %{customdata[5]:.2f}<extra></extra>',name='Com faturamento'))
+            campo_mapa = {'Faturamento':'FATURAMENTO','Clientes':'CLIENTES','Produtos':'PRODUTOS'}[metrica_mapa]
+            titulo_cor = {'Faturamento':'Faturamento (R$)','Clientes':'Clientes','Produtos':'Produtos'}[metrica_mapa]
+            zvals = mapa_com[campo_mapa]
+            zmax=max(float(zvals.quantile(.95)),1.0)
+            custom_com=mapa_com[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy()
+            fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_com.KEY,z=zvals,featureidkey='properties.key',zmin=0,zmax=zmax,colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]],marker_line_color='#8994B6',marker_line_width=.65 if estado_uf else .4,customdata=custom_com,colorbar=dict(title=titulo_cor,thickness=12,len=.34,orientation='h',x=.72,y=.01,xanchor='center',yanchor='bottom'),hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Produtos: %{customdata[5]:.0f}<br>Mix: %{customdata[6]:.2f}<extra></extra>',name=metrica_mapa))
 
         fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator',bgcolor='rgba(0,0,0,0)'); fig.update_layout(height=980,margin=dict(l=0,r=0,t=0,b=0),paper_bgcolor='rgba(0,0,0,0)',dragmode=False,showlegend=True,legend=dict(orientation='h',x=.01,y=.01,xanchor='left',yanchor='bottom',bgcolor='rgba(255,255,255,.88)',bordercolor='#E1E3EA',borderwidth=1))
 
@@ -228,11 +245,56 @@ with aba4:
             if choice:
                 row=labels_df.loc[labels_df.LABEL.eq(choice)].iloc[0]; key=row.KEY; d=loc[loc.KEY.eq(key)].copy(); dcli=d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
                 st.markdown(f"<div style='font-size:22px;font-weight:800;color:{NAVY};margin:4px 0 12px 0;'>{row.CIDADE} - {row.UF}</div>",unsafe_allow_html=True)
-                a1,a2,a3=st.columns(3); a1.markdown(kpi('Faturamento',brl_compacto(d.VALOR.sum()),brl(d.VALOR.sum())),unsafe_allow_html=True); a2.markdown(kpi('Clientes positivados',nint(d.CODCLI.nunique()),periodo_label),unsafe_allow_html=True); a3.markdown(kpi('Pedidos',nint(d.NUMPED.nunique()),periodo_label),unsafe_allow_html=True)
-                b1,b2,b3=st.columns(3); b1.markdown(kpi('Ticket médio',brl_compacto(d.VALOR.sum()/d.NUMPED.nunique() if d.NUMPED.nunique() else 0),'Por pedido'),unsafe_allow_html=True); b2.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos/cliente'),unsafe_allow_html=True); part=d.VALOR.sum()/city.FATURAMENTO.sum()*100 if city.FATURAMENTO.sum() else 0; b3.markdown(kpi('Participação',pct(part),titulo_regiao),unsafe_allow_html=True)
-                st.markdown('**Faturamento por RCA na cidade**'); rc=d.groupby('RCA',as_index=False).VALOR.sum().sort_values('VALOR',ascending=False); rc['% Cidade']=rc.VALOR.div(rc.VALOR.sum()).mul(100); st.dataframe(pd.DataFrame({'RCA':rc.RCA,'Faturamento (R$)':rc.VALOR.map(brl),'% Cidade':rc['% Cidade'].map(pct)}),use_container_width=True,hide_index=True,height=min(220,38+35*len(rc)))
-                st.markdown('**Faturamento por departamento na cidade**'); dp=d.groupby('DEPARTAMENTO',as_index=False).VALOR.sum().sort_values('VALOR',ascending=False); dp['% Cidade']=dp.VALOR.div(dp.VALOR.sum()).mul(100); st.dataframe(pd.DataFrame({'Departamento':dp.DEPARTAMENTO,'Faturamento (R$)':dp.VALOR.map(brl),'% Cidade':dp['% Cidade'].map(pct)}),use_container_width=True,hide_index=True,height=min(260,38+35*len(dp)))
-                st.markdown('**Principais clientes da cidade**'); nomes=clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI') if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE']); detail=dcli.merge(nomes,on='CODCLI',how='left').sort_values('FATURAMENTO',ascending=False).head(12); st.dataframe(pd.DataFrame({'Cliente':detail['CLIENTE'].fillna(detail.CODCLI.astype(str)) if 'CLIENTE' in detail.columns else detail.CODCLI.astype(str),'Faturamento (R$)':detail.FATURAMENTO.map(brl),'Pedidos':detail.PEDIDOS.map(nint),'Mix':detail.PRODUTOS.map(dec)}),use_container_width=True,hide_index=True,height=min(340,38+35*len(detail)))
+                part=d.VALOR.sum()/city.FATURAMENTO.sum()*100 if city.FATURAMENTO.sum() else 0
+                a1,a2,a3=st.columns(3)
+                a1.markdown(kpi('Faturamento',brl_compacto(d.VALOR.sum()),brl(d.VALOR.sum())),unsafe_allow_html=True)
+                a2.markdown(kpi('Clientes positivados',nint(d.CODCLI.nunique()),periodo_label),unsafe_allow_html=True)
+                a3.markdown(kpi('Produtos distintos',nint(d.CODPROD.nunique()),'Códigos vendidos'),unsafe_allow_html=True)
+                b1,b2,b3=st.columns(3)
+                b1.markdown(kpi('Pedidos',nint(d.NUMPED.nunique()),periodo_label),unsafe_allow_html=True)
+                b2.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos/cliente'),unsafe_allow_html=True)
+                b3.markdown(kpi('Participação',pct(part),titulo_regiao),unsafe_allow_html=True)
+
+                detalhe_cidade = st.radio(
+                    'Detalhar cidade por',
+                    ['RCAs','Departamentos','Produtos','Clientes'],
+                    horizontal=True,
+                    label_visibility='collapsed',
+                    key=f'detalhe_cidade_{key}'
+                )
+
+                if detalhe_cidade == 'RCAs':
+                    rc=d.groupby('RCA',as_index=False).agg(FATURAMENTO=('VALOR','sum'),PRODUTOS=('CODPROD','nunique'),CLIENTES=('CODCLI','nunique')).sort_values('FATURAMENTO')
+                    figd=px.bar(rc,x='FATURAMENTO',y='RCA',orientation='h',title='Faturamento por RCA na cidade',text=rc.FATURAMENTO.map(brl_compacto),custom_data=['PRODUTOS','CLIENTES'])
+                    figd.update_traces(marker_color=NAVY,textposition='outside',hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Produtos: %{customdata[0]:.0f}<br>Clientes: %{customdata[1]:.0f}<extra></extra>')
+                    figd.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                    plot_crossfilter(chart_layout(figd,max(340,28*len(rc)+100),'v'),f'cidade_rca_{key}','xf_rca','y')
+
+                elif detalhe_cidade == 'Departamentos':
+                    dp=d.groupby('DEPARTAMENTO',as_index=False).agg(FATURAMENTO=('VALOR','sum'),PRODUTOS=('CODPROD','nunique'),CLIENTES=('CODCLI','nunique')).sort_values('FATURAMENTO')
+                    figd=px.bar(dp,x='FATURAMENTO',y='DEPARTAMENTO',orientation='h',title='Faturamento por departamento na cidade',text=dp.FATURAMENTO.map(brl_compacto),custom_data=['PRODUTOS','CLIENTES'])
+                    figd.update_traces(marker_color=NAVY_2,textposition='outside',hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Produtos: %{customdata[0]:.0f}<br>Clientes: %{customdata[1]:.0f}<extra></extra>')
+                    figd.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                    st.plotly_chart(chart_layout(figd,max(340,30*len(dp)+100),'v'),use_container_width=True,key=f'cidade_dep_{key}')
+
+                elif detalhe_cidade == 'Produtos':
+                    pr=d.groupby('CODPROD',as_index=False).agg(FATURAMENTO=('VALOR','sum'),CLIENTES=('CODCLI','nunique'),PEDIDOS=('NUMPED','nunique')).sort_values('FATURAMENTO',ascending=False).head(15)
+                    pr['PRODUTO']=pr.CODPROD.map(lambda x:f"Produto {int(x)}" if pd.notna(x) else 'Sem código')
+                    pr=pr.sort_values('FATURAMENTO')
+                    figd=px.bar(pr,x='FATURAMENTO',y='PRODUTO',orientation='h',title='Top produtos da cidade',text=pr.FATURAMENTO.map(brl_compacto),custom_data=['CLIENTES','PEDIDOS'])
+                    figd.update_traces(marker_color=NAVY,textposition='outside',hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Clientes: %{customdata[0]:.0f}<br>Pedidos: %{customdata[1]:.0f}<extra></extra>')
+                    figd.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                    st.plotly_chart(chart_layout(figd,max(400,29*len(pr)+100),'v'),use_container_width=True,key=f'cidade_prod_{key}')
+
+                else:
+                    nomes=clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI') if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE'])
+                    detail=dcli.merge(nomes,on='CODCLI',how='left').sort_values('FATURAMENTO',ascending=False).head(20)
+                    st.dataframe(pd.DataFrame({
+                        'Cliente':detail['CLIENTE'].fillna(detail.CODCLI.astype(str)) if 'CLIENTE' in detail.columns else detail.CODCLI.astype(str),
+                        'Faturamento':detail.FATURAMENTO.map(brl),
+                        'Pedidos':detail.PEDIDOS.map(nint),
+                        'Produtos':detail.PRODUTOS.map(nint)
+                    }),use_container_width=True,hide_index=True,height=min(520,38+35*len(detail)))
             else:
                 st.info('Nenhuma cidade com faturamento no recorte atual.')
 '''
