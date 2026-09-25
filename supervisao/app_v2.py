@@ -729,7 +729,7 @@ with aba1:
         _rank['RITMO'] = _rank['ATINGIMENTO']
 
     _map_rank = {
-        'Gap':('GAP','Gap para meta',True,'R$ '),
+        'Gap':('GAP','Gap para meta',False,'R$ '),
         'Ritmo':('RITMO','Ritmo da meta',False,''),
         'Atingimento':('ATINGIMENTO','Atingimento',False,''),
         'Faturamento':('FATURAMENTO','Faturamento',False,'R$ '),
