@@ -30,7 +30,16 @@ st.markdown(f"""
 [data-testid="stAppViewContainer"] {{ background:{BG}; }}
 [data-testid="stHeader"] {{ background:rgba(0,0,0,0); }}
 [data-testid="stSidebar"] {{ background:#fff; border-right:1px solid #E6E8EF; }}
-.block-container {{ padding-top:1.7rem; padding-bottom:2rem; max-width:1500px; }}
+[data-testid="stMain"] {{ width:100%; }}
+[data-testid="stMainBlockContainer"],
+.block-container {{
+  width:100% !important;
+  max-width:none !important;
+  padding-top:1.35rem !important;
+  padding-bottom:2rem !important;
+  padding-left:clamp(1rem,2vw,2.75rem) !important;
+  padding-right:clamp(1rem,2vw,2.75rem) !important;
+}}
 h1,h2,h3 {{ color:{NAVY}; letter-spacing:-.02em; }}
 .brandbar {{ display:flex; align-items:center; justify-content:space-between; gap:18px; background:{NAVY}; padding:18px 24px; border-radius:18px; margin-bottom:18px; box-shadow:0 8px 24px rgba(30,38,85,.14); }}
 .brand-title {{ color:white; font-size:30px; font-weight:750; margin:0; }}
@@ -44,7 +53,33 @@ h1,h2,h3 {{ color:{NAVY}; letter-spacing:-.02em; }}
 .filter-chip {{ display:inline-block; background:#EEF1F8; color:{NAVY}; border:1px solid #DCE1EE; border-radius:999px; padding:5px 10px; margin:0 6px 6px 0; font-size:11px; font-weight:650; }}
 [data-baseweb="tab-list"] {{ gap:22px; }}
 [data-baseweb="tab-highlight"] {{ background-color:{NAVY}; }}
-div[data-testid="stDataFrame"] {{ border:1px solid #E5E7EF; border-radius:14px; overflow:hidden; }}
+div[data-testid="stDataFrame"] {{ border:1px solid #E5E7EF; border-radius:14px; overflow:hidden; width:100% !important; }}
+div[data-testid="stPlotlyChart"] {{ width:100% !important; }}
+div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
+
+@media (min-width: 1800px) {{
+  [data-testid="stMainBlockContainer"],
+  .block-container {{
+    padding-left:clamp(1.5rem,2.4vw,4rem) !important;
+    padding-right:clamp(1.5rem,2.4vw,4rem) !important;
+  }}
+  .brandbar {{ padding:20px 28px; }}
+  .brand-title {{ font-size:32px; }}
+  .brand-sub {{ font-size:14px; }}
+  .brand-word {{ font-size:25px; }}
+  .kpi {{ min-height:122px; padding:18px 20px; }}
+  .kpi-value {{ font-size:27px; }}
+}}
+
+@media (min-width: 2400px) {{
+  [data-testid="stMainBlockContainer"],
+  .block-container {{
+    padding-left:clamp(2rem,2.8vw,5rem) !important;
+    padding-right:clamp(2rem,2.8vw,5rem) !important;
+  }}
+  .brand-title {{ font-size:34px; }}
+  .kpi-value {{ font-size:29px; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
