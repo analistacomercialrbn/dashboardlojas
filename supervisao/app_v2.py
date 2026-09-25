@@ -1,5 +1,6 @@
 from io import BytesIO
 import unicodedata
+import time
 
 import pandas as pd
 import plotly.express as px
@@ -85,7 +86,14 @@ div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
 
 
 def drive_bytes(fid):
-    r = requests.get(f'https://drive.google.com/uc?export=download&id={fid}', timeout=180)
+    # Evita receber uma versão antiga do arquivo pelo cache/CDN do Google Drive.
+    # O cache principal continua sendo controlado por load() no Streamlit.
+    r = requests.get(
+        'https://drive.google.com/uc',
+        params={'export':'download','id':fid,'_cb':str(time.time_ns())},
+        headers={'Cache-Control':'no-cache','Pragma':'no-cache'},
+        timeout=180,
+    )
     r.raise_for_status()
     if 'text/html' in r.headers.get('content-type','').lower():
         raise RuntimeError('Confirme o compartilhamento dos arquivos do Drive como leitor por link.')
@@ -238,6 +246,10 @@ def load_nordeste_geojson():
             features.append(ft)
     return {'type':'FeatureCollection','features':features}
 
+
+if st.sidebar.button('↻ Atualizar bases agora', use_container_width=True):
+    load.clear()
+    st.rerun()
 
 try:
     vendas, clientes, rcas, metas = load(BASE_VENDAS_VERSAO)
