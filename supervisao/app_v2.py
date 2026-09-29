@@ -95,6 +95,95 @@ div[data-testid="stRadio"] label:has(input:checked) {{
   color:{NAVY};
   font-weight:700;
 }}
+
+.insight-card {{
+  --accent:{NAVY};
+  --tint:#F4F6FB;
+  --badge:#E8ECF7;
+  position:relative;
+  overflow:hidden;
+  min-height:220px;
+  padding:20px 21px 18px 23px;
+  border:1px solid #E2E6EF;
+  border-radius:18px;
+  background:linear-gradient(145deg,#FFFFFF 0%,var(--tint) 135%);
+  box-shadow:0 6px 22px rgba(30,38,85,.055);
+}}
+.insight-card::before {{
+  content:'';
+  position:absolute;
+  left:0; top:0; bottom:0;
+  width:5px;
+  background:var(--accent);
+}}
+.insight-card.critical {{ --accent:#C94A55; --tint:#FFF4F5; --badge:#FCE9EB; }}
+.insight-card.attention {{ --accent:#C48728; --tint:#FFF9EE; --badge:#FFF0D6; }}
+.insight-card.opportunity {{ --accent:#2E8B57; --tint:#F1FAF5; --badge:#E2F4E9; }}
+.insight-badge {{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 9px;
+  border-radius:999px;
+  background:var(--badge);
+  color:var(--accent);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}}
+.insight-kicker {{
+  margin-top:15px;
+  color:{MUTED};
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}}
+.insight-title {{
+  margin-top:3px;
+  color:{NAVY};
+  font-size:16px;
+  font-weight:800;
+  line-height:1.25;
+}}
+.insight-value-label {{
+  margin-top:16px;
+  color:{MUTED};
+  font-size:11px;
+  font-weight:650;
+}}
+.insight-value {{
+  margin-top:1px;
+  color:{NAVY};
+  font-size:29px;
+  font-weight:850;
+  line-height:1.05;
+  letter-spacing:-.025em;
+}}
+.insight-secondary {{
+  margin-top:8px;
+  color:{TEXT};
+  font-size:12px;
+  line-height:1.45;
+}}
+.insight-secondary strong {{ color:{NAVY}; }}
+.insight-foot {{
+  margin-top:11px;
+  color:{MUTED};
+  font-size:11px;
+  line-height:1.35;
+}}
+div[data-testid="stButton"] > button[kind="primary"] {{
+  background:{NAVY} !important;
+  color:#fff !important;
+  border-color:{NAVY} !important;
+  min-height:40px;
+}}
+div[data-testid="stButton"] > button[kind="primary"]:hover {{
+  background:{NAVY_2} !important;
+  border-color:{NAVY_2} !important;
+}}
 div[data-testid="stPlotlyChart"] {{ width:100% !important; }}
 div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
 
@@ -781,63 +870,130 @@ with aba1:
             config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
         )
 
-    # 3) Central de prioridades clicável.
-    st.markdown('### Prioridades agora')
-    st.caption('As ações abaixo são priorizadas pelo impacto projetado. Clique para aplicar o recorte correspondente.')
+    # 3) Central de prioridades — cards executivos e acionáveis.
+    st.markdown('### Pontos de atenção do período')
+    st.caption('Os maiores impactos do recorte, resumidos para decisão rápida.')
 
     _prioridades = []
+
     if '_rca_exec' in globals() and isinstance(_rca_exec, pd.DataFrame) and not _rca_exec.empty:
         _risco_rca = _rca_exec[_rca_exec['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
         if not _risco_rca.empty:
             _p = _risco_rca.iloc[0]
+            _need_rca = max(float(_p['META']) - float(_p['REALIZADO_CORTE']), 0)
+            _need_dia = (_need_rca / _exec['dias_restantes']) if _exec['dias_restantes'] else 0
             _prioridades.append({
                 'nivel':'Crítico',
-                'titulo':f"RCA: {_p['RCA']}",
-                'texto':f"Gap projetado de {brl(_p['GAP_PROJ'])} • projeção {brl(_p['PROJECAO'])}",
-                'tipo':'RCA','alvo':str(_p['RCA'])
+                'classe':'critical',
+                'icone':'●',
+                'kicker':'RCA',
+                'titulo':str(_p['RCA']),
+                'label':'Gap projetado',
+                'valor':brl_compacto(_p['GAP_PROJ']),
+                'secundario':f"<strong>Projeção:</strong> {brl_compacto(_p['PROJECAO'])} &nbsp;·&nbsp; <strong>Meta:</strong> {brl_compacto(_p['META'])}",
+                'rodape':(
+                    f"Necessita aproximadamente {brl_compacto(_need_dia)} por dia útil restante."
+                    if _exec['dias_restantes'] else
+                    'Maior gap projetado entre os RCAs do recorte.'
+                ),
+                'tipo':'RCA',
+                'alvo':str(_p['RCA']),
+                'botao':'Ver análise do RCA',
             })
+
     if '_dep_exec_df' in globals() and isinstance(_dep_exec_df, pd.DataFrame) and not _dep_exec_df.empty:
         _risco_dep = _dep_exec_df[_dep_exec_df['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
         if not _risco_dep.empty:
             _p = _risco_dep.iloc[0]
             _prioridades.append({
                 'nivel':'Atenção',
-                'titulo':f"Departamento: {_p['DEPARTAMENTO']}",
-                'texto':f"Gap projetado de {brl(_p['GAP_PROJ'])} • projeção {brl(_p['PROJECAO'])}",
-                'tipo':'Departamento','alvo':str(_p['DEPARTAMENTO'])
+                'classe':'attention',
+                'icone':'●',
+                'kicker':'Departamento',
+                'titulo':str(_p['DEPARTAMENTO']),
+                'label':'Gap projetado',
+                'valor':brl_compacto(_p['GAP_PROJ']),
+                'secundario':f"<strong>Projeção:</strong> {brl_compacto(_p['PROJECAO'])} &nbsp;·&nbsp; <strong>Meta:</strong> {brl_compacto(_p['META'])}",
+                'rodape':'Departamento com maior impacto negativo na projeção do período.',
+                'tipo':'Departamento',
+                'alvo':str(_p['DEPARTAMENTO']),
+                'botao':'Abrir departamento',
             })
+
     if pd.notna(_exec['crescimento_a1']):
         _cres = float(_exec['crescimento_a1'])
+        _ano_ref = (_ano_mes_exec[0] - 1) if _ano_mes_exec else 'A-1'
+        _positivo = _cres >= 0
         _prioridades.append({
-            'nivel':'Oportunidade' if _cres >= 0 else 'Atenção',
-            'titulo':'Comparativo com o ano anterior',
-            'texto':f"{pct(_cres)} no mesmo período • use os rankings para localizar quem explica a variação",
-            'tipo':'Nenhum','alvo':None
+            'nivel':'Oportunidade' if _positivo else 'Atenção',
+            'classe':'opportunity' if _positivo else 'attention',
+            'icone':'●',
+            'kicker':'Comparativo',
+            'titulo':'Mesmo período do ano anterior',
+            'label':'Variação de faturamento',
+            'valor':pct(_cres),
+            'secundario':f"<strong>Referência:</strong> mesmo período de {_ano_ref}",
+            'rodape':(
+                'Crescimento no recorte. Use os rankings abaixo para localizar quem impulsiona o resultado.'
+                if _positivo else
+                'Queda no recorte. Use os rankings abaixo para localizar onde a variação está concentrada.'
+            ),
+            'tipo':'Nenhum',
+            'alvo':None,
+            'botao':None,
         })
+
     if not _prioridades and _atencoes:
-        _prioridades.append({'nivel':'Atenção','titulo':_atencoes[0][0],'texto':_atencoes[0][1],'tipo':'Nenhum','alvo':None})
+        _prioridades.append({
+            'nivel':'Atenção',
+            'classe':'attention',
+            'icone':'●',
+            'kicker':'Alerta',
+            'titulo':_atencoes[0][0],
+            'label':'Ponto de atenção',
+            'valor':'Revisar',
+            'secundario':_atencoes[0][1],
+            'rodape':'Analise o recorte atual antes do fechamento.',
+            'tipo':'Nenhum',
+            'alvo':None,
+            'botao':None,
+        })
 
     if _prioridades:
-        _cols_prio = st.columns(min(3, len(_prioridades)))
+        _cols_prio = st.columns(min(3, len(_prioridades)), gap='medium')
         for _i, _prio in enumerate(_prioridades[:3]):
             with _cols_prio[_i]:
-                with st.container(border=True):
-                    st.caption(_prio['nivel'].upper())
-                    st.markdown(f"**{_prio['titulo']}**")
-                    st.write(_prio['texto'])
-                    if _prio['tipo'] != 'Nenhum':
-                        if st.button(
-                            f"Analisar {_prio['tipo']}",
-                            key=f"cockpit_prio_{_i}",
-                            use_container_width=True
-                        ):
-                            if _prio['tipo'] == 'RCA':
-                                st.session_state['xf_rca'] = _prio['alvo']
-                            elif _prio['tipo'] == 'Departamento':
-                                st.session_state['xf_departamento'] = _prio['alvo']
-                            st.rerun()
+                st.markdown(
+                    f"""
+                    <div class="insight-card {_prio['classe']}">
+                      <div class="insight-badge">{_prio['icone']} {_prio['nivel']}</div>
+                      <div class="insight-kicker">{_prio['kicker']}</div>
+                      <div class="insight-title">{_prio['titulo']}</div>
+                      <div class="insight-value-label">{_prio['label']}</div>
+                      <div class="insight-value">{_prio['valor']}</div>
+                      <div class="insight-secondary">{_prio['secundario']}</div>
+                      <div class="insight-foot">{_prio['rodape']}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                if _prio['tipo'] != 'Nenhum' and _prio['botao']:
+                    if st.button(
+                        _prio['botao'],
+                        key=f"cockpit_prio_{_i}",
+                        use_container_width=True,
+                        type='primary',
+                    ):
+                        if _prio['tipo'] == 'RCA':
+                            st.session_state['xf_rca'] = _prio['alvo']
+                        elif _prio['tipo'] == 'Departamento':
+                            st.session_state['xf_departamento'] = _prio['alvo']
+                        st.rerun()
+                else:
+                    st.caption('Explore os rankings abaixo para aprofundar.')
     else:
-        st.success('Nenhuma prioridade automática forte foi identificada no recorte atual.')
+        st.success('Nenhum ponto de atenção automático forte foi identificado no recorte atual.')
 
     # 4) Ranking RCA interativo.
     st.markdown('### Ranking interativo de RCA')
