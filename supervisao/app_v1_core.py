@@ -288,46 +288,152 @@ elif pagina_dashboard == 'Cidades':
                 b2.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos/cliente'),unsafe_allow_html=True)
                 b3.markdown(kpi('Participação',pct(part),titulo_regiao),unsafe_allow_html=True)
 
-                detalhe_cidade = st.radio(
-                    'Detalhar cidade por',
-                    ['RCAs','Departamentos','Produtos','Clientes'],
-                    horizontal=True,
-                    label_visibility='collapsed',
-                    key=f'detalhe_cidade_{key}'
+                # Exibe todo o detalhamento da cidade em uma única página.
+                # Removemos os botões RCAs / Departamentos / Produtos / Clientes
+                # para evitar esconder informações importantes atrás de filtros.
+
+                st.markdown('### Desempenho comercial da cidade')
+
+                col_rca, col_dep = st.columns(2, gap='large')
+
+                with col_rca:
+                    rc=d.groupby('RCA',as_index=False).agg(
+                        FATURAMENTO=('VALOR','sum'),
+                        PRODUTOS=('CODPROD','nunique'),
+                        CLIENTES=('CODCLI','nunique')
+                    ).sort_values('FATURAMENTO')
+
+                    fig_rca=px.bar(
+                        rc,
+                        x='FATURAMENTO',
+                        y='RCA',
+                        orientation='h',
+                        title='Faturamento por RCA',
+                        text=rc.FATURAMENTO.map(brl_compacto),
+                        custom_data=['PRODUTOS','CLIENTES']
+                    )
+                    fig_rca.update_traces(
+                        marker_color=NAVY,
+                        textposition='outside',
+                        hovertemplate=(
+                            '<b>%{y}</b><br>'
+                            'Faturamento: R$ %{x:,.2f}<br>'
+                            'Produtos: %{customdata[0]:.0f}<br>'
+                            'Clientes: %{customdata[1]:.0f}'
+                            '<extra></extra>'
+                        )
+                    )
+                    fig_rca.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                    plot_crossfilter(
+                        chart_layout(fig_rca,max(330,28*len(rc)+100),'v'),
+                        f'cidade_rca_{key}',
+                        'xf_rca',
+                        'y'
+                    )
+
+                with col_dep:
+                    dp=d.groupby('DEPARTAMENTO',as_index=False).agg(
+                        FATURAMENTO=('VALOR','sum'),
+                        PRODUTOS=('CODPROD','nunique'),
+                        CLIENTES=('CODCLI','nunique')
+                    ).sort_values('FATURAMENTO')
+
+                    fig_dep=px.bar(
+                        dp,
+                        x='FATURAMENTO',
+                        y='DEPARTAMENTO',
+                        orientation='h',
+                        title='Faturamento por departamento',
+                        text=dp.FATURAMENTO.map(brl_compacto),
+                        custom_data=['PRODUTOS','CLIENTES']
+                    )
+                    fig_dep.update_traces(
+                        marker_color=NAVY_2,
+                        textposition='outside',
+                        hovertemplate=(
+                            '<b>%{y}</b><br>'
+                            'Faturamento: R$ %{x:,.2f}<br>'
+                            'Produtos: %{customdata[0]:.0f}<br>'
+                            'Clientes: %{customdata[1]:.0f}'
+                            '<extra></extra>'
+                        )
+                    )
+                    fig_dep.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                    st.plotly_chart(
+                        chart_layout(fig_dep,max(330,30*len(dp)+100),'v'),
+                        use_container_width=True,
+                        key=f'cidade_dep_{key}',
+                        config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+                    )
+
+                st.markdown('### Produtos da cidade')
+
+                pr=d.groupby('CODPROD',as_index=False).agg(
+                    FATURAMENTO=('VALOR','sum'),
+                    CLIENTES=('CODCLI','nunique'),
+                    PEDIDOS=('NUMPED','nunique')
+                ).sort_values('FATURAMENTO',ascending=False).head(15)
+
+                pr['PRODUTO']=pr.CODPROD.map(
+                    lambda x:f"Produto {int(x)}" if pd.notna(x) else 'Sem código'
+                )
+                pr=pr.sort_values('FATURAMENTO')
+
+                fig_prod=px.bar(
+                    pr,
+                    x='FATURAMENTO',
+                    y='PRODUTO',
+                    orientation='h',
+                    title='Top produtos por faturamento',
+                    text=pr.FATURAMENTO.map(brl_compacto),
+                    custom_data=['CLIENTES','PEDIDOS']
+                )
+                fig_prod.update_traces(
+                    marker_color=NAVY,
+                    textposition='outside',
+                    hovertemplate=(
+                        '<b>%{y}</b><br>'
+                        'Faturamento: R$ %{x:,.2f}<br>'
+                        'Clientes: %{customdata[0]:.0f}<br>'
+                        'Pedidos: %{customdata[1]:.0f}'
+                        '<extra></extra>'
+                    )
+                )
+                fig_prod.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                st.plotly_chart(
+                    chart_layout(fig_prod,max(390,29*len(pr)+100),'v'),
+                    use_container_width=True,
+                    key=f'cidade_prod_{key}',
+                    config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
                 )
 
-                if detalhe_cidade == 'RCAs':
-                    rc=d.groupby('RCA',as_index=False).agg(FATURAMENTO=('VALOR','sum'),PRODUTOS=('CODPROD','nunique'),CLIENTES=('CODCLI','nunique')).sort_values('FATURAMENTO')
-                    figd=px.bar(rc,x='FATURAMENTO',y='RCA',orientation='h',title='Faturamento por RCA na cidade',text=rc.FATURAMENTO.map(brl_compacto),custom_data=['PRODUTOS','CLIENTES'])
-                    figd.update_traces(marker_color=NAVY,textposition='outside',hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Produtos: %{customdata[0]:.0f}<br>Clientes: %{customdata[1]:.0f}<extra></extra>')
-                    figd.update_xaxes(tickprefix='R$ ',tickformat='.2s')
-                    plot_crossfilter(chart_layout(figd,max(340,28*len(rc)+100),'v'),f'cidade_rca_{key}','xf_rca','y')
+                st.markdown('### Principais clientes')
 
-                elif detalhe_cidade == 'Departamentos':
-                    dp=d.groupby('DEPARTAMENTO',as_index=False).agg(FATURAMENTO=('VALOR','sum'),PRODUTOS=('CODPROD','nunique'),CLIENTES=('CODCLI','nunique')).sort_values('FATURAMENTO')
-                    figd=px.bar(dp,x='FATURAMENTO',y='DEPARTAMENTO',orientation='h',title='Faturamento por departamento na cidade',text=dp.FATURAMENTO.map(brl_compacto),custom_data=['PRODUTOS','CLIENTES'])
-                    figd.update_traces(marker_color=NAVY_2,textposition='outside',hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Produtos: %{customdata[0]:.0f}<br>Clientes: %{customdata[1]:.0f}<extra></extra>')
-                    figd.update_xaxes(tickprefix='R$ ',tickformat='.2s')
-                    st.plotly_chart(chart_layout(figd,max(340,30*len(dp)+100),'v'),use_container_width=True,key=f'cidade_dep_{key}')
+                nomes=(
+                    clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI')
+                    if 'CLIENTE' in clientes.columns
+                    else pd.DataFrame(columns=['CODCLI','CLIENTE'])
+                )
+                detail=dcli.merge(nomes,on='CODCLI',how='left').sort_values(
+                    'FATURAMENTO',ascending=False
+                ).head(20)
 
-                elif detalhe_cidade == 'Produtos':
-                    pr=d.groupby('CODPROD',as_index=False).agg(FATURAMENTO=('VALOR','sum'),CLIENTES=('CODCLI','nunique'),PEDIDOS=('NUMPED','nunique')).sort_values('FATURAMENTO',ascending=False).head(15)
-                    pr['PRODUTO']=pr.CODPROD.map(lambda x:f"Produto {int(x)}" if pd.notna(x) else 'Sem código')
-                    pr=pr.sort_values('FATURAMENTO')
-                    figd=px.bar(pr,x='FATURAMENTO',y='PRODUTO',orientation='h',title='Top produtos da cidade',text=pr.FATURAMENTO.map(brl_compacto),custom_data=['CLIENTES','PEDIDOS'])
-                    figd.update_traces(marker_color=NAVY,textposition='outside',hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Clientes: %{customdata[0]:.0f}<br>Pedidos: %{customdata[1]:.0f}<extra></extra>')
-                    figd.update_xaxes(tickprefix='R$ ',tickformat='.2s')
-                    st.plotly_chart(chart_layout(figd,max(400,29*len(pr)+100),'v'),use_container_width=True,key=f'cidade_prod_{key}')
-
-                else:
-                    nomes=clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI') if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE'])
-                    detail=dcli.merge(nomes,on='CODCLI',how='left').sort_values('FATURAMENTO',ascending=False).head(20)
-                    st.dataframe(pd.DataFrame({
-                        'Cliente':detail['CLIENTE'].fillna(detail.CODCLI.astype(str)) if 'CLIENTE' in detail.columns else detail.CODCLI.astype(str),
+                st.dataframe(
+                    pd.DataFrame({
+                        'Cliente': (
+                            detail['CLIENTE'].fillna(detail.CODCLI.astype(str))
+                            if 'CLIENTE' in detail.columns
+                            else detail.CODCLI.astype(str)
+                        ),
                         'Faturamento':detail.FATURAMENTO.map(brl),
                         'Pedidos':detail.PEDIDOS.map(nint),
                         'Produtos':detail.PRODUTOS.map(nint)
-                    }),use_container_width=True,hide_index=True,height=min(520,38+35*len(detail)))
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(520,38+35*len(detail))
+                )
+
             else:
                 st.info('Nenhuma cidade com faturamento no recorte atual.')
 '''
