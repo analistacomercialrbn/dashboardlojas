@@ -510,6 +510,7 @@ pagina_dashboard = st.sidebar.radio(
     key='main_sidebar_navigation',
 )
 if pagina_dashboard == 'Gestão de Metas':
+    st.session_state.pop('gm_sidebar_navigation', None)
     st.switch_page('pages/2_Gestao_de_Metas.py')
 else:
     st.session_state['dashboard_section'] = pagina_dashboard
