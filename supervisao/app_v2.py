@@ -1309,6 +1309,23 @@ elif pagina_dashboard == 'Mix e Oportunidades':
     st.subheader('Mix, produtos e oportunidades')
     st.caption('Explore amplitude de mix, desempenho dos produtos e onde existe espaço para venda cruzada.')
 
+    # Métricas próprias da tela de Mix. Antes elas eram calculadas somente
+    # dentro da página Carteira; com a nova navegação lateral isso causava
+    # NameError ao abrir Mix diretamente.
+    _pc_mix = (
+        fat.groupby(['COD_RCA','RCA','CODCLI'])
+        .agg(
+            PRODUTOS=('CODPROD','nunique'),
+            FATURAMENTO=('VALOR','sum'),
+            PEDIDOS=('NUMPED','nunique')
+        )
+        .reset_index()
+        if not fat.empty else
+        pd.DataFrame(columns=['COD_RCA','RCA','CODCLI','PRODUTOS','FATURAMENTO','PEDIDOS'])
+    )
+    _mono_mix = int((_pc_mix['PRODUTOS'] == 1).sum()) if not _pc_mix.empty else 0
+    _ate3_mix = int((_pc_mix['PRODUTOS'] <= 3).sum()) if not _pc_mix.empty else 0
+
     _produtos_distintos = int(fat['CODPROD'].nunique()) if not fat.empty else 0
     _linhas_produto = (
         fat.groupby('NUMPED')['CODPROD'].nunique().mean()
@@ -1335,9 +1352,9 @@ elif pagina_dashboard == 'Mix e Oportunidades':
     m1.markdown(kpi('Produtos distintos',nint(_produtos_distintos),'Códigos vendidos no período'),unsafe_allow_html=True)
     m2.markdown(kpi('Mix médio',dec(mix_geral),'Produtos por cliente'),unsafe_allow_html=True)
     m3.markdown(kpi('Produtos por pedido',dec(_linhas_produto),'Média de códigos distintos'),unsafe_allow_html=True)
-    m4.markdown(kpi('Clientes 1 produto',nint(_mono),'Maior potencial de cross-sell'),unsafe_allow_html=True)
+    m4.markdown(kpi('Clientes 1 produto',nint(_mono_mix),'Maior potencial de cross-sell'),unsafe_allow_html=True)
     m5.markdown(kpi('Top 10 produtos',pct(_top10_share),'Participação no faturamento'),unsafe_allow_html=True)
-    m6.markdown(kpi('Clientes até 3 prod.',nint(_ate3),'Base para expansão de mix'),unsafe_allow_html=True)
+    m6.markdown(kpi('Clientes até 3 prod.',nint(_ate3_mix),'Base para expansão de mix'),unsafe_allow_html=True)
 
     _modo_mix = st.radio(
         'Explorar',
