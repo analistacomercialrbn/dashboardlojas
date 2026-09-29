@@ -543,8 +543,8 @@ if USUARIO_ATUAL.get('perfil') == 'ADMIN' and st.session_state.get('admin_users_
 st.markdown("""
 <div class='brandbar'>
   <div>
-    <div class='brand-title'>Gestão de Metas</div>
-    <div class='brand-sub'>Planejamento • análise histórica • distribuição • justificativas • aprovação</div>
+    <div class='brand-title'>Dashboard de Supervisão</div>
+    <div class='brand-sub'>Gestão de Metas • planejamento • análise histórica • distribuição • aprovação</div>
   </div>
   <div class='brand-word'>REBANHO</div>
 </div>
