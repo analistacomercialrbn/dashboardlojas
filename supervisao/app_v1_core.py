@@ -39,15 +39,49 @@ metas['MES_NUM'] = pd.to_numeric(metas['MES'].astype(str).str[5:7], errors='coer
 
 anos_disp = sorted(set(vendas.loc[vendas.FATURADO,'ANO_FAT'].dropna().astype(int)) | set(metas['ANO'].dropna().astype(int)), reverse=True)
 ano_opts = ['Todos'] + [str(x) for x in anos_disp]
-def_ano = ano_opts.index('2026') if '2026' in ano_opts else 0
-ano_sel = st.sidebar.selectbox('Ano de análise', ano_opts, index=def_ano)
+
+# Ao abrir o dashboard, iniciar sempre no mês corrente.
+_agora_filtro = pd.Timestamp.now(tz='America/Fortaleza')
+_ano_atual_filtro = int(_agora_filtro.year)
+_mes_atual_filtro = int(_agora_filtro.month)
+
+_ano_padrao = str(_ano_atual_filtro) if _ano_atual_filtro in anos_disp else (str(anos_disp[0]) if anos_disp else 'Todos')
+if 'filtro_ano_analise' not in st.session_state:
+    st.session_state['filtro_ano_analise'] = _ano_padrao
+ano_sel = st.sidebar.selectbox(
+    'Ano de análise',
+    ano_opts,
+    key='filtro_ano_analise'
+)
 
 meses_nome = {
     'Janeiro':1, 'Fevereiro':2, 'Março':3, 'Abril':4, 'Maio':5, 'Junho':6,
     'Julho':7, 'Agosto':8, 'Setembro':9, 'Outubro':10, 'Novembro':11, 'Dezembro':12
 }
 mes_opts = list(meses_nome.keys())
-mes_sel = st.sidebar.multiselect('Mês de análise', mes_opts, default=[], placeholder='Todos os meses')
+_mes_por_numero = {v:k for k,v in meses_nome.items()}
+
+if 'filtro_mes_analise' not in st.session_state:
+    if ano_sel == str(_ano_atual_filtro):
+        st.session_state['filtro_mes_analise'] = [_mes_por_numero[_mes_atual_filtro]]
+    else:
+        _meses_disp_ano = sorted(
+            set(vendas.loc[
+                vendas.FATURADO & vendas['DATA_FAT'].dt.year.eq(int(ano_sel)),
+                'DATA_FAT'
+            ].dropna().dt.month.astype(int))
+            | set(metas.loc[metas['ANO'].eq(int(ano_sel)), 'MES_NUM'].dropna().astype(int))
+        )
+        st.session_state['filtro_mes_analise'] = (
+            [_mes_por_numero[_meses_disp_ano[-1]]] if _meses_disp_ano else []
+        )
+
+mes_sel = st.sidebar.multiselect(
+    'Mês de análise',
+    mes_opts,
+    key='filtro_mes_analise',
+    placeholder='Todos os meses'
+)
 mes_nums = {meses_nome[m] for m in mes_sel}
 
 def periodo_mask_datas(serie):
