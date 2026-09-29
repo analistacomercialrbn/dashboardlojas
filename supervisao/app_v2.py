@@ -843,32 +843,42 @@ if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
 if pagina_dashboard == 'Visão Geral':
     st.subheader('Visão Geral')
     if _ano_mes_exec and pd.notna(_exec['corte']):
-        st.caption(
-            f"Leitura do período até {_exec['corte'].strftime('%d/%m/%Y')} • "
-            "use os controles abaixo para investigar rapidamente onde agir."
-        )
+        st.caption(f"Atualizado até {_exec['corte'].strftime('%d/%m/%Y')}")
     else:
         st.caption('Selecione um único mês e ano para habilitar projeções e leitura de ritmo.')
 
-    # 1) KPIs executivos essenciais.
-    cx1,cx2,cx3,cx4,cx5 = st.columns(5)
-    cx1.markdown(kpi('Faturamento',brl_compacto(F),pct(A)+' da meta' if pd.notna(A) else 'Sem meta'),unsafe_allow_html=True)
-    cx2.markdown(kpi('Meta',brl_compacto(M),'Recorte selecionado'),unsafe_allow_html=True)
-    cx3.markdown(kpi(
+    # 1) Indicadores de acompanhamento — sem repetir os KPIs globais do topo.
+    cx1,cx2,cx3,cx4,cx5,cx6 = st.columns(6)
+    cx1.markdown(kpi(
         'Projeção fechamento',
         brl_compacto(_exec['projecao']) if pd.notna(_exec['projecao']) else '—',
-        ('Acima da meta' if pd.notna(_exec['gap_proj']) and float(_exec['gap_proj']) <= 0 else 'Abaixo da meta')
-        if pd.notna(_exec['gap_proj']) else 'Disponível no mês atual'
+        'Estimativa no ritmo atual'
     ),unsafe_allow_html=True)
-    cx4.markdown(kpi(
+    cx2.markdown(kpi(
         'Gap projetado',
         brl_compacto(_exec['gap_proj']) if pd.notna(_exec['gap_proj']) else '—',
-        f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else '—'
+        'Meta menos projeção'
     ),unsafe_allow_html=True)
-    cx5.markdown(kpi(
+    cx3.markdown(kpi(
         'Ritmo da meta',
         pct(_exec['ritmo']) if pd.notna(_exec['ritmo']) else '—',
         '100% = ritmo necessário'
+    ),unsafe_allow_html=True)
+    cx4.markdown(kpi(
+        'Necessário / dia útil',
+        brl_compacto(_exec['necessario_dia']) if pd.notna(_exec['necessario_dia']) else '—',
+        f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else '—'
+    ),unsafe_allow_html=True)
+    cx5.markdown(kpi(
+        'Crescimento x A-1',
+        pct(_exec['crescimento_a1']) if pd.notna(_exec['crescimento_a1']) else '—',
+        'Mesmo período do ano anterior'
+    ),unsafe_allow_html=True)
+    _rca_ritmo_txt = f"{_exec['rcas_em_ritmo']}/{_exec['rcas_com_meta']}" if _exec['rcas_com_meta'] else '—'
+    cx6.markdown(kpi(
+        'RCAs em ritmo',
+        _rca_ritmo_txt,
+        'Ritmo ≥ 100%'
     ),unsafe_allow_html=True)
 
     # 2) Linha de progresso: realizado, esperado no dia, projeção e meta.
