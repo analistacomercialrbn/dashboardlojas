@@ -152,16 +152,37 @@ def mes_nome(x):
     return f'{nomes[p.month]}/{p.year}'
 
 
+def _excel_file(buf):
+    """Abre Excel com Calamine (mais rápido) e mantém fallback para openpyxl."""
+    buf.seek(0)
+    try:
+        return pd.ExcelFile(buf, engine='calamine')
+    except Exception:
+        buf.seek(0)
+        return pd.ExcelFile(buf, engine='openpyxl')
+
+
 def ler_vendas(buf):
-    previa = pd.read_excel(buf, sheet_name='Sheet1', header=None, nrows=8)
+    # A base de vendas é grande. Lemos somente as colunas realmente usadas
+    # pelo dashboard para reduzir bastante o tempo de abertura e a memória.
+    colunas_necessarias = {
+        'Cod/Vend.','Cod/Cliente','Cod/Produto','Data Faturamento',
+        'Pedidos Enviados','Posição','DEPARTAMENTO','NUMPED',
+        'MUNICENT','ESTENT','SECAO','% Margem','Vl Desconto','% Desconto'
+    }
+    xls = _excel_file(buf)
+    previa = xls.parse(sheet_name='Sheet1', header=None, nrows=8)
     header = 0
     for i, row in previa.iterrows():
         vals = set(row.astype(str).str.strip())
         if 'Data Faturamento' in vals and 'Pedidos Enviados' in vals:
             header = i
             break
-    buf.seek(0)
-    return pd.read_excel(buf, sheet_name='Sheet1', header=header)
+    return xls.parse(
+        sheet_name='Sheet1',
+        header=header,
+        usecols=lambda col: str(col).strip() in colunas_necessarias,
+    )
 
 
 def chart_layout(fig, height=420, legend='h'):
@@ -201,13 +222,27 @@ def plot_crossfilter(fig, key, state_key=None, point_field='y'):
         return None
 
 
-@st.cache_data(ttl=30, show_spinner='Carregando bases...')
+@st.cache_data(show_spinner='Carregando bases pela primeira vez...', max_entries=2)
 def load(base_version):
+    # Sem TTL curto: a base fica em memória entre reruns e usuários.
+    # Quando o arquivo do Drive for atualizado, o botão "Atualizar bases agora"
+    # limpa este cache explicitamente.
     v = ler_vendas(drive_bytes(VENDAS_ID))
+
     aux = drive_bytes(AUX_ID)
-    cli = pd.read_excel(aux, sheet_name='CLIENTES'); aux.seek(0)
-    rca = pd.read_excel(aux, sheet_name='RCA'); aux.seek(0)
-    met = pd.read_excel(aux, sheet_name='METAS')
+    aux_xls = _excel_file(aux)
+    cli = aux_xls.parse(
+        sheet_name='CLIENTES',
+        usecols=lambda col: str(col).strip() in {'COD_RCA','CODCLI','CLIENTE'},
+    )
+    rca = aux_xls.parse(
+        sheet_name='RCA',
+        usecols=lambda col: str(col).strip() in {'COD_RCA','RCA','SUPERVISOR','ATIVO'},
+    )
+    met = aux_xls.parse(
+        sheet_name='METAS',
+        usecols=lambda col: str(col).strip() in {'COD_RCA','MES','DEPARTAMENTO','META'},
+    )
 
     v['COD_RCA'] = cod(v['Cod/Vend.'])
     v['CODCLI'] = cod(v['Cod/Cliente'])
@@ -250,7 +285,11 @@ def load_nordeste_geojson():
     return {'type':'FeatureCollection','features':features}
 
 
-if st.sidebar.button('↻ Atualizar bases agora', use_container_width=True):
+if st.sidebar.button(
+    '↻ Atualizar bases agora',
+    use_container_width=True,
+    help='Use somente quando os arquivos do Drive forem substituídos ou atualizados.'
+):
     load.clear()
     st.rerun()
 
