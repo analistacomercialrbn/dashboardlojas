@@ -472,9 +472,15 @@ def load_nordeste_geojson():
         r.raise_for_status()
         data = r.json()
         for ft in data.get('features', []):
-            name = ft.get('properties', {}).get('name', '')
-            ft.setdefault('properties', {})['uf'] = uf
-            ft['properties']['key'] = f'{uf}|{norm(name)}'
+            props = ft.setdefault('properties', {})
+            # O GeoJSON usado pelo projeto traz o município 2306306 como
+            # "Itapagé". O nome oficial do IBGE é "Itapajé".
+            if str(props.get('id', '')).strip() == '2306306':
+                props['name'] = 'Itapajé'
+                props['description'] = 'Itapajé'
+            name = props.get('name', '')
+            props['uf'] = uf
+            props['key'] = f'{uf}|{norm(name)}'
             features.append(ft)
     return {'type':'FeatureCollection','features':features}
 
