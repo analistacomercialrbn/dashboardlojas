@@ -47,6 +47,22 @@ st.markdown(f"""
 [data-testid="stAppViewContainer"] {{ background:{BG}; }}
 [data-testid="stHeader"] {{ background:rgba(0,0,0,0); }}
 [data-testid="stSidebar"] {{ background:#fff; border-right:1px solid #E6E8EF; }}
+[data-testid="stSidebarNav"] {{ display:none !important; }}
+[data-testid="stSidebar"] [role="radiogroup"] label {{
+  width:100%;
+  border:none !important;
+  border-radius:9px;
+  padding:8px 10px !important;
+  background:transparent;
+  color:#20263A;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover {{ background:#F3F5FA; }}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {{
+  background:#E9ECF6 !important;
+  color:{NAVY} !important;
+  font-weight:750;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {{ display:none !important; }}
 .block-container {{ padding-top:1.4rem; padding-bottom:2rem; max-width:1500px; }}
 .brandbar {{ display:flex; align-items:center; justify-content:space-between; gap:18px; background:{NAVY}; padding:18px 24px; border-radius:18px; margin-bottom:18px; box-shadow:0 8px 24px rgba(30,38,85,.14); }}
 .brand-title {{ color:white; font-size:30px; font-weight:750; margin:0; }}
@@ -486,6 +502,24 @@ def render_sugestao_meta_inteligente(vendas, ativos, usuario):
 
 
 USUARIO_ATUAL = auth_bootstrap()
+
+_nav_paginas = ['Visão Geral','Carteira','Mix e Oportunidades','Cidades','Gestão de Metas']
+st.sidebar.markdown(
+    "<div style='font-size:11px;font-weight:800;letter-spacing:.08em;color:#737A8C;margin:2px 0 5px 2px;'>PAINEL</div>",
+    unsafe_allow_html=True,
+)
+_nav_escolha = st.sidebar.radio(
+    'Navegação',
+    _nav_paginas,
+    index=_nav_paginas.index('Gestão de Metas'),
+    label_visibility='collapsed',
+    key='gm_sidebar_navigation',
+)
+if _nav_escolha != 'Gestão de Metas':
+    st.session_state['dashboard_section'] = _nav_escolha
+    st.switch_page('app_v1.py')
+
+st.sidebar.divider()
 
 if st.sidebar.button('↻ Atualizar bases agora', use_container_width=True):
     load_data.clear()
