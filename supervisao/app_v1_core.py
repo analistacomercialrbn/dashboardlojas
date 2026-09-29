@@ -399,14 +399,12 @@ elif pagina_dashboard == 'Cidades':
                 st.markdown('### Produtos da cidade')
 
                 pr=d.groupby('CODPROD',as_index=False).agg(
+                    PRODUTO=('PRODUTO_NOME','first'),
                     FATURAMENTO=('VALOR','sum'),
                     CLIENTES=('CODCLI','nunique'),
                     PEDIDOS=('NUMPED','nunique')
                 ).sort_values('FATURAMENTO',ascending=False).head(15)
 
-                pr['PRODUTO']=pr.CODPROD.map(
-                    lambda x:f"Produto {int(x)}" if pd.notna(x) else 'Sem código'
-                )
                 pr=pr.sort_values('FATURAMENTO')
 
                 fig_prod=px.bar(
