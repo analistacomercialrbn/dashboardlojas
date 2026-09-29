@@ -46,7 +46,7 @@ h1,h2,h3 {{ color:{NAVY}; letter-spacing:-.02em; }}
 .brand-title {{ color:white; font-size:30px; font-weight:750; margin:0; }}
 .brand-sub {{ color:#DDE2F4; font-size:13px; margin-top:5px; }}
 .brand-word {{ color:white; font-size:24px; font-weight:900; letter-spacing:.08em; }}
-.kpi {{ background:#fff; border:1px solid #E6E8EF; border-radius:16px; padding:16px 18px; min-height:116px; box-shadow:0 4px 14px rgba(30,38,85,.06); }}
+.kpi {{ background:#fff; border:1px solid #E6E8EF; border-radius:16px; padding:17px 18px; min-height:96px; box-shadow:0 4px 14px rgba(30,38,85,.06); }}
 .kpi-label {{ color:{MUTED}; font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; }}
 .kpi-value {{ color:{NAVY}; font-size:25px; font-weight:760; margin-top:7px; white-space:nowrap; }}
 .kpi-note {{ color:{MUTED}; font-size:11px; margin-top:4px; }}
@@ -197,7 +197,7 @@ div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
   .brand-title {{ font-size:32px; }}
   .brand-sub {{ font-size:14px; }}
   .brand-word {{ font-size:25px; }}
-  .kpi {{ min-height:122px; padding:18px 20px; }}
+  .kpi {{ min-height:102px; padding:18px 20px; }}
   .kpi-value {{ font-size:27px; }}
 }}
 
@@ -576,12 +576,12 @@ r = r.merge(nr,on='COD_RCA',how='left').merge(ir,on='COD_RCA',how='left').fillna
 novos_total = int(r.NOVOS.sum()); inativos_total = int(r.INATIVADOS.sum())
 
 k1,k2,k3,k4,k5,k6 = st.columns(6)
-k1.markdown(kpi('Faturamento',brl_compacto(F),brl(F)),unsafe_allow_html=True)
-k2.markdown(kpi('Meta',brl_compacto(M),brl(M)),unsafe_allow_html=True)
-k3.markdown(kpi('Atingimento',pct(A),'Faturamento ÷ meta'),unsafe_allow_html=True)
-k4.markdown(kpi('Clientes positivados',nint(C),'Clientes únicos no mês'),unsafe_allow_html=True)
-k5.markdown(kpi('Ticket médio',brl_compacto(F/P if P else 0),'Por pedido faturado'),unsafe_allow_html=True)
-k6.markdown(kpi('Mix médio',dec(mix_geral),'Produtos distintos por cliente'),unsafe_allow_html=True)
+k1.markdown(kpi('Faturamento',brl_compacto(F)),unsafe_allow_html=True)
+k2.markdown(kpi('Meta',brl_compacto(M)),unsafe_allow_html=True)
+k3.markdown(kpi('Atingimento',pct(A)),unsafe_allow_html=True)
+k4.markdown(kpi('Clientes positivados',nint(C)),unsafe_allow_html=True)
+k5.markdown(kpi('Ticket médio',brl_compacto(F/P if P else 0)),unsafe_allow_html=True)
+k6.markdown(kpi('Mix médio',dec(mix_geral)),unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
 # LEITURA EXECUTIVA E PONTOS DE ATENÇÃO AUTOMÁTICOS
@@ -789,9 +789,6 @@ if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
                 f"{_mx['RCA']} tem mix médio de {dec(_mx['MIX_PRODUTOS_CLIENTE'])} produtos por cliente, "
                 f"abaixo da mediana do grupo ({dec(_mix_mediana)}). Há espaço para venda cruzada na carteira já positivada."
             ))
-
-st.caption(f'Fonte de vendas: {BASE_VENDAS_VERSAO} • Competência definida pela Data de Faturamento.')
-st.caption('Clique nos rankings e ações da Visão Geral para aprofundar a análise sem precisar refazer os filtros.')
 
 aba1,aba2,aba3,aba4 = st.tabs(['Visão Geral','Carteira','Mix e Oportunidades','Cidades 🗺️'])
 
