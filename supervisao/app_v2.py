@@ -67,10 +67,10 @@ h1,h2,h3 {{ color:{NAVY}; letter-spacing:-.02em; }}
 .brand-title {{ color:white; font-size:30px; font-weight:750; margin:0; }}
 .brand-sub {{ color:#DDE2F4; font-size:13px; margin-top:5px; }}
 .brand-word {{ color:white; font-size:24px; font-weight:900; letter-spacing:.08em; }}
-.kpi {{ background:#fff; border:1px solid #E6E8EF; border-radius:16px; padding:17px 18px; min-height:96px; box-shadow:0 4px 14px rgba(30,38,85,.06); }}
-.kpi-label {{ color:{MUTED}; font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; }}
-.kpi-value {{ color:{NAVY}; font-size:25px; font-weight:760; margin-top:7px; white-space:nowrap; }}
-.kpi-note {{ color:{MUTED}; font-size:11px; margin-top:4px; }}
+.kpi {{ background:#fff; border:1px solid #E6E8EF; border-radius:14px; padding:12px 14px; min-height:78px; box-shadow:0 3px 10px rgba(30,38,85,.045); }}
+.kpi-label {{ color:{MUTED}; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.065em; }}
+.kpi-value {{ color:{NAVY}; font-size:22px; font-weight:780; margin-top:4px; white-space:nowrap; line-height:1.08; }}
+.kpi-note {{ color:{MUTED}; font-size:10px; margin-top:4px; line-height:1.25; }}
 .section-note {{ color:{MUTED}; font-size:12px; margin-top:-8px; margin-bottom:14px; }}
 .filter-chip {{ display:inline-block; background:#EEF1F8; color:{NAVY}; border:1px solid #DCE1EE; border-radius:999px; padding:5px 10px; margin:0 6px 6px 0; font-size:11px; font-weight:650; }}
 [data-baseweb="tab-list"] {{ gap:22px; }}
@@ -218,8 +218,8 @@ div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
   .brand-title {{ font-size:32px; }}
   .brand-sub {{ font-size:14px; }}
   .brand-word {{ font-size:25px; }}
-  .kpi {{ min-height:102px; padding:18px 20px; }}
-  .kpi-value {{ font-size:27px; }}
+  .kpi {{ min-height:82px; padding:13px 15px; }}
+  .kpi-value {{ font-size:23px; }}
 }}
 
 @media (min-width: 2400px) {{
@@ -625,6 +625,20 @@ r = r.merge(nr,on='COD_RCA',how='left').merge(ir,on='COD_RCA',how='left').fillna
 
 novos_total = int(r.NOVOS.sum()); inativos_total = int(r.INATIVADOS.sum())
 
+if pagina_dashboard == 'Visão Geral':
+    _ultima_data_visao = fat['DATA_FAT'].max() if not fat.empty else pd.NaT
+    _atualizado_visao = (
+        f"Atualizado até {_ultima_data_visao.strftime('%d/%m/%Y')}"
+        if pd.notna(_ultima_data_visao) else ''
+    )
+    st.markdown(
+        f"<div style='display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:2px 0 10px 0;'>"
+        f"<div style='font-size:25px;font-weight:800;color:{NAVY};letter-spacing:-.02em;'>Visão Geral</div>"
+        f"<div style='font-size:11px;color:{MUTED};'>{_atualizado_visao}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
 k1,k2,k3,k4,k5,k6 = st.columns(6)
 k1.markdown(kpi('Faturamento',brl_compacto(F)),unsafe_allow_html=True)
 k2.markdown(kpi('Meta',brl_compacto(M)),unsafe_allow_html=True)
@@ -841,12 +855,6 @@ if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
             ))
 
 if pagina_dashboard == 'Visão Geral':
-    st.subheader('Visão Geral')
-    if _ano_mes_exec and pd.notna(_exec['corte']):
-        st.caption(f"Atualizado até {_exec['corte'].strftime('%d/%m/%Y')}")
-    else:
-        st.caption('Selecione um único mês e ano para habilitar projeções e leitura de ritmo.')
-
     # 1) Indicadores de acompanhamento — sem repetir os KPIs globais do topo.
     cx1,cx2,cx3,cx4,cx5,cx6 = st.columns(6)
     cx1.markdown(kpi(
