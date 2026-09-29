@@ -58,6 +58,43 @@ div[data-testid="stDataFrame"] {{ border:1px solid #E5E7EF; border-radius:14px; 
 .exec-section {{ margin-top:18px; }}
 .exec-note {{ color:{MUTED}; font-size:12px; margin-top:-5px; margin-bottom:12px; }}
 
+[data-testid="stVerticalBlockBorderWrapper"] {{
+  border-radius:16px !important;
+  border:1px solid #E5E8F0 !important;
+  box-shadow:0 3px 12px rgba(30,38,85,.04);
+  background:#fff;
+}}
+div[data-testid="stMetric"] {{
+  background:#fff;
+  border:1px solid #E5E8F0;
+  border-radius:14px;
+  padding:12px 14px;
+  box-shadow:0 3px 10px rgba(30,38,85,.035);
+}}
+div[data-testid="stMetricLabel"] p {{ color:{MUTED}; font-size:12px; font-weight:650; }}
+div[data-testid="stMetricValue"] {{ color:{NAVY}; font-weight:800; }}
+div[data-testid="stButton"] > button {{
+  border-radius:10px;
+  border:1px solid #D9DDEA;
+  font-weight:650;
+}}
+div[data-testid="stRadio"] [role="radiogroup"] {{
+  gap:.35rem;
+  flex-wrap:wrap;
+}}
+div[data-testid="stRadio"] label {{
+  background:#fff;
+  border:1px solid #DFE3ED;
+  border-radius:999px;
+  padding:.25rem .65rem;
+  margin:0 !important;
+}}
+div[data-testid="stRadio"] label:has(input:checked) {{
+  background:#EEF1F8;
+  border-color:{NAVY_2};
+  color:{NAVY};
+  font-weight:700;
+}}
 div[data-testid="stPlotlyChart"] {{ width:100% !important; }}
 div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
 
@@ -186,15 +223,55 @@ def ler_vendas(buf):
 
 
 def chart_layout(fig, height=420, legend='h'):
+    """Tema executivo inspirado em BI: limpo, compacto e com foco no dado."""
     fig.update_layout(
-        height=height, margin=dict(l=12,r=12,t=54,b=12),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color=TEXT,size=12), title_font=dict(color=NAVY,size=18),
-        legend=dict(orientation=legend,yanchor='bottom',y=1.02,xanchor='left',x=0),
-        hoverlabel=dict(bgcolor='white',font_color=TEXT),
+        height=height,
+        margin=dict(l=16,r=18,t=58,b=18),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='#FFFFFF',
+        font=dict(color=TEXT,size=12,family='Arial, sans-serif'),
+        title_font=dict(color=NAVY,size=17,family='Arial, sans-serif'),
+        title_x=0.01,
+        title_y=0.97,
+        hoverlabel=dict(
+            bgcolor='#FFFFFF',
+            bordercolor='#D9DDEA',
+            font_color=TEXT,
+            font_size=12,
+            font_family='Arial, sans-serif',
+        ),
+        hovermode='closest',
+        bargap=.28,
+        barcornerradius=7,
+        legend=dict(
+            orientation=legend,
+            yanchor='bottom',y=1.03,
+            xanchor='left',x=0,
+            bgcolor='rgba(255,255,255,0)',
+            font=dict(size=11,color=MUTED),
+        ),
+        modebar=dict(bgcolor='rgba(0,0,0,0)',color=MUTED),
+        transition=dict(duration=250,easing='cubic-in-out'),
     )
-    fig.update_xaxes(showgrid=False,linecolor='#E5E7EF')
-    fig.update_yaxes(gridcolor='#ECEEF4',zeroline=False)
+    fig.update_xaxes(
+        showgrid=False,
+        zeroline=False,
+        showline=False,
+        ticks='',
+        tickfont=dict(color=MUTED,size=10),
+        title_font=dict(color=MUTED,size=11),
+        automargin=True,
+    )
+    fig.update_yaxes(
+        gridcolor='#EEF0F5',
+        gridwidth=1,
+        zeroline=False,
+        showline=False,
+        ticks='',
+        tickfont=dict(color=MUTED,size=10),
+        title_font=dict(color=MUTED,size=11),
+        automargin=True,
+    )
     return fig
 
 
@@ -205,7 +282,14 @@ def kpi(label, value, note=''):
 def plot_crossfilter(fig, key, state_key=None, point_field='y'):
     """Renderiza gráfico selecionável e grava um filtro em session_state."""
     try:
-        ev = st.plotly_chart(fig, use_container_width=True, on_select='rerun', selection_mode='points', key=key)
+        ev = st.plotly_chart(
+            fig,
+            use_container_width=True,
+            on_select='rerun',
+            selection_mode='points',
+            key=key,
+            config={'displayModeBar':False,'responsive':True,'scrollZoom':False},
+        )
         if state_key:
             sel = getattr(ev, 'selection', None)
             pts = getattr(sel, 'points', None) if sel is not None else None
@@ -218,7 +302,7 @@ def plot_crossfilter(fig, key, state_key=None, point_field='y'):
                         st.rerun()
         return ev
     except Exception:
-        st.plotly_chart(fig, use_container_width=True, key=f'{key}_fallback')
+        st.plotly_chart(fig, use_container_width=True, key=f'{key}_fallback', config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
         return None
 
 
@@ -634,24 +718,24 @@ with aba1:
 
     # 1) KPIs executivos essenciais.
     cx1,cx2,cx3,cx4,cx5 = st.columns(5)
-    cx1.metric('Faturamento', brl(F), pct(A) + ' da meta' if pd.notna(A) else 'Sem meta')
-    cx2.metric('Meta', brl(M), 'Recorte selecionado')
-    cx3.metric(
-        'Projeção de fechamento',
-        brl(_exec['projecao']) if pd.notna(_exec['projecao']) else '—',
+    cx1.markdown(kpi('Faturamento',brl_compacto(F),pct(A)+' da meta' if pd.notna(A) else 'Sem meta'),unsafe_allow_html=True)
+    cx2.markdown(kpi('Meta',brl_compacto(M),'Recorte selecionado'),unsafe_allow_html=True)
+    cx3.markdown(kpi(
+        'Projeção fechamento',
+        brl_compacto(_exec['projecao']) if pd.notna(_exec['projecao']) else '—',
         ('Acima da meta' if pd.notna(_exec['gap_proj']) and float(_exec['gap_proj']) <= 0 else 'Abaixo da meta')
-        if pd.notna(_exec['gap_proj']) else None
-    )
-    cx4.metric(
+        if pd.notna(_exec['gap_proj']) else 'Disponível no mês atual'
+    ),unsafe_allow_html=True)
+    cx4.markdown(kpi(
         'Gap projetado',
-        brl(_exec['gap_proj']) if pd.notna(_exec['gap_proj']) else '—',
-        f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else None
-    )
-    cx5.metric(
+        brl_compacto(_exec['gap_proj']) if pd.notna(_exec['gap_proj']) else '—',
+        f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else '—'
+    ),unsafe_allow_html=True)
+    cx5.markdown(kpi(
         'Ritmo da meta',
         pct(_exec['ritmo']) if pd.notna(_exec['ritmo']) else '—',
         '100% = ritmo necessário'
-    )
+    ),unsafe_allow_html=True)
 
     # 2) Linha de progresso: realizado, esperado no dia, projeção e meta.
     if _ano_mes_exec and pd.notna(_exec['projecao']) and M:
@@ -661,16 +745,18 @@ with aba1:
         fig_exec = go.Figure()
         fig_exec.add_trace(go.Bar(
             x=[float(F)], y=['Período'], orientation='h', name='Realizado',
-            marker_color=NAVY, hovertemplate='Realizado: R$ %{x:,.2f}<extra></extra>'
+            marker=dict(color=NAVY,line=dict(width=0)),
+            width=.34,
+            hovertemplate='<b>Realizado</b><br>R$ %{x:,.2f}<extra></extra>'
         ))
         fig_exec.add_trace(go.Scatter(
             x=[_esperado_exec], y=['Período'], mode='markers', name='Esperado hoje',
-            marker=dict(size=15, symbol='diamond', color='#C58A2E'),
+            marker=dict(size=14, symbol='diamond', color='#E5A43A', line=dict(color='white',width=2)),
             hovertemplate='Esperado hoje: R$ %{x:,.2f}<extra></extra>'
         ))
         fig_exec.add_trace(go.Scatter(
             x=[float(_exec['projecao'])], y=['Período'], mode='markers', name='Projeção',
-            marker=dict(size=16, symbol='circle', color=GREEN if float(_exec['projecao']) >= float(M) else RED),
+            marker=dict(size=17, symbol='circle', color=GREEN if float(_exec['projecao']) >= float(M) else RED, line=dict(color='white',width=2)),
             hovertemplate='Projeção: R$ %{x:,.2f}<extra></extra>'
         ))
         fig_exec.add_vline(x=float(M), line_width=3, line_dash='dash', line_color=NAVY_2,
@@ -678,14 +764,22 @@ with aba1:
         fig_exec.update_layout(
             title='Trajetória do mês',
             barmode='overlay',
-            height=240,
-            xaxis=dict(range=[0,_limite_exec], tickprefix='R$ ', tickformat='.2s', showgrid=True, gridcolor='#ECEEF4'),
-            yaxis=dict(showticklabels=False),
-            margin=dict(l=8,r=8,t=58,b=10),
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, x=0),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+            height=230,
+            xaxis=dict(range=[0,_limite_exec], tickprefix='R$ ', tickformat='.2s', showgrid=True, gridcolor='#EEF0F5', zeroline=False),
+            yaxis=dict(showticklabels=False,showgrid=False,zeroline=False),
+            margin=dict(l=10,r=14,t=62,b=14),
+            legend=dict(orientation='h', yanchor='bottom', y=1.03, x=0, font=dict(size=11,color=MUTED)),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#FFFFFF',
+            font=dict(color=TEXT,size=11),
+            hoverlabel=dict(bgcolor='white',bordercolor='#D9DDEA',font_color=TEXT),
+            barcornerradius=9,
         )
-        st.plotly_chart(fig_exec, use_container_width=True, key='cockpit_trajetoria')
+        st.plotly_chart(
+            fig_exec,
+            use_container_width=True,
+            key='cockpit_trajetoria',
+            config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+        )
 
     # 3) Central de prioridades clicável.
     st.markdown('### Prioridades agora')
@@ -1071,7 +1165,7 @@ with aba3:
             _fig.update_traces(marker_color=NAVY_2,textposition='outside')
             if _met_prod == 'Faturamento':
                 _fig.update_xaxes(tickprefix='R$ ',tickformat='.2s')
-            st.plotly_chart(chart_layout(_fig,max(500,29*len(_top_prod)+120),'v'),use_container_width=True,key='mix_produtos_rank')
+            st.plotly_chart(chart_layout(_fig,max(500,29*len(_top_prod)+120),'v'),use_container_width=True,key='mix_produtos_rank',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
 
             _prod_sel = st.selectbox(
                 'Analisar um produto',
@@ -1113,7 +1207,7 @@ with aba3:
                 hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Produtos: %{customdata[0]:.0f}<br>Clientes: %{customdata[1]:.0f}<extra></extra>'
             )
             _fig.update_xaxes(tickprefix='R$ ',tickformat='.2s')
-            st.plotly_chart(chart_layout(_fig,max(430,30*len(_sec)+120),'v'),use_container_width=True,key='mix_secao')
+            st.plotly_chart(chart_layout(_fig,max(430,30*len(_sec)+120),'v'),use_container_width=True,key='mix_secao',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
 
     else:
         if fat.empty:
@@ -1134,7 +1228,7 @@ with aba3:
             _dist.columns=['Faixa','Clientes']
             _fig = px.bar(_dist,x='Faixa',y='Clientes',title='Clientes por faixa de mix',text='Clientes')
             _fig.update_traces(marker_color=NAVY_2,textposition='outside')
-            st.plotly_chart(chart_layout(_fig,390,'v'),use_container_width=True,key='mix_clientes_faixa')
+            st.plotly_chart(chart_layout(_fig,390,'v'),use_container_width=True,key='mix_clientes_faixa',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
 
     with st.expander('Distribuição detalhada do mix', expanded=False):
         if not fat.empty:
@@ -1143,12 +1237,12 @@ with aba3:
             with c1:
                 fig = px.histogram(pc_det,x='PRODUTOS',nbins=min(20,max(6,int(pc_det.PRODUTOS.max()))),title='Distribuição do mix entre clientes')
                 fig.update_traces(marker_color=NAVY_2)
-                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True)
+                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True,config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
             with c2:
                 faixas = pd.cut(pc_det.PRODUTOS,bins=[0,1,3,5,10,float('inf')],labels=['1 produto','2–3','4–5','6–10','11+'],include_lowest=True)
                 dist = faixas.value_counts(sort=False).reset_index(); dist.columns=['Faixa','Clientes']
                 fig = px.pie(dist,names='Faixa',values='Clientes',hole=.58,title='Clientes por faixa de mix',color_discrete_sequence=[NAVY,NAVY_2,'#59659A','#8991B7','#BAC0D8'])
-                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True)
+                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True,config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
 
 with aba4:
     st.subheader('Cobertura municipal — Nordeste')
