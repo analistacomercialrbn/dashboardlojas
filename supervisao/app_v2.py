@@ -441,6 +441,14 @@ def load(base_version):
     v['COD_RCA'] = cod(v['Cod/Vend.'])
     v['CODCLI'] = cod(v['Cod/Cliente'])
     v['CODPROD'] = cod(v['Cod/Produto'])
+    v['PRODUTO_NOME'] = (
+        v['Cod/Produto'].astype(str)
+        .str.replace(r'^\s*\d+\s*-\s*', '', regex=True)
+        .str.strip()
+    )
+    v.loc[v['PRODUTO_NOME'].isin(['','nan','None']), 'PRODUTO_NOME'] = v.loc[
+        v['PRODUTO_NOME'].isin(['','nan','None']), 'CODPROD'
+    ].map(lambda x: f'Produto {int(x)}' if pd.notna(x) else 'Sem produto')
     v['DATA_FAT'] = dt(v['Data Faturamento'])
     v['VALOR'] = pd.to_numeric(v['Pedidos Enviados'], errors='coerce').fillna(0)
     v['MARGEM_PCT'] = pd.to_numeric(v.get('% Margem'), errors='coerce')
@@ -1340,6 +1348,7 @@ elif pagina_dashboard == 'Mix e Oportunidades':
     _prod_perf = (
         fat.groupby('CODPROD',as_index=False)
         .agg(
+            PRODUTO=('PRODUTO_NOME','first'),
             FATURAMENTO=('VALOR','sum'),
             CLIENTES=('CODCLI','nunique'),
             PEDIDOS=('NUMPED','nunique'),
@@ -1349,7 +1358,6 @@ elif pagina_dashboard == 'Mix e Oportunidades':
         pd.DataFrame(columns=['CODPROD','FATURAMENTO','CLIENTES','PEDIDOS','RCAS'])
     )
     if not _prod_perf.empty:
-        _prod_perf['PRODUTO'] = _prod_perf['CODPROD'].map(lambda x: f"Produto {int(x)}" if pd.notna(x) else 'Sem código')
         _top10_share = _prod_perf.nlargest(10,'FATURAMENTO')['FATURAMENTO'].sum() / max(float(_prod_perf['FATURAMENTO'].sum()),1) * 100
     else:
         _top10_share = 0
@@ -1409,12 +1417,21 @@ elif pagina_dashboard == 'Mix e Oportunidades':
                 _fig.update_xaxes(tickprefix='R$ ',tickformat='.2s')
             st.plotly_chart(chart_layout(_fig,max(500,29*len(_top_prod)+120),'v'),use_container_width=True,key='mix_produtos_rank',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
 
+            _prod_opcoes = _prod_perf.sort_values('FATURAMENTO',ascending=False).copy()
+            _prod_opcoes['LABEL'] = _prod_opcoes['PRODUTO'].astype(str)
+            _duplicados = _prod_opcoes['LABEL'].duplicated(keep=False)
+            _prod_opcoes.loc[_duplicados,'LABEL'] = (
+                _prod_opcoes.loc[_duplicados,'LABEL']
+                + ' · cód. '
+                + _prod_opcoes.loc[_duplicados,'CODPROD'].astype('Int64').astype(str)
+            )
             _prod_sel = st.selectbox(
                 'Analisar um produto',
-                _prod_perf.sort_values('FATURAMENTO',ascending=False)['PRODUTO'].tolist(),
+                _prod_opcoes['LABEL'].tolist(),
                 key='mix_produto_detalhe'
             )
-            _cod_sel = int(_prod_sel.replace('Produto ',''))
+            _cod_sel = _prod_opcoes.loc[_prod_opcoes['LABEL'].eq(_prod_sel),'CODPROD'].iloc[0]
+            _produto_nome_sel = _prod_opcoes.loc[_prod_opcoes['LABEL'].eq(_prod_sel),'PRODUTO'].iloc[0]
             _fp = fat[fat['CODPROD'].eq(_cod_sel)].copy()
             if not _fp.empty:
                 p1,p2,p3,p4 = st.columns(4)
@@ -1423,7 +1440,7 @@ elif pagina_dashboard == 'Mix e Oportunidades':
                 p3.metric('Pedidos',nint(_fp['NUMPED'].nunique()))
                 p4.metric('RCAs',nint(_fp['COD_RCA'].nunique()))
                 _por_rca = _fp.groupby('RCA',as_index=False)['VALOR'].sum().sort_values('VALOR')
-                _figp = px.bar(_por_rca,x='VALOR',y='RCA',orientation='h',title=f'{_prod_sel} por RCA',text=_por_rca.VALOR.map(brl_compacto))
+                _figp = px.bar(_por_rca,x='VALOR',y='RCA',orientation='h',title=f'{_produto_nome_sel} por RCA',text=_por_rca.VALOR.map(brl_compacto))
                 _figp.update_traces(marker_color=NAVY,textposition='outside')
                 _figp.update_xaxes(tickprefix='R$ ',tickformat='.2s')
                 plot_crossfilter(chart_layout(_figp,max(360,28*len(_por_rca)+100),'v'),'mix_prod_rca','xf_rca','y')
