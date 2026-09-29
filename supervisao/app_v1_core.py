@@ -124,11 +124,10 @@ source = source.replace("'Primeira compra encontrada em 2026'", "f'Primeira comp
 source = source.replace("'Clientes que compraram no mês'", "f'Clientes que compraram • {periodo_label}'")
 source = source.replace("st.caption(f'Fonte de vendas: {BASE_VENDAS_VERSAO} • Competência definida pela Data de Faturamento.')", "st.caption(f'Fonte de vendas: {BASE_VENDAS_VERSAO} • Período: {periodo_label} • Competência definida pela Data de Faturamento.')")
 
-prefix, rest = source.split('\nwith aba4:\n', 1)
-_, suffix = rest.split('\nst.divider()\n', 1)
+prefix, _rest = source.split("\nelif pagina_dashboard == 'Cidades':\n", 1)
 
 aba4 = r'''
-with aba4:
+elif pagina_dashboard == 'Cidades':
     st.subheader('Cobertura municipal — Nordeste')
     st.markdown("<div class='section-note'>A cidade é definida pela praça da própria venda (MUNICENT) e o estado por ESTENT. Os filtros de ano, mês, supervisor, RCA e departamento atualizam automaticamente o mapa e os indicadores.</div>", unsafe_allow_html=True)
 
@@ -299,5 +298,5 @@ with aba4:
                 st.info('Nenhuma cidade com faturamento no recorte atual.')
 '''
 
-source = prefix + '\n' + aba4 + '\nst.divider()\n' + suffix
+source = prefix + '\n' + aba4
 exec(compile(source, str(_app), 'exec'), globals(), globals())
