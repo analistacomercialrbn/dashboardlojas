@@ -517,6 +517,7 @@ _nav_escolha = st.sidebar.radio(
 )
 if _nav_escolha != 'Gestão de Metas':
     st.session_state['dashboard_section'] = _nav_escolha
+    st.session_state.pop('main_sidebar_navigation', None)
     st.switch_page('app_v1.py')
 
 st.sidebar.divider()
