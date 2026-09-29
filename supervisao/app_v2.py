@@ -31,6 +31,27 @@ st.markdown(f"""
 [data-testid="stAppViewContainer"] {{ background:{BG}; }}
 [data-testid="stHeader"] {{ background:rgba(0,0,0,0); }}
 [data-testid="stSidebar"] {{ background:#fff; border-right:1px solid #E6E8EF; }}
+[data-testid="stSidebarNav"] {{ display:none !important; }}
+[data-testid="stSidebar"] [role="radiogroup"] label {{
+  width:100%;
+  border:none !important;
+  border-radius:9px;
+  padding:8px 10px !important;
+  background:transparent;
+  color:{TEXT};
+  transition:background .15s ease,color .15s ease;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover {{
+  background:#F3F5FA;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {{
+  background:#E9ECF6 !important;
+  color:{NAVY} !important;
+  font-weight:750;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {{
+  display:none !important;
+}}
 [data-testid="stMain"] {{ width:100%; }}
 [data-testid="stMainBlockContainer"],
 .block-container {{
@@ -471,12 +492,29 @@ try:
 except Exception as e:
     st.error(str(e)); st.stop()
 
-st.markdown(f"""
-<div class='brandbar'>
-  <div><div class='brand-title'>Dashboard de Supervisão</div><div class='brand-sub'>Gestão comercial • faturamento, carteira, mix e cobertura municipal</div></div>
-  <div class='brand-word'>REBANHO</div>
-</div>
-""", unsafe_allow_html=True)
+# Navegação principal no menu lateral.
+_nav_paginas = ['Visão Geral','Carteira','Mix e Oportunidades','Cidades','Gestão de Metas']
+_nav_atual = st.session_state.get('dashboard_section','Visão Geral')
+if _nav_atual not in _nav_paginas[:-1]:
+    _nav_atual = 'Visão Geral'
+
+st.sidebar.markdown(
+    "<div style='font-size:11px;font-weight:800;letter-spacing:.08em;color:#737A8C;margin:2px 0 5px 2px;'>PAINEL</div>",
+    unsafe_allow_html=True,
+)
+pagina_dashboard = st.sidebar.radio(
+    'Navegação',
+    _nav_paginas,
+    index=_nav_paginas.index(_nav_atual),
+    label_visibility='collapsed',
+    key='main_sidebar_navigation',
+)
+if pagina_dashboard == 'Gestão de Metas':
+    st.switch_page('pages/2_Gestao_de_Metas.py')
+else:
+    st.session_state['dashboard_section'] = pagina_dashboard
+
+st.sidebar.divider()
 
 ativos = rcas[rcas['ATIVO'].eq('S')].copy()
 meses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)
@@ -790,10 +828,8 @@ if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
                 f"abaixo da mediana do grupo ({dec(_mix_mediana)}). Há espaço para venda cruzada na carteira já positivada."
             ))
 
-aba1,aba2,aba3,aba4 = st.tabs(['Visão Geral','Carteira','Mix e Oportunidades','Cidades 🗺️'])
-
-with aba1:
-    st.subheader('Cockpit comercial')
+if pagina_dashboard == 'Visão Geral':
+    st.subheader('Visão Geral')
     if _ano_mes_exec and pd.notna(_exec['corte']):
         st.caption(
             f"Leitura do período até {_exec['corte'].strftime('%d/%m/%Y')} • "
@@ -1143,7 +1179,7 @@ with aba1:
         })
         st.dataframe(tabela,use_container_width=True,hide_index=True,height=min(620,40+35*len(tabela)))
 
-with aba2:
+elif pagina_dashboard == 'Carteira':
     st.subheader('Carteira e oportunidades')
     st.caption('Leitura da saúde da carteira com foco em clientes que precisam de ação e espaço para ampliar relacionamento.')
 
@@ -1239,7 +1275,7 @@ with aba2:
         st.info('Sem dados de carteira no recorte atual.')
 
 
-with aba3:
+elif pagina_dashboard == 'Mix e Oportunidades':
     st.subheader('Mix, produtos e oportunidades')
     st.caption('Explore amplitude de mix, desempenho dos produtos e onde existe espaço para venda cruzada.')
 
@@ -1397,9 +1433,8 @@ with aba3:
                 fig = px.pie(dist,names='Faixa',values='Clientes',hole=.58,title='Clientes por faixa de mix',color_discrete_sequence=[NAVY,NAVY_2,'#59659A','#8991B7','#BAC0D8'])
                 st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True,config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
 
-with aba4:
+elif pagina_dashboard == 'Cidades':
     st.subheader('Cobertura municipal — Nordeste')
     st.info('Mapa municipal carregado pela camada de compatibilidade do app_v1.py.')
 
-st.divider()
-st.caption(f'Base carregada: {len(vendas):,} linhas • Fonte: {BASE_VENDAS_VERSAO} • Filtro mensal pela Data de Faturamento.'.replace(',','.'))
+
