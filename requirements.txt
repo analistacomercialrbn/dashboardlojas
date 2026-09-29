@@ -1,6 +1,7 @@
 streamlit
 pandas
 openpyxl
+python-calamine>=0.3
 plotly
 streamlit-aggrid>=1.1.8
 # força rebuild para recarregar a base de vendas do Drive
