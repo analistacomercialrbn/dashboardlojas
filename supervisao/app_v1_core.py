@@ -207,7 +207,17 @@ elif pagina_dashboard == 'Cidades':
                 oficiais.setdefault(uf, []).append({'nome':nome,'norm':norm(nome),'solto':cidade_solto(nome),'key':pr.get('key', f'{uf}|{norm(nome)}')})
 
         def resolver_cidade(uf, cidade):
-            uf = str(uf or '').upper().strip(); bruto = norm(cidade); solto = cidade_solto(cidade); cands = oficiais.get(uf, [])
+            uf = str(uf or '').upper().strip(); bruto = norm(cidade)
+
+            # Alias conhecido na base comercial:
+            # PINRETAMA é Pindoretama/CE. Sem esta correção parte do
+            # faturamento ficava fora do município no mapa.
+            aliases = {
+                ('CE', 'PINRETAMA'): 'PINDORETAMA',
+            }
+            bruto = aliases.get((uf, bruto), bruto)
+            solto = cidade_solto(bruto)
+            cands = oficiais.get(uf, [])
             if not bruto or not cands: return f'{uf}|{bruto}', cidade, 'sem_correspondencia'
             ex = [c for c in cands if c['norm'] == bruto]
             if len(ex) == 1: return ex[0]['key'], ex[0]['nome'], 'exato'
@@ -233,6 +243,26 @@ elif pagina_dashboard == 'Cidades':
         if estado_uf: features=[ft for ft in features if ft.get('properties',{}).get('uf')==estado_uf]
         geojson={'type':'FeatureCollection','features':features}
         munis=pd.DataFrame([{'KEY':ft['properties']['key'],'CIDADE_MAPA':ft['properties'].get('name',''),'UF_MAPA':ft['properties'].get('uf','')} for ft in features])
+
+        # Validação de integridade: nenhuma praça com faturamento pode ficar
+        # fora do GeoJSON sem que o usuário seja avisado.
+        chaves_mapa = set(munis['KEY'].dropna().astype(str))
+        inconsistencias_mapa = city[
+            city['FATURAMENTO'].abs().gt(0)
+            & ~city['KEY'].astype(str).isin(chaves_mapa)
+        ].copy()
+        if not inconsistencias_mapa.empty:
+            nomes_inconsistentes = ', '.join(
+                inconsistencias_mapa.sort_values('FATURAMENTO', ascending=False)
+                .apply(lambda x: f"{x['CIDADE']} - {x['UF']}", axis=1)
+                .head(8)
+                .tolist()
+            )
+            st.warning(
+                f"Validação do mapa: {len(inconsistencias_mapa)} praça(s) com faturamento "
+                f"não foram vinculadas a um município. Revise: {nomes_inconsistentes}."
+            )
+
         mapa=munis.merge(city,on='KEY',how='left'); mapa['CIDADE']=mapa['CIDADE'].fillna(mapa['CIDADE_MAPA']); mapa['UF']=mapa['UF'].fillna(mapa['UF_MAPA'])
         for c in ['FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']: mapa[c]=pd.to_numeric(mapa[c],errors='coerce').fillna(0)
 
