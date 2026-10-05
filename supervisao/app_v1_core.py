@@ -231,6 +231,31 @@ elif pagina_dashboard == 'Cidades':
                 if melhor>=0.88 and (melhor-segundo>=0.04 or melhor>=0.95): return cand['key'], cand['nome'], 'aproximado'
             return f'{uf}|{bruto}', cidade, 'sem_correspondencia'
 
+        # Área geográfica do recorte: quando há filtro de supervisor/RCA/departamento,
+        # usamos o histórico do ano selecionado (ignorando apenas o mês) para definir
+        # quais municípios pertencem visualmente à área filtrada.
+        scope_loc = vendas[
+            vendas['FATURADO']
+            & vendas['COD_RCA'].isin(cods)
+            & vendas['DEPARTAMENTO'].astype(str).isin(ds_eff)
+        ].copy()
+        if ano_sel != 'Todos':
+            scope_loc = scope_loc[scope_loc['DATA_FAT'].dt.year.eq(int(ano_sel))].copy()
+        scope_loc['UF'] = scope_loc['ESTENT'].astype(str).str.upper().str.strip()
+        scope_loc['CIDADE'] = scope_loc['MUNICENT'].astype(str).str.strip()
+        scope_loc = scope_loc[scope_loc['UF'].isin(NE_CODES)].copy()
+        if estado_uf:
+            scope_loc = scope_loc[scope_loc['UF'].eq(estado_uf)].copy()
+
+        if not scope_loc.empty:
+            scope_pairs = scope_loc[['UF','CIDADE']].drop_duplicates().copy()
+            scope_res = scope_pairs.apply(lambda x: resolver_cidade(x['UF'], x['CIDADE']), axis=1)
+            scope_pairs['KEY'] = [x[0] for x in scope_res]
+            scope_loc = scope_loc.merge(scope_pairs[['UF','CIDADE','KEY']],on=['UF','CIDADE'],how='left')
+            scope_keys = set(scope_loc['KEY'].dropna().astype(str))
+        else:
+            scope_keys = set()
+
         pares = loc[['UF','CIDADE']].drop_duplicates().copy()
         resolvidos = pares.apply(lambda x: resolver_cidade(x['UF'], x['CIDADE']), axis=1)
         pares['KEY']=[x[0] for x in resolvidos]; pares['CIDADE_OFICIAL']=[x[1] for x in resolvidos]; pares['MATCH_CIDADE']=[x[2] for x in resolvidos]
@@ -240,7 +265,16 @@ elif pagina_dashboard == 'Cidades':
         cmix = loc.groupby(['KEY','CODCLI']).CODPROD.nunique().rename('MIXCLI').reset_index(); cmix=cmix.groupby('KEY').MIXCLI.mean().rename('MIX').reset_index(); city=city.merge(cmix,on='KEY',how='left')
 
         features=all_features
-        if estado_uf: features=[ft for ft in features if ft.get('properties',{}).get('uf')==estado_uf]
+        if estado_uf:
+            features=[ft for ft in features if ft.get('properties',{}).get('uf')==estado_uf]
+
+        _filtro_area_ativo = bool(ss or rs or ds)
+        if _filtro_area_ativo and scope_keys:
+            features=[
+                ft for ft in features
+                if str(ft.get('properties',{}).get('key','')) in scope_keys
+            ]
+
         geojson={'type':'FeatureCollection','features':features}
         munis=pd.DataFrame([{'KEY':ft['properties']['key'],'CIDADE_MAPA':ft['properties'].get('name',''),'UF_MAPA':ft['properties'].get('uf','')} for ft in features])
 
@@ -292,7 +326,18 @@ elif pagina_dashboard == 'Cidades':
             custom_com=mapa_com[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy()
             fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_com.KEY,z=zvals,featureidkey='properties.key',zmin=0,zmax=zmax,colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]],marker_line_color='#8994B6',marker_line_width=.65 if estado_uf else .4,customdata=custom_com,colorbar=dict(title=titulo_cor,thickness=12,len=.34,orientation='h',x=.72,y=.01,xanchor='center',yanchor='bottom'),hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Produtos: %{customdata[5]:.0f}<br>Mix: %{customdata[6]:.2f}<extra></extra>',name=metrica_mapa))
 
-        fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator',bgcolor='rgba(0,0,0,0)'); fig.update_layout(height=980,margin=dict(l=0,r=0,t=0,b=0),paper_bgcolor='rgba(0,0,0,0)',dragmode=False,showlegend=True,legend=dict(orientation='h',x=.01,y=.01,xanchor='left',yanchor='bottom',bgcolor='rgba(255,255,255,.88)',bordercolor='#E1E3EA',borderwidth=1))
+        fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator',bgcolor='rgba(0,0,0,0)')
+        fig.update_layout(
+            height=760 if _filtro_area_ativo else 980,
+            margin=dict(l=0,r=0,t=0,b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            dragmode=False,
+            showlegend=True,
+            legend=dict(
+                orientation='h',x=.01,y=.01,xanchor='left',yanchor='bottom',
+                bgcolor='rgba(255,255,255,.88)',bordercolor='#E1E3EA',borderwidth=1
+            )
+        )
 
         selected_key=None; col_map,col_det=st.columns([1.45,1],gap='large')
         with col_map:
@@ -612,6 +657,30 @@ elif pagina_dashboard == 'Cidades':
                     )
                     .sort_values('MES_EVO')
                 )
+
+                # Para um ano específico, mostramos todos os meses desde janeiro
+                # até o último mês com base disponível no mesmo recorte de área.
+                # Meses sem venda na cidade aparecem como zero, em vez de sumirem.
+                if ano_sel != 'Todos':
+                    _ano_evo = int(ano_sel)
+                    _max_evo = hist_att_area.loc[
+                        hist_att_area['DATA_FAT'].dt.year.eq(_ano_evo),
+                        'DATA_FAT'
+                    ].max() if not hist_att_area.empty else pd.NaT
+
+                    if pd.notna(_max_evo):
+                        _periodos_evo = pd.period_range(
+                            start=f'{_ano_evo}-01',
+                            end=pd.Period(_max_evo, freq='M'),
+                            freq='M'
+                        )
+                        _grade_evo = pd.DataFrame({'MES_EVO':_periodos_evo})
+                        evo_cidade = _grade_evo.merge(evo_cidade,on='MES_EVO',how='left')
+                        for _col_evo in ['FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS']:
+                            evo_cidade[_col_evo] = pd.to_numeric(
+                                evo_cidade[_col_evo],errors='coerce'
+                            ).fillna(0)
+
                 if not evo_cidade.empty:
                     evo_cidade['MES_LABEL'] = evo_cidade['MES_EVO'].map(
                         lambda p: f"{meses_pt[int(p.month)]}/{int(p.year)}"
