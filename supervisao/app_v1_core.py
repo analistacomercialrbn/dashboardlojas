@@ -592,8 +592,17 @@ elif pagina_dashboard == 'Cidades':
 
                 st.markdown('### Evolução mensal do faturamento')
                 meses_pt = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
+
+                # A evolução mensal é uma visão histórica: respeita ano, RCA,
+                # supervisor, departamento, estado e cidade, mas IGNORA o filtro
+                # de mês. Assim, mesmo com Setembro selecionado, o gráfico continua
+                # mostrando Jan, Fev, Mar... do ano escolhido.
+                evo_base = (hist_att_area if _todas_cidades else hist_att).copy()
+                if ano_sel != 'Todos':
+                    evo_base = evo_base[evo_base['DATA_FAT'].dt.year.eq(int(ano_sel))].copy()
+
                 evo_cidade = (
-                    d.assign(MES_EVO=d['DATA_FAT'].dt.to_period('M'))
+                    evo_base.assign(MES_EVO=evo_base['DATA_FAT'].dt.to_period('M'))
                     .groupby('MES_EVO',as_index=False)
                     .agg(
                         FATURAMENTO=('VALOR','sum'),
