@@ -1489,6 +1489,128 @@ elif pagina_dashboard == 'Mix e Oportunidades':
             _fig.update_traces(marker_color=NAVY_2,textposition='outside')
             st.plotly_chart(chart_layout(_fig,390,'v'),use_container_width=True,key='mix_clientes_faixa',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
 
+
+    st.markdown('### Inteligência de produtos')
+    st.caption('Leitura direta dos produtos que mais puxam o resultado, dos menores faturamentos e dos dois principais produtos de cada RCA.')
+
+    if _prod_perf.empty:
+        st.info('Sem produtos faturados no recorte atual.')
+    else:
+        col_top, col_low = st.columns(2, gap='large')
+
+        with col_top:
+            _melhores_prod = _prod_perf.nlargest(10,'FATURAMENTO').sort_values('FATURAMENTO')
+            fig_top_prod = px.bar(
+                _melhores_prod,
+                x='FATURAMENTO',
+                y='PRODUTO',
+                orientation='h',
+                title='10 produtos com maior faturamento',
+                text=_melhores_prod['FATURAMENTO'].map(brl_compacto),
+                custom_data=['CLIENTES','PEDIDOS','RCAS']
+            )
+            fig_top_prod.update_traces(
+                marker_color=NAVY,
+                textposition='outside',
+                hovertemplate=(
+                    '<b>%{y}</b><br>'
+                    'Faturamento: R$ %{x:,.2f}<br>'
+                    'Clientes: %{customdata[0]:.0f}<br>'
+                    'Pedidos: %{customdata[1]:.0f}<br>'
+                    'RCAs: %{customdata[2]:.0f}'
+                    '<extra></extra>'
+                )
+            )
+            fig_top_prod.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(
+                chart_layout(fig_top_prod,max(360,30*len(_melhores_prod)+100),'v'),
+                use_container_width=True,
+                key='mix_prod_top10',
+                config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+            )
+
+        with col_low:
+            _menor_giro = (
+                _prod_perf[_prod_perf['FATURAMENTO'].gt(0)]
+                .nsmallest(10,'FATURAMENTO')
+                .sort_values('FATURAMENTO',ascending=False)
+            )
+            fig_low_prod = px.bar(
+                _menor_giro,
+                x='FATURAMENTO',
+                y='PRODUTO',
+                orientation='h',
+                title='10 menores faturamentos entre produtos vendidos',
+                text=_menor_giro['FATURAMENTO'].map(brl_compacto),
+                custom_data=['CLIENTES','PEDIDOS','RCAS']
+            )
+            fig_low_prod.update_traces(
+                marker_color='#8991B7',
+                textposition='outside',
+                hovertemplate=(
+                    '<b>%{y}</b><br>'
+                    'Faturamento: R$ %{x:,.2f}<br>'
+                    'Clientes: %{customdata[0]:.0f}<br>'
+                    'Pedidos: %{customdata[1]:.0f}<br>'
+                    'RCAs: %{customdata[2]:.0f}'
+                    '<extra></extra>'
+                )
+            )
+            fig_low_prod.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(
+                chart_layout(fig_low_prod,max(360,30*len(_menor_giro)+100),'v'),
+                use_container_width=True,
+                key='mix_prod_bottom10',
+                config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+            )
+
+        st.markdown('#### Dois principais produtos por RCA')
+        _rca_prod = (
+            fat.groupby(['COD_RCA','RCA','CODPROD'],as_index=False)
+            .agg(
+                PRODUTO=('PRODUTO_NOME','first'),
+                FATURAMENTO=('VALOR','sum'),
+                CLIENTES=('CODCLI','nunique')
+            )
+            .sort_values(['RCA','FATURAMENTO'],ascending=[True,False])
+        )
+        if not _rca_prod.empty:
+            _rca_prod['POSICAO'] = _rca_prod.groupby('RCA').cumcount()+1
+            _top2_rca = _rca_prod[_rca_prod['POSICAO'].le(2)].copy()
+            _tot_rca = _rca_prod.groupby('RCA',as_index=False)['FATURAMENTO'].sum().rename(columns={'FATURAMENTO':'TOTAL_RCA'})
+            _sum_top2 = _top2_rca.groupby('RCA',as_index=False)['FATURAMENTO'].sum().rename(columns={'FATURAMENTO':'TOP2_TOTAL'})
+            _conc = _tot_rca.merge(_sum_top2,on='RCA',how='left')
+            _conc['TOP2_PCT'] = _conc['TOP2_TOTAL'].div(_conc['TOTAL_RCA'].replace(0,pd.NA))*100
+
+            _p1 = _top2_rca[_top2_rca['POSICAO'].eq(1)][['RCA','PRODUTO','FATURAMENTO']].rename(
+                columns={'PRODUTO':'1º produto','FATURAMENTO':'Fat. 1º'}
+            )
+            _p2 = _top2_rca[_top2_rca['POSICAO'].eq(2)][['RCA','PRODUTO','FATURAMENTO']].rename(
+                columns={'PRODUTO':'2º produto','FATURAMENTO':'Fat. 2º'}
+            )
+            _top2_tab = (
+                _p1.merge(_p2,on='RCA',how='left')
+                .merge(_conc[['RCA','TOP2_PCT']],on='RCA',how='left')
+                .sort_values('Fat. 1º',ascending=False)
+            )
+            _top2_exibir = pd.DataFrame({
+                'RCA': _top2_tab['RCA'],
+                '1º produto': _top2_tab['1º produto'],
+                'Fat. 1º': _top2_tab['Fat. 1º'].map(brl),
+                '2º produto': _top2_tab['2º produto'].fillna('—'),
+                'Fat. 2º': _top2_tab['Fat. 2º'].map(brl),
+                'Concentração Top 2': _top2_tab['TOP2_PCT'].map(pct),
+            })
+            st.dataframe(
+                _top2_exibir,
+                use_container_width=True,
+                hide_index=True,
+                height=min(620,42+35*len(_top2_exibir))
+            )
+            st.caption('Concentração Top 2 = participação dos dois produtos de maior faturamento dentro do faturamento total do RCA.')
+        else:
+            st.info('Sem dados suficientes para calcular os principais produtos por RCA.')
+
     with st.expander('Distribuição detalhada do mix', expanded=False):
         if not fat.empty:
             pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
