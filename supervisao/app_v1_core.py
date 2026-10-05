@@ -334,14 +334,14 @@ elif pagina_dashboard == 'Cidades':
         mapa_com=mapa[mapa.FATURAMENTO.gt(0)].copy()
         fig=go.Figure()
         if not mapa_sem.empty:
-            custom_sem=mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy(); fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_sem.KEY,z=[0]*len(mapa_sem),featureidkey='properties.key',zmin=0,zmax=1,colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],showscale=False,marker_line_color='#AFA8A0',marker_line_width=.65 if estado_uf else .4,opacity=.42 if _cidade_destacada_key else 1.0,customdata=custom_sem,hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',name='Sem faturamento'))
+            custom_sem=mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy(); fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_sem.KEY,z=[0]*len(mapa_sem),featureidkey='properties.key',zmin=0,zmax=1,colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],showscale=False,marker_line_color='#AFA8A0',marker_line_width=.65 if estado_uf else .4,customdata=custom_sem,hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',name='Sem faturamento'))
         if not mapa_com.empty:
             campo_mapa = {'Faturamento':'FATURAMENTO','Clientes':'CLIENTES','Produtos':'PRODUTOS'}[metrica_mapa]
             titulo_cor = {'Faturamento':'Faturamento (R$)','Clientes':'Clientes','Produtos':'Produtos'}[metrica_mapa]
             zvals = mapa_com[campo_mapa]
             zmax=max(float(zvals.quantile(.95)),1.0)
             custom_com=mapa_com[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy()
-            fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_com.KEY,z=zvals,featureidkey='properties.key',zmin=0,zmax=zmax,colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]],marker_line_color='#8994B6',marker_line_width=.65 if estado_uf else .4,opacity=.55 if _cidade_destacada_key else 1.0,customdata=custom_com,colorbar=dict(title=titulo_cor,thickness=12,len=.34,orientation='h',x=.72,y=.01,xanchor='center',yanchor='bottom'),hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Produtos: %{customdata[5]:.0f}<br>Mix: %{customdata[6]:.2f}<extra></extra>',name=metrica_mapa))
+            fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_com.KEY,z=zvals,featureidkey='properties.key',zmin=0,zmax=zmax,colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]],marker_line_color='#8994B6',marker_line_width=.65 if estado_uf else .4,customdata=custom_com,colorbar=dict(title=titulo_cor,thickness=12,len=.34,orientation='h',x=.72,y=.01,xanchor='center',yanchor='bottom'),hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Produtos: %{customdata[5]:.0f}<br>Mix: %{customdata[6]:.2f}<extra></extra>',name=metrica_mapa))
 
         if _cidade_destacada_key:
             _sel_map = mapa[mapa['KEY'].astype(str).eq(str(_cidade_destacada_key))].copy()
@@ -358,7 +358,6 @@ elif pagina_dashboard == 'Cidades':
                     showscale=False,
                     marker_line_color='#1E2655',
                     marker_line_width=4,
-                    opacity=1.0,
                     customdata=_sel_custom,
                     hovertemplate=(
                         '<b>Selecionada: %{customdata[0]} - %{customdata[1]}</b><br>'
