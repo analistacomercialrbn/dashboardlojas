@@ -302,12 +302,44 @@ elif pagina_dashboard == 'Cidades':
             except Exception:
                 st.plotly_chart(fig,use_container_width=True,key=f'mapa_fb_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}')
 
-        labels_df=city[['KEY','CIDADE','UF','FATURAMENTO']].copy(); labels_df['LABEL']=labels_df.CIDADE.astype(str)+' - '+labels_df.UF.astype(str); labels_df=labels_df.sort_values(['UF','CIDADE']); labels=labels_df.LABEL.tolist(); key_to_label=dict(zip(labels_df.KEY,labels_df.LABEL)); default_label=key_to_label.get(selected_key,labels[0] if labels else None)
+        labels_df=city[['KEY','CIDADE','UF','FATURAMENTO']].copy()
+        labels_df['LABEL']=labels_df.CIDADE.astype(str)+' - '+labels_df.UF.astype(str)
+        labels_df=labels_df.sort_values(['UF','CIDADE'])
+        labels=['Todos'] + labels_df.LABEL.tolist()
+        key_to_label=dict(zip(labels_df.KEY,labels_df.LABEL))
+        default_label=key_to_label.get(selected_key,'Todos')
+
         with col_det:
-            st.markdown("<div style='font-size:12px;color:#737A8C;margin-bottom:2px;'>Cidade selecionada</div>",unsafe_allow_html=True); idx=labels.index(default_label) if default_label in labels else 0; choice=st.selectbox('Cidade',labels,index=idx if labels else None,label_visibility='collapsed',key=f'cidade_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}_{selected_key or "manual"}')
+            st.markdown("<div style='font-size:12px;color:#737A8C;margin-bottom:2px;'>Cidade selecionada</div>",unsafe_allow_html=True)
+            idx=labels.index(default_label) if default_label in labels else 0
+            choice=st.selectbox(
+                'Cidade',
+                labels,
+                index=idx,
+                label_visibility='collapsed',
+                key=f'cidade_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}_{selected_key or "manual"}'
+            )
             if choice:
-                row=labels_df.loc[labels_df.LABEL.eq(choice)].iloc[0]; key=row.KEY; d=loc[loc.KEY.eq(key)].copy(); dcli=d.groupby('CODCLI').agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
-                st.markdown(f"<div style='font-size:22px;font-weight:800;color:{NAVY};margin:4px 0 12px 0;'>{row.CIDADE} - {row.UF}</div>",unsafe_allow_html=True)
+                _todas_cidades = choice == 'Todos'
+                if _todas_cidades:
+                    key='TODOS'
+                    d=loc.copy()
+                    titulo_contexto = 'Visão geral da área selecionada'
+                else:
+                    row=labels_df.loc[labels_df.LABEL.eq(choice)].iloc[0]
+                    key=row.KEY
+                    d=loc[loc.KEY.eq(key)].copy()
+                    titulo_contexto = f"{row.CIDADE} - {row.UF}"
+
+                dcli=d.groupby('CODCLI').agg(
+                    PRODUTOS=('CODPROD','nunique'),
+                    FATURAMENTO=('VALOR','sum'),
+                    PEDIDOS=('NUMPED','nunique')
+                ).reset_index()
+                st.markdown(
+                    f"<div style='font-size:22px;font-weight:800;color:{NAVY};margin:4px 0 12px 0;'>{titulo_contexto}</div>",
+                    unsafe_allow_html=True
+                )
                 part=d.VALOR.sum()/city.FATURAMENTO.sum()*100 if city.FATURAMENTO.sum() else 0
                 a1,a2,a3=st.columns(3)
                 a1.markdown(kpi('Faturamento',brl_compacto(d.VALOR.sum()),brl(d.VALOR.sum())),unsafe_allow_html=True)
@@ -317,6 +349,158 @@ elif pagina_dashboard == 'Cidades':
                 b1.markdown(kpi('Pedidos',nint(d.NUMPED.nunique()),periodo_label),unsafe_allow_html=True)
                 b2.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos/cliente'),unsafe_allow_html=True)
                 b3.markdown(kpi('Participação',pct(part),titulo_regiao),unsafe_allow_html=True)
+
+                # Pontos de atenção contextuais: mudam conforme período, RCA,
+                # supervisor, departamento e cidade selecionados.
+                st.markdown('### Pontos de atenção e oportunidades')
+
+                _contexto_partes = []
+                if len(rs) == 1:
+                    _contexto_partes.append(f"RCA {rs[0]}")
+                elif len(ss) == 1:
+                    _contexto_partes.append(f"Supervisão {ss[0]}")
+                if len(ds) == 1:
+                    _contexto_partes.append(str(ds[0]))
+                if not _todas_cidades:
+                    _contexto_partes.append(titulo_contexto)
+                _contexto_label = ' • '.join(_contexto_partes) if _contexto_partes else 'Recorte geral'
+
+                # Histórico do mesmo escopo para comparações temporais.
+                hist_att = vendas[
+                    vendas['FATURADO']
+                    & vendas['COD_RCA'].isin(cods)
+                    & vendas['DEPARTAMENTO'].astype(str).isin(ds_eff)
+                ].copy()
+                hist_att['UF'] = hist_att['ESTENT'].astype(str).str.upper().str.strip()
+                hist_att['CIDADE'] = hist_att['MUNICENT'].astype(str).str.strip()
+                hist_att = hist_att[hist_att['UF'].isin(NE_CODES)].copy()
+                if estado_uf:
+                    hist_att = hist_att[hist_att['UF'].eq(estado_uf)].copy()
+
+                if not hist_att.empty:
+                    pares_att = hist_att[['UF','CIDADE']].drop_duplicates().copy()
+                    res_att = pares_att.apply(lambda x: resolver_cidade(x['UF'], x['CIDADE']), axis=1)
+                    pares_att['KEY'] = [x[0] for x in res_att]
+                    hist_att = hist_att.merge(pares_att[['UF','CIDADE','KEY']],on=['UF','CIDADE'],how='left')
+                    if not _todas_cidades:
+                        hist_att = hist_att[hist_att['KEY'].eq(key)].copy()
+
+                _insights_city = []
+
+                # 1) Tendência temporal.
+                _fat_atual_ctx = float(d['VALOR'].sum())
+                _fat_ref_ctx = None
+                _ref_label = None
+
+                if ano_sel != 'Todos' and len(mes_sel) == 1:
+                    _mes_num = meses_nome[mes_sel[0]]
+                    _inicio_atual = pd.Timestamp(int(ano_sel), int(_mes_num), 1)
+                    _inicio_ref = _inicio_atual - pd.DateOffset(months=1)
+                    _fim_ref = _inicio_ref + pd.offsets.MonthEnd(0)
+                    _fat_ref_ctx = float(hist_att.loc[
+                        hist_att['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both'),
+                        'VALOR'
+                    ].sum()) if not hist_att.empty else 0.0
+                    _ref_label = 'mês anterior'
+                elif ano_sel != 'Todos' and not mes_sel:
+                    _max_atual = d['DATA_FAT'].max()
+                    if pd.notna(_max_atual):
+                        _inicio_ref = pd.Timestamp(int(ano_sel)-1,1,1)
+                        _fim_ref = pd.Timestamp(
+                            int(ano_sel)-1,
+                            int(_max_atual.month),
+                            int(_max_atual.day)
+                        )
+                        _fat_ref_ctx = float(hist_att.loc[
+                            hist_att['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both'),
+                            'VALOR'
+                        ].sum()) if not hist_att.empty else 0.0
+                        _ref_label = f'mesmo período de {int(ano_sel)-1}'
+                elif ano_sel != 'Todos' and mes_sel:
+                    _mes_nums_sel = {meses_nome[m] for m in mes_sel}
+                    _fat_ref_ctx = float(hist_att.loc[
+                        hist_att['DATA_FAT'].dt.year.eq(int(ano_sel)-1)
+                        & hist_att['DATA_FAT'].dt.month.isin(_mes_nums_sel),
+                        'VALOR'
+                    ].sum()) if not hist_att.empty else 0.0
+                    _ref_label = f'mesmos meses de {int(ano_sel)-1}'
+
+                if _fat_ref_ctx is not None and _fat_ref_ctx > 0:
+                    _var_ctx = (_fat_atual_ctx/_fat_ref_ctx - 1)*100
+                    _classe = 'critical' if _var_ctx <= -10 else ('attention' if _var_ctx < 0 else 'opportunity')
+                    _nivel = 'Crítico' if _var_ctx <= -10 else ('Atenção' if _var_ctx < 0 else 'Oportunidade')
+                    _insights_city.append({
+                        'classe':_classe,
+                        'nivel':_nivel,
+                        'kicker':'Evolução do faturamento',
+                        'valor':pct(_var_ctx),
+                        'texto':f"versus {_ref_label}",
+                        'rodape':_contexto_label,
+                    })
+
+                # 2) Concentração do principal produto.
+                _prod_ctx = d.groupby('CODPROD',as_index=False).agg(
+                    PRODUTO=('PRODUTO_NOME','first'),
+                    FATURAMENTO=('VALOR','sum')
+                ).sort_values('FATURAMENTO',ascending=False)
+                if not _prod_ctx.empty and _fat_atual_ctx > 0:
+                    _pctx = _prod_ctx.iloc[0]
+                    _part_prod = float(_pctx['FATURAMENTO'])/_fat_atual_ctx*100
+                    _insights_city.append({
+                        'classe':'attention' if _part_prod >= 35 else 'opportunity',
+                        'nivel':'Atenção' if _part_prod >= 35 else 'Oportunidade',
+                        'kicker':'Principal produto',
+                        'valor':pct(_part_prod),
+                        'texto':str(_pctx['PRODUTO']),
+                        'rodape':f"{brl_compacto(_pctx['FATURAMENTO'])} do faturamento do recorte",
+                    })
+
+                # 3) Concentração geográfica quando "Todos"; concentração de cliente numa cidade.
+                if _todas_cidades:
+                    _city_ctx = d.groupby(['KEY','CIDADE','UF'],as_index=False)['VALOR'].sum().sort_values('VALOR',ascending=False)
+                    if not _city_ctx.empty and _fat_atual_ctx > 0:
+                        _cctx = _city_ctx.iloc[0]
+                        _part_city = float(_cctx['VALOR'])/_fat_atual_ctx*100
+                        _insights_city.append({
+                            'classe':'attention' if _part_city >= 40 else 'opportunity',
+                            'nivel':'Atenção' if _part_city >= 40 else 'Oportunidade',
+                            'kicker':'Cidade de maior peso',
+                            'valor':pct(_part_city),
+                            'texto':f"{_cctx['CIDADE']} - {_cctx['UF']}",
+                            'rodape':f"{brl_compacto(_cctx['VALOR'])} no período",
+                        })
+                else:
+                    _cli_ctx = d.groupby('CODCLI',as_index=False)['VALOR'].sum().sort_values('VALOR',ascending=False)
+                    if not _cli_ctx.empty and _fat_atual_ctx > 0:
+                        _clctx = _cli_ctx.iloc[0]
+                        _part_cli = float(_clctx['VALOR'])/_fat_atual_ctx*100
+                        _insights_city.append({
+                            'classe':'attention' if _part_cli >= 50 else 'opportunity',
+                            'nivel':'Atenção' if _part_cli >= 50 else 'Oportunidade',
+                            'kicker':'Concentração no maior cliente',
+                            'valor':pct(_part_cli),
+                            'texto':'Participação do maior cliente da cidade',
+                            'rodape':f"{brl_compacto(_clctx['VALOR'])} no período",
+                        })
+
+                if _insights_city:
+                    _cols_ins = st.columns(min(3,len(_insights_city)),gap='medium')
+                    for _ii,_ins in enumerate(_insights_city[:3]):
+                        with _cols_ins[_ii]:
+                            st.markdown(
+                                f"""
+                                <div class="insight-card {_ins['classe']}" style="min-height:175px;">
+                                  <div class="insight-badge">● {_ins['nivel']}</div>
+                                  <div class="insight-kicker">{_ins['kicker']}</div>
+                                  <div class="insight-value">{_ins['valor']}</div>
+                                  <div class="insight-secondary">{_ins['texto']}</div>
+                                  <div class="insight-foot">{_ins['rodape']}</div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                else:
+                    st.info('Sem pontos de atenção automáticos relevantes para este recorte.')
 
                 st.markdown('### Evolução mensal do faturamento')
                 meses_pt = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
@@ -372,7 +556,7 @@ elif pagina_dashboard == 'Cidades':
                 # Removemos os botões RCAs / Departamentos / Produtos / Clientes
                 # para evitar esconder informações importantes atrás de filtros.
 
-                st.markdown('### Desempenho comercial da cidade')
+                st.markdown('### Desempenho comercial da área' if _todas_cidades else '### Desempenho comercial da cidade')
 
                 col_rca, col_dep = st.columns(2, gap='large')
 
@@ -446,7 +630,7 @@ elif pagina_dashboard == 'Cidades':
                         config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
                     )
 
-                st.markdown('### Produtos da cidade')
+                st.markdown('### Produtos da área' if _todas_cidades else '### Produtos da cidade')
 
                 pr=d.groupby('CODPROD',as_index=False).agg(
                     PRODUTO=('PRODUTO_NOME','first'),
@@ -485,7 +669,7 @@ elif pagina_dashboard == 'Cidades':
                     config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
                 )
 
-                st.markdown('### Principais clientes')
+                st.markdown('### Principais clientes da área' if _todas_cidades else '### Principais clientes da cidade')
 
                 nomes=(
                     clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI')
