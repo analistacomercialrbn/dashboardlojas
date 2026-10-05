@@ -315,16 +315,62 @@ elif pagina_dashboard == 'Cidades':
             label_visibility='collapsed',
             key=f'metrica_mapa_{estado_uf or "ne"}'
         )
-        mapa_sem=mapa[mapa.FATURAMENTO.le(0)].copy(); mapa_com=mapa[mapa.FATURAMENTO.gt(0)].copy(); fig=go.Figure()
+
+        # Seleção estável de cidade. O valor já fica disponível antes do mapa
+        # ser renderizado, permitindo destacar visualmente o município escolhido.
+        labels_df=city[['KEY','CIDADE','UF','FATURAMENTO']].copy()
+        labels_df['LABEL']=labels_df.CIDADE.astype(str)+' - '+labels_df.UF.astype(str)
+        labels_df=labels_df.sort_values(['UF','CIDADE'])
+        labels=['Todos'] + labels_df.LABEL.tolist()
+        key_to_label=dict(zip(labels_df.KEY,labels_df.LABEL))
+        label_to_key=dict(zip(labels_df.LABEL,labels_df.KEY))
+        _cidade_widget_key=f'cidade_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}'
+        _cidade_choice_pre=st.session_state.get(_cidade_widget_key,'Todos')
+        if _cidade_choice_pre not in labels:
+            _cidade_choice_pre='Todos'
+        _cidade_destacada_key=label_to_key.get(_cidade_choice_pre)
+
+        mapa_sem=mapa[mapa.FATURAMENTO.le(0)].copy()
+        mapa_com=mapa[mapa.FATURAMENTO.gt(0)].copy()
+        fig=go.Figure()
         if not mapa_sem.empty:
-            custom_sem=mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy(); fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_sem.KEY,z=[0]*len(mapa_sem),featureidkey='properties.key',zmin=0,zmax=1,colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],showscale=False,marker_line_color='#AFA8A0',marker_line_width=.65 if estado_uf else .4,customdata=custom_sem,hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',name='Sem faturamento'))
+            custom_sem=mapa_sem[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy(); fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_sem.KEY,z=[0]*len(mapa_sem),featureidkey='properties.key',zmin=0,zmax=1,colorscale=[[0,'#E7DDD1'],[1,'#E7DDD1']],showscale=False,marker_line_color='#AFA8A0',marker_line_width=.65 if estado_uf else .4,opacity=.42 if _cidade_destacada_key else 1.0,customdata=custom_sem,hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br><b>Sem faturamento no período</b><extra></extra>',name='Sem faturamento'))
         if not mapa_com.empty:
             campo_mapa = {'Faturamento':'FATURAMENTO','Clientes':'CLIENTES','Produtos':'PRODUTOS'}[metrica_mapa]
             titulo_cor = {'Faturamento':'Faturamento (R$)','Clientes':'Clientes','Produtos':'Produtos'}[metrica_mapa]
             zvals = mapa_com[campo_mapa]
             zmax=max(float(zvals.quantile(.95)),1.0)
             custom_com=mapa_com[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy()
-            fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_com.KEY,z=zvals,featureidkey='properties.key',zmin=0,zmax=zmax,colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]],marker_line_color='#8994B6',marker_line_width=.65 if estado_uf else .4,customdata=custom_com,colorbar=dict(title=titulo_cor,thickness=12,len=.34,orientation='h',x=.72,y=.01,xanchor='center',yanchor='bottom'),hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Produtos: %{customdata[5]:.0f}<br>Mix: %{customdata[6]:.2f}<extra></extra>',name=metrica_mapa))
+            fig.add_trace(go.Choropleth(geojson=geojson,locations=mapa_com.KEY,z=zvals,featureidkey='properties.key',zmin=0,zmax=zmax,colorscale=[[0.00,'#E6EAF6'],[0.18,'#D3DAEE'],[0.40,'#A8B4D9'],[0.65,'#7080B7'],[0.82,'#42548D'],[1.00,NAVY]],marker_line_color='#8994B6',marker_line_width=.65 if estado_uf else .4,opacity=.55 if _cidade_destacada_key else 1.0,customdata=custom_com,colorbar=dict(title=titulo_cor,thickness=12,len=.34,orientation='h',x=.72,y=.01,xanchor='center',yanchor='bottom'),hovertemplate='<b>%{customdata[0]} - %{customdata[1]}</b><br>Faturamento: R$ %{customdata[2]:,.2f}<br>Clientes: %{customdata[3]:.0f}<br>Pedidos: %{customdata[4]:.0f}<br>Produtos: %{customdata[5]:.0f}<br>Mix: %{customdata[6]:.2f}<extra></extra>',name=metrica_mapa))
+
+        if _cidade_destacada_key:
+            _sel_map = mapa[mapa['KEY'].astype(str).eq(str(_cidade_destacada_key))].copy()
+            if not _sel_map.empty:
+                _sel_custom = _sel_map[['CIDADE','UF','FATURAMENTO','CLIENTES','PEDIDOS','PRODUTOS','MIX']].to_numpy()
+                fig.add_trace(go.Choropleth(
+                    geojson=geojson,
+                    locations=_sel_map['KEY'],
+                    z=[1]*len(_sel_map),
+                    featureidkey='properties.key',
+                    zmin=0,
+                    zmax=1,
+                    colorscale=[[0,'#E5A43A'],[1,'#E5A43A']],
+                    showscale=False,
+                    marker_line_color='#1E2655',
+                    marker_line_width=4,
+                    opacity=1.0,
+                    customdata=_sel_custom,
+                    hovertemplate=(
+                        '<b>Selecionada: %{customdata[0]} - %{customdata[1]}</b><br>'
+                        'Faturamento: R$ %{customdata[2]:,.2f}<br>'
+                        'Clientes: %{customdata[3]:.0f}<br>'
+                        'Pedidos: %{customdata[4]:.0f}<br>'
+                        'Produtos: %{customdata[5]:.0f}<br>'
+                        'Mix: %{customdata[6]:.2f}'
+                        '<extra></extra>'
+                    ),
+                    name='Cidade selecionada'
+                ))
 
         fig.update_geos(fitbounds='locations',visible=False,projection_type='mercator',bgcolor='rgba(0,0,0,0)')
         fig.update_layout(
@@ -339,30 +385,42 @@ elif pagina_dashboard == 'Cidades':
             )
         )
 
-        selected_key=None; col_map,col_det=st.columns([1.45,1],gap='large')
+        selected_key=None
+        col_map,col_det=st.columns([1.45,1],gap='large')
         with col_map:
             try:
-                ev=st.plotly_chart(fig,use_container_width=True,on_select='rerun',selection_mode='points',key=f'mapa_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}'); sel=getattr(ev,'selection',None); pts=getattr(sel,'points',None) if sel is not None else None
-                if pts and isinstance(pts[0],dict): selected_key=pts[0].get('location')
+                ev=st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    on_select='rerun',
+                    selection_mode='points',
+                    key=f'mapa_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}',
+                    config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+                )
+                sel=getattr(ev,'selection',None)
+                pts=getattr(sel,'points',None) if sel is not None else None
+                if pts and isinstance(pts[0],dict):
+                    selected_key=pts[0].get('location')
+                    _clicked_label=key_to_label.get(selected_key)
+                    if _clicked_label and st.session_state.get(_cidade_widget_key) != _clicked_label:
+                        st.session_state[_cidade_widget_key]=_clicked_label
+                        st.rerun()
             except Exception:
-                st.plotly_chart(fig,use_container_width=True,key=f'mapa_fb_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}')
-
-        labels_df=city[['KEY','CIDADE','UF','FATURAMENTO']].copy()
-        labels_df['LABEL']=labels_df.CIDADE.astype(str)+' - '+labels_df.UF.astype(str)
-        labels_df=labels_df.sort_values(['UF','CIDADE'])
-        labels=['Todos'] + labels_df.LABEL.tolist()
-        key_to_label=dict(zip(labels_df.KEY,labels_df.LABEL))
-        default_label=key_to_label.get(selected_key,'Todos')
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    key=f'mapa_fb_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}',
+                    config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+                )
 
         with col_det:
             st.markdown("<div style='font-size:12px;color:#737A8C;margin-bottom:2px;'>Cidade selecionada</div>",unsafe_allow_html=True)
-            idx=labels.index(default_label) if default_label in labels else 0
             choice=st.selectbox(
                 'Cidade',
                 labels,
-                index=idx,
+                index=labels.index(_cidade_choice_pre) if _cidade_choice_pre in labels else 0,
                 label_visibility='collapsed',
-                key=f'cidade_{estado_uf or "ne"}_{ano_sel}_{"_".join(mes_sel) if mes_sel else "todos"}_{selected_key or "manual"}'
+                key=_cidade_widget_key
             )
             if choice:
                 _todas_cidades = choice == 'Todos'
@@ -550,11 +608,18 @@ elif pagina_dashboard == 'Cidades':
 
                     if not hist_ref_area.empty:
                         _city_ref = (
-                            hist_ref_area.groupby('KEY',as_index=False)['VALOR']
-                            .sum()
-                            .rename(columns={'VALOR':'REF'})
+                            hist_ref_area.groupby('KEY',as_index=False)
+                            .agg(
+                                REF=('VALOR','sum'),
+                                CIDADE_REF=('CIDADE','first'),
+                                UF_REF=('UF','first')
+                            )
                         )
-                        _city_cmp = _city_atual.merge(_city_ref,on='KEY',how='outer').fillna({'ATUAL':0,'REF':0})
+                        _city_cmp = _city_atual.merge(_city_ref,on='KEY',how='outer')
+                        _city_cmp['ATUAL'] = pd.to_numeric(_city_cmp['ATUAL'],errors='coerce').fillna(0)
+                        _city_cmp['REF'] = pd.to_numeric(_city_cmp['REF'],errors='coerce').fillna(0)
+                        _city_cmp['CIDADE'] = _city_cmp['CIDADE'].fillna(_city_cmp['CIDADE_REF'])
+                        _city_cmp['UF'] = _city_cmp['UF'].fillna(_city_cmp['UF_REF'])
                         _city_cmp = _city_cmp[_city_cmp['REF'].gt(0)].copy()
                         if not _city_cmp.empty:
                             _city_cmp['VAR'] = (_city_cmp['ATUAL']/_city_cmp['REF']-1)*100
