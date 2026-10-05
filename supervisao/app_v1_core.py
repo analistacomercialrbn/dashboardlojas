@@ -318,6 +318,56 @@ elif pagina_dashboard == 'Cidades':
                 b2.markdown(kpi('Mix médio',dec(dcli.PRODUTOS.mean()),'Produtos/cliente'),unsafe_allow_html=True)
                 b3.markdown(kpi('Participação',pct(part),titulo_regiao),unsafe_allow_html=True)
 
+                st.markdown('### Evolução mensal do faturamento')
+                meses_pt = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
+                evo_cidade = (
+                    d.assign(MES_EVO=d['DATA_FAT'].dt.to_period('M'))
+                    .groupby('MES_EVO',as_index=False)
+                    .agg(
+                        FATURAMENTO=('VALOR','sum'),
+                        CLIENTES=('CODCLI','nunique'),
+                        PEDIDOS=('NUMPED','nunique'),
+                        PRODUTOS=('CODPROD','nunique')
+                    )
+                    .sort_values('MES_EVO')
+                )
+                if not evo_cidade.empty:
+                    evo_cidade['MES_LABEL'] = evo_cidade['MES_EVO'].map(
+                        lambda p: f"{meses_pt[int(p.month)]}/{int(p.year)}"
+                    )
+                    fig_evo = go.Figure()
+                    fig_evo.add_trace(go.Scatter(
+                        x=evo_cidade['MES_LABEL'],
+                        y=evo_cidade['FATURAMENTO'],
+                        mode='lines+markers',
+                        line=dict(color=NAVY,width=3),
+                        marker=dict(size=8,color=NAVY,line=dict(color='white',width=2)),
+                        fill='tozeroy',
+                        fillcolor='rgba(30,38,85,.08)',
+                        customdata=evo_cidade[['CLIENTES','PEDIDOS','PRODUTOS']].to_numpy(),
+                        hovertemplate=(
+                            '<b>%{x}</b><br>'
+                            'Faturamento: R$ %{y:,.2f}<br>'
+                            'Clientes: %{customdata[0]:.0f}<br>'
+                            'Pedidos: %{customdata[1]:.0f}<br>'
+                            'Produtos: %{customdata[2]:.0f}'
+                            '<extra></extra>'
+                        )
+                    ))
+                    fig_evo.update_layout(
+                        title='Faturamento mês a mês',
+                        showlegend=False,
+                        xaxis_title='',
+                        yaxis_title='',
+                    )
+                    fig_evo.update_yaxes(tickprefix='R$ ',tickformat='.2s')
+                    st.plotly_chart(
+                        chart_layout(fig_evo,320,'h'),
+                        use_container_width=True,
+                        key=f'cidade_evolucao_{key}',
+                        config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+                    )
+
                 # Exibe todo o detalhamento da cidade em uma única página.
                 # Removemos os botões RCAs / Departamentos / Produtos / Clientes
                 # para evitar esconder informações importantes atrás de filtros.
