@@ -352,7 +352,7 @@ elif pagina_dashboard == 'Cidades':
 
                 # Pontos de atenção contextuais: mudam conforme período, RCA,
                 # supervisor, departamento e cidade selecionados.
-                st.markdown('### Pontos de atenção e oportunidades')
+                st.markdown('### Pontos críticos do recorte')
 
                 _contexto_partes = []
                 if len(rs) == 1:
@@ -382,110 +382,198 @@ elif pagina_dashboard == 'Cidades':
                     res_att = pares_att.apply(lambda x: resolver_cidade(x['UF'], x['CIDADE']), axis=1)
                     pares_att['KEY'] = [x[0] for x in res_att]
                     hist_att = hist_att.merge(pares_att[['UF','CIDADE','KEY']],on=['UF','CIDADE'],how='left')
-                    if not _todas_cidades:
-                        hist_att = hist_att[hist_att['KEY'].eq(key)].copy()
+
+                hist_att_area = hist_att.copy()
+                if not _todas_cidades and not hist_att.empty:
+                    hist_att = hist_att[hist_att['KEY'].eq(key)].copy()
 
                 _insights_city = []
 
-                # 1) Tendência temporal.
+                # 1) Monta o período de referência equivalente ao recorte atual.
                 _fat_atual_ctx = float(d['VALOR'].sum())
-                _fat_ref_ctx = None
                 _ref_label = None
+                _ref_mask_ctx = None
+                _ref_mask_area = None
 
                 if ano_sel != 'Todos' and len(mes_sel) == 1:
                     _mes_num = meses_nome[mes_sel[0]]
                     _inicio_atual = pd.Timestamp(int(ano_sel), int(_mes_num), 1)
                     _inicio_ref = _inicio_atual - pd.DateOffset(months=1)
                     _fim_ref = _inicio_ref + pd.offsets.MonthEnd(0)
-                    _fat_ref_ctx = float(hist_att.loc[
-                        hist_att['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both'),
-                        'VALOR'
-                    ].sum()) if not hist_att.empty else 0.0
+                    _ref_mask_ctx = hist_att['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both') if not hist_att.empty else pd.Series(False,index=hist_att.index)
+                    _ref_mask_area = hist_att_area['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both') if not hist_att_area.empty else pd.Series(False,index=hist_att_area.index)
                     _ref_label = 'mês anterior'
+
                 elif ano_sel != 'Todos' and not mes_sel:
                     _max_atual = d['DATA_FAT'].max()
                     if pd.notna(_max_atual):
                         _inicio_ref = pd.Timestamp(int(ano_sel)-1,1,1)
-                        _fim_ref = pd.Timestamp(
-                            int(ano_sel)-1,
-                            int(_max_atual.month),
-                            int(_max_atual.day)
-                        )
-                        _fat_ref_ctx = float(hist_att.loc[
-                            hist_att['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both'),
-                            'VALOR'
-                        ].sum()) if not hist_att.empty else 0.0
+                        _fim_ref = pd.Timestamp(int(ano_sel)-1,int(_max_atual.month),int(_max_atual.day))
+                        _ref_mask_ctx = hist_att['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both') if not hist_att.empty else pd.Series(False,index=hist_att.index)
+                        _ref_mask_area = hist_att_area['DATA_FAT'].between(_inicio_ref,_fim_ref,inclusive='both') if not hist_att_area.empty else pd.Series(False,index=hist_att_area.index)
                         _ref_label = f'mesmo período de {int(ano_sel)-1}'
+
                 elif ano_sel != 'Todos' and mes_sel:
                     _mes_nums_sel = {meses_nome[m] for m in mes_sel}
-                    _fat_ref_ctx = float(hist_att.loc[
+                    _ref_mask_ctx = (
                         hist_att['DATA_FAT'].dt.year.eq(int(ano_sel)-1)
-                        & hist_att['DATA_FAT'].dt.month.isin(_mes_nums_sel),
-                        'VALOR'
-                    ].sum()) if not hist_att.empty else 0.0
+                        & hist_att['DATA_FAT'].dt.month.isin(_mes_nums_sel)
+                    ) if not hist_att.empty else pd.Series(False,index=hist_att.index)
+                    _ref_mask_area = (
+                        hist_att_area['DATA_FAT'].dt.year.eq(int(ano_sel)-1)
+                        & hist_att_area['DATA_FAT'].dt.month.isin(_mes_nums_sel)
+                    ) if not hist_att_area.empty else pd.Series(False,index=hist_att_area.index)
                     _ref_label = f'mesmos meses de {int(ano_sel)-1}'
 
-                if _fat_ref_ctx is not None and _fat_ref_ctx > 0:
-                    _var_ctx = (_fat_atual_ctx/_fat_ref_ctx - 1)*100
-                    _classe = 'critical' if _var_ctx <= -10 else ('attention' if _var_ctx < 0 else 'opportunity')
-                    _nivel = 'Crítico' if _var_ctx <= -10 else ('Atenção' if _var_ctx < 0 else 'Oportunidade')
-                    _insights_city.append({
-                        'classe':_classe,
-                        'nivel':_nivel,
-                        'kicker':'Evolução do faturamento',
-                        'valor':pct(_var_ctx),
-                        'texto':f"versus {_ref_label}",
-                        'rodape':_contexto_label,
-                    })
+                hist_ref_ctx = (
+                    hist_att.loc[_ref_mask_ctx].copy()
+                    if _ref_mask_ctx is not None and not hist_att.empty
+                    else hist_att.iloc[0:0].copy()
+                )
+                hist_ref_area = (
+                    hist_att_area.loc[_ref_mask_area].copy()
+                    if _ref_mask_area is not None and not hist_att_area.empty
+                    else hist_att_area.iloc[0:0].copy()
+                )
 
-                # 2) Concentração do principal produto.
+                # 2) Queda geral do recorte — só aparece quando for negativa.
+                _fat_ref_ctx = float(hist_ref_ctx['VALOR'].sum()) if not hist_ref_ctx.empty else 0.0
+                if _fat_ref_ctx > 0:
+                    _var_ctx = (_fat_atual_ctx/_fat_ref_ctx - 1)*100
+                    if _var_ctx < 0:
+                        _insights_city.append({
+                            'classe':'critical' if _var_ctx <= -10 else 'attention',
+                            'nivel':'Crítico' if _var_ctx <= -10 else 'Atenção',
+                            'kicker':'Queda do faturamento',
+                            'valor':pct(_var_ctx),
+                            'texto':f"versus {_ref_label}",
+                            'rodape':_contexto_label,
+                            'prioridade':1,
+                        })
+
+                # 3) Produto que perdeu força: olha primeiro os produtos que eram
+                # relevantes no período de referência e identifica a maior queda.
+                if not hist_ref_ctx.empty:
+                    _prod_ref = (
+                        hist_ref_ctx.groupby('CODPROD',as_index=False)
+                        .agg(PRODUTO=('PRODUTO_NOME','first'), REF=('VALOR','sum'))
+                        .sort_values('REF',ascending=False)
+                    )
+                    _prod_atual = (
+                        d.groupby('CODPROD',as_index=False)
+                        .agg(ATUAL=('VALOR','sum'))
+                    )
+                    _prod_queda = _prod_ref.head(15).merge(_prod_atual,on='CODPROD',how='left').fillna({'ATUAL':0})
+                    _prod_queda = _prod_queda[_prod_queda['REF'].gt(0)].copy()
+                    if not _prod_queda.empty:
+                        _prod_queda['VAR'] = (_prod_queda['ATUAL']/_prod_queda['REF']-1)*100
+                        _pq = _prod_queda.sort_values(['VAR','REF'],ascending=[True,False]).iloc[0]
+                        if float(_pq['VAR']) < 0:
+                            _insights_city.append({
+                                'classe':'critical' if float(_pq['VAR']) <= -25 else 'attention',
+                                'nivel':'Crítico' if float(_pq['VAR']) <= -25 else 'Atenção',
+                                'kicker':'Produto em queda',
+                                'valor':pct(float(_pq['VAR'])),
+                                'texto':str(_pq['PRODUTO']),
+                                'rodape':f"{brl_compacto(_pq['REF'])} → {brl_compacto(_pq['ATUAL'])} • {_ref_label}",
+                                'prioridade':1,
+                            })
+
+                # 4) Quando a visão estiver em "Todos", evidencia a cidade de menor
+                # faturamento e também a cidade com a maior queda contra a referência.
+                if _todas_cidades:
+                    _city_atual = (
+                        d.groupby(['KEY','CIDADE','UF'],as_index=False)['VALOR']
+                        .sum()
+                        .rename(columns={'VALOR':'ATUAL'})
+                    )
+
+                    _city_vendas = _city_atual[_city_atual['ATUAL'].gt(0)].copy()
+                    if len(_city_vendas) > 1:
+                        _cmin = _city_vendas.sort_values('ATUAL').iloc[0]
+                        _med_city = float(_city_vendas['ATUAL'].median())
+                        _abaixo_med = (float(_cmin['ATUAL'])/_med_city-1)*100 if _med_city else 0
+                        _insights_city.append({
+                            'classe':'attention',
+                            'nivel':'Atenção',
+                            'kicker':'Menor faturamento por cidade',
+                            'valor':brl_compacto(_cmin['ATUAL']),
+                            'texto':f"{_cmin['CIDADE']} - {_cmin['UF']}",
+                            'rodape':f"{pct(abs(_abaixo_med))} abaixo da mediana das cidades com venda" if _abaixo_med < 0 else 'Menor faturamento do recorte',
+                            'prioridade':2,
+                        })
+
+                    if not hist_ref_area.empty:
+                        _city_ref = (
+                            hist_ref_area.groupby('KEY',as_index=False)['VALOR']
+                            .sum()
+                            .rename(columns={'VALOR':'REF'})
+                        )
+                        _city_cmp = _city_atual.merge(_city_ref,on='KEY',how='outer').fillna({'ATUAL':0,'REF':0})
+                        _city_cmp = _city_cmp[_city_cmp['REF'].gt(0)].copy()
+                        if not _city_cmp.empty:
+                            _city_cmp['VAR'] = (_city_cmp['ATUAL']/_city_cmp['REF']-1)*100
+                            _cq = _city_cmp.sort_values(['VAR','REF'],ascending=[True,False]).iloc[0]
+                            if float(_cq['VAR']) < 0:
+                                _insights_city.append({
+                                    'classe':'critical' if float(_cq['VAR']) <= -25 else 'attention',
+                                    'nivel':'Crítico' if float(_cq['VAR']) <= -25 else 'Atenção',
+                                    'kicker':'Cidade com maior queda',
+                                    'valor':pct(float(_cq['VAR'])),
+                                    'texto':f"{_cq['CIDADE']} - {_cq['UF']}",
+                                    'rodape':f"{brl_compacto(_cq['REF'])} → {brl_compacto(_cq['ATUAL'])} • {_ref_label}",
+                                    'prioridade':1,
+                                })
+
+                # 5) Riscos de concentração: só entram se ultrapassarem limites
+                # realmente relevantes, para manter o foco em pontos críticos.
                 _prod_ctx = d.groupby('CODPROD',as_index=False).agg(
                     PRODUTO=('PRODUTO_NOME','first'),
                     FATURAMENTO=('VALOR','sum')
                 ).sort_values('FATURAMENTO',ascending=False)
+
                 if not _prod_ctx.empty and _fat_atual_ctx > 0:
                     _pctx = _prod_ctx.iloc[0]
                     _part_prod = float(_pctx['FATURAMENTO'])/_fat_atual_ctx*100
-                    _insights_city.append({
-                        'classe':'attention' if _part_prod >= 35 else 'opportunity',
-                        'nivel':'Atenção' if _part_prod >= 35 else 'Oportunidade',
-                        'kicker':'Principal produto',
-                        'valor':pct(_part_prod),
-                        'texto':str(_pctx['PRODUTO']),
-                        'rodape':f"{brl_compacto(_pctx['FATURAMENTO'])} do faturamento do recorte",
-                    })
-
-                # 3) Concentração geográfica quando "Todos"; concentração de cliente numa cidade.
-                if _todas_cidades:
-                    _city_ctx = d.groupby(['KEY','CIDADE','UF'],as_index=False)['VALOR'].sum().sort_values('VALOR',ascending=False)
-                    if not _city_ctx.empty and _fat_atual_ctx > 0:
-                        _cctx = _city_ctx.iloc[0]
-                        _part_city = float(_cctx['VALOR'])/_fat_atual_ctx*100
+                    if _part_prod >= 40:
                         _insights_city.append({
-                            'classe':'attention' if _part_city >= 40 else 'opportunity',
-                            'nivel':'Atenção' if _part_city >= 40 else 'Oportunidade',
-                            'kicker':'Cidade de maior peso',
-                            'valor':pct(_part_city),
-                            'texto':f"{_cctx['CIDADE']} - {_cctx['UF']}",
-                            'rodape':f"{brl_compacto(_cctx['VALOR'])} no período",
+                            'classe':'critical' if _part_prod >= 55 else 'attention',
+                            'nivel':'Crítico' if _part_prod >= 55 else 'Atenção',
+                            'kicker':'Concentração em um produto',
+                            'valor':pct(_part_prod),
+                            'texto':str(_pctx['PRODUTO']),
+                            'rodape':f"{brl_compacto(_pctx['FATURAMENTO'])} do faturamento do recorte",
+                            'prioridade':2,
                         })
-                else:
+
+                if not _todas_cidades:
                     _cli_ctx = d.groupby('CODCLI',as_index=False)['VALOR'].sum().sort_values('VALOR',ascending=False)
                     if not _cli_ctx.empty and _fat_atual_ctx > 0:
                         _clctx = _cli_ctx.iloc[0]
                         _part_cli = float(_clctx['VALOR'])/_fat_atual_ctx*100
-                        _insights_city.append({
-                            'classe':'attention' if _part_cli >= 50 else 'opportunity',
-                            'nivel':'Atenção' if _part_cli >= 50 else 'Oportunidade',
-                            'kicker':'Concentração no maior cliente',
-                            'valor':pct(_part_cli),
-                            'texto':'Participação do maior cliente da cidade',
-                            'rodape':f"{brl_compacto(_clctx['VALOR'])} no período",
-                        })
+                        if _part_cli >= 50:
+                            _insights_city.append({
+                                'classe':'critical' if _part_cli >= 70 else 'attention',
+                                'nivel':'Crítico' if _part_cli >= 70 else 'Atenção',
+                                'kicker':'Concentração no maior cliente',
+                                'valor':pct(_part_cli),
+                                'texto':'Participação do maior cliente da cidade',
+                                'rodape':f"{brl_compacto(_clctx['VALOR'])} no período",
+                                'prioridade':2,
+                            })
+
+                # Ordena os alertas para mostrar primeiro perdas e quedas.
+                _insights_city = sorted(
+                    _insights_city,
+                    key=lambda x: (
+                        0 if x.get('classe') == 'critical' else 1,
+                        x.get('prioridade',9)
+                    )
+                )
 
                 if _insights_city:
-                    _cols_ins = st.columns(min(3,len(_insights_city)),gap='medium')
-                    for _ii,_ins in enumerate(_insights_city[:3]):
+                    _cols_ins = st.columns(min(4,len(_insights_city)),gap='medium')
+                    for _ii,_ins in enumerate(_insights_city[:4]):
                         with _cols_ins[_ii]:
                             st.markdown(
                                 f"""
@@ -500,7 +588,7 @@ elif pagina_dashboard == 'Cidades':
                                 unsafe_allow_html=True
                             )
                 else:
-                    st.info('Sem pontos de atenção automáticos relevantes para este recorte.')
+                    st.success('Nenhum ponto crítico forte foi identificado automaticamente neste recorte.')
 
                 st.markdown('### Evolução mensal do faturamento')
                 meses_pt = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
