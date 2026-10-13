@@ -139,7 +139,46 @@ novos_mes['NOVO'] = novos_mes['PRIMEIRA_COMPRA'].dt.to_period('M').astype('strin
 nr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
 
 fim = pd.Period(mes).end_time.normalize()
-vida = hist.groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+vida = hist[hist['DATA_FAT'].le(fim)].groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+
+_cols_car = ['CODCLI','COD_RCA'] + (['CLIENTE'] if 'CLIENTE' in clientes.columns else [])
+car = clientes[clientes.COD_RCA.isin(cods)][_cols_car].drop_duplicates('CODCLI').merge(vida,on='CODCLI',how='left')
+if xf_rca:
+    cod_xf = set(base.COD_RCA.dropna())
+    car = car[car.COD_RCA.isin(cod_xf)].copy()
+
+# Indicadores oficiais da Ficha Comercial:
+# Curto prazo = completou 3 meses sem comprar e comprou nos últimos 6 meses.
+# Longo prazo = completou 3 meses sem comprar e comprou no último ano.
+# Pela definição literal da ficha, o Longo Prazo inclui os clientes do Curto Prazo.
+_lim3 = fim - pd.DateOffset(months=3)
+_lim6 = fim - pd.DateOffset(months=6)
+_lim12 = fim - pd.DateOffset(months=12)
+car['INATIVO_CURTO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim6)
+car['INATIVO_LONGO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim12)
+car['DIAS_SEM_COMPRA'] = (fim - car['ULTIMA']).dt.days
+
+_fat12 = (
+    hist[hist['DATA_FAT'].between(_lim12,fim,inclusive='both')]
+    .groupby('CODCLI',as_index=False)['VALOR'].sum()
+    .rename(columns={'VALOR':'FAT_12M'})
+)
+car = car.merge(_fat12,on='CODCLI',how='left')
+car['FAT_12M'] = pd.to_numeric(car['FAT_12M'],errors='coerce').fillna(0)
+car = car.merge(ativos[['COD_RCA','RCA']].drop_duplicates('COD_RCA'),on='COD_RCA',how='left')
+
+ir_curto = car.groupby('COD_RCA')['INATIVO_CURTO'].sum().rename('INATIVO_CURTO').reset_index()
+ir_longo = car.groupby('COD_RCA')['INATIVO_LONGO'].sum().rename('INATIVO_LONGO').reset_index()
+r = (
+    r.merge(nr,on='COD_RCA',how='left')
+     .merge(ir_curto,on='COD_RCA',how='left')
+     .merge(ir_longo,on='COD_RCA',how='left')
+     .fillna({'NOVOS':0,'INATIVO_CURTO':0,'INATIVO_LONGO':0})
+)
+
+novos_total = int(r.NOVOS.sum())
+inativos_curto_total = int(r.INATIVO_CURTO.sum())
+inativos_longo_total = int(r.INATIVO_LONGO.sum())
 """,
 """hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
 primeira = hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
@@ -150,6 +189,45 @@ nr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
 hist_periodo = hist[periodo_mask_datas(hist['DATA_FAT'])]
 fim = hist_periodo['DATA_FAT'].max() if not hist_periodo.empty else hist['DATA_FAT'].max()
 vida = hist[hist['DATA_FAT'].le(fim)].groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+
+_cols_car = ['CODCLI','COD_RCA'] + (['CLIENTE'] if 'CLIENTE' in clientes.columns else [])
+car = clientes[clientes.COD_RCA.isin(cods)][_cols_car].drop_duplicates('CODCLI').merge(vida,on='CODCLI',how='left')
+if xf_rca:
+    cod_xf = set(base.COD_RCA.dropna())
+    car = car[car.COD_RCA.isin(cod_xf)].copy()
+
+# Indicadores oficiais da Ficha Comercial:
+# Curto prazo = completou 3 meses sem comprar e comprou nos últimos 6 meses.
+# Longo prazo = completou 3 meses sem comprar e comprou no último ano.
+# Pela definição literal da ficha, o Longo Prazo inclui os clientes do Curto Prazo.
+_lim3 = fim - pd.DateOffset(months=3)
+_lim6 = fim - pd.DateOffset(months=6)
+_lim12 = fim - pd.DateOffset(months=12)
+car['INATIVO_CURTO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim6)
+car['INATIVO_LONGO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim12)
+car['DIAS_SEM_COMPRA'] = (fim - car['ULTIMA']).dt.days
+
+_fat12 = (
+    hist[hist['DATA_FAT'].between(_lim12,fim,inclusive='both')]
+    .groupby('CODCLI',as_index=False)['VALOR'].sum()
+    .rename(columns={'VALOR':'FAT_12M'})
+)
+car = car.merge(_fat12,on='CODCLI',how='left')
+car['FAT_12M'] = pd.to_numeric(car['FAT_12M'],errors='coerce').fillna(0)
+car = car.merge(ativos[['COD_RCA','RCA']].drop_duplicates('COD_RCA'),on='COD_RCA',how='left')
+
+ir_curto = car.groupby('COD_RCA')['INATIVO_CURTO'].sum().rename('INATIVO_CURTO').reset_index()
+ir_longo = car.groupby('COD_RCA')['INATIVO_LONGO'].sum().rename('INATIVO_LONGO').reset_index()
+r = (
+    r.merge(nr,on='COD_RCA',how='left')
+     .merge(ir_curto,on='COD_RCA',how='left')
+     .merge(ir_longo,on='COD_RCA',how='left')
+     .fillna({'NOVOS':0,'INATIVO_CURTO':0,'INATIVO_LONGO':0})
+)
+
+novos_total = int(r.NOVOS.sum())
+inativos_curto_total = int(r.INATIVO_CURTO.sum())
+inativos_longo_total = int(r.INATIVO_LONGO.sum())
 """
 )
 
