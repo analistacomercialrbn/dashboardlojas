@@ -941,7 +941,7 @@ if pagina_dashboard == 'Visão Geral':
         fig_exec = go.Figure()
         fig_exec.add_trace(go.Bar(
             x=[float(F)], y=['Período'], orientation='h', name='Realizado',
-            marker=dict(color=NAVY,line=dict(width=0)),
+            marker=dict(color='#1E2655',line=dict(width=0)),
             width=.34,
             hovertemplate='<b>Realizado</b><br>R$ %{x:,.2f}<extra></extra>'
         ))
@@ -952,10 +952,10 @@ if pagina_dashboard == 'Visão Geral':
         ))
         fig_exec.add_trace(go.Scatter(
             x=[float(_exec['projecao'])], y=['Período'], mode='markers', name='Projeção',
-            marker=dict(size=17, symbol='circle', color=GREEN if float(_exec['projecao']) >= float(M) else RED, line=dict(color='white',width=2)),
+            marker=dict(size=17, symbol='circle', color='#2E8B57' if float(_exec['projecao']) >= float(M) else '#C94A55', line=dict(color='white',width=2)),
             hovertemplate='Projeção: R$ %{x:,.2f}<extra></extra>'
         ))
-        fig_exec.add_vline(x=float(M), line_width=3, line_dash='dash', line_color=NAVY_2,
+        fig_exec.add_vline(x=float(M), line_width=3, line_dash='dash', line_color='#2D396F',
                            annotation_text='Meta', annotation_position='top')
         fig_exec.update_layout(
             title='Trajetória do mês',
@@ -964,11 +964,10 @@ if pagina_dashboard == 'Visão Geral':
             xaxis=dict(range=[0,_limite_exec], tickprefix='R$ ', tickformat='.2s', showgrid=True, gridcolor='#EEF0F5', zeroline=False),
             yaxis=dict(showticklabels=False,showgrid=False,zeroline=False),
             margin=dict(l=10,r=14,t=62,b=14),
-            legend=dict(orientation='h', yanchor='bottom', y=1.03, x=0, font=dict(size=11,color=MUTED)),
+            legend=dict(orientation='h', yanchor='bottom', y=1.03, x=0, font=dict(size=11,color='#737A8C')),
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#FFFFFF',
             font=dict(color='#20263A',size=11),
             hoverlabel=dict(bgcolor='white',bordercolor='#D9DDEA',font_color='#20263A'),
-            barcornerradius=9,
         )
         st.plotly_chart(
             fig_exec,
