@@ -941,7 +941,83 @@ if pagina_dashboard == 'Visão Geral':
         'Ritmo ≥ 100%'
     ),unsafe_allow_html=True)
 
-    # 2) Linha de progresso: realizado, esperado no dia, projeção e meta.
+    # 2) Evolução mensal do faturamento no ano selecionado.
+    # Ignora somente o filtro de mês; mantém Supervisor, RCA e Departamento.
+    if 'ano_sel' in globals() and ano_sel != 'Todos':
+        _ano_evolucao = int(ano_sel)
+        _cods_evolucao = set(pd.to_numeric(base['COD_RCA'],errors='coerce').dropna().astype('Int64'))
+        _deps_evolucao = [str(xf_dep)] if xf_dep else [str(x) for x in ds_eff]
+
+        _evo_total = vendas[
+            vendas['FATURADO']
+            & vendas['DATA_FAT'].dt.year.eq(_ano_evolucao)
+            & vendas['COD_RCA'].isin(_cods_evolucao)
+            & vendas['DEPARTAMENTO'].astype(str).isin(_deps_evolucao)
+        ].copy()
+
+        if not _evo_total.empty:
+            _evo_total['MES_NUM'] = _evo_total['DATA_FAT'].dt.month
+            _evo_mes = (
+                _evo_total.groupby('MES_NUM',as_index=False)
+                .agg(
+                    FATURAMENTO=('VALOR','sum'),
+                    CLIENTES=('CODCLI','nunique'),
+                    PEDIDOS=('NUMPED','nunique')
+                )
+                .sort_values('MES_NUM')
+            )
+
+            _ultimo_mes_evo = int(_evo_total['DATA_FAT'].dt.month.max())
+            _grade_meses = pd.DataFrame({'MES_NUM':list(range(1,_ultimo_mes_evo+1))})
+            _evo_mes = _grade_meses.merge(_evo_mes,on='MES_NUM',how='left')
+            for _col in ['FATURAMENTO','CLIENTES','PEDIDOS']:
+                _evo_mes[_col] = pd.to_numeric(_evo_mes[_col],errors='coerce').fillna(0)
+
+            _meses_abrev = {
+                1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',
+                7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'
+            }
+            _evo_mes['MES'] = _evo_mes['MES_NUM'].map(_meses_abrev)
+
+            fig_evo_total = go.Figure()
+            fig_evo_total.add_trace(go.Scatter(
+                x=_evo_mes['MES'],
+                y=_evo_mes['FATURAMENTO'],
+                mode='lines+markers+text',
+                name='Faturamento',
+                line=dict(color='#1E2655',width=3),
+                marker=dict(size=8,color='#1E2655',line=dict(color='white',width=2)),
+                text=_evo_mes['FATURAMENTO'].map(brl_compacto),
+                textposition='top center',
+                customdata=_evo_mes[['CLIENTES','PEDIDOS']].to_numpy(),
+                hovertemplate=(
+                    '<b>%{x}/'+str(_ano_evolucao)+'</b><br>'
+                    'Faturamento: R$ %{y:,.2f}<br>'
+                    'Clientes: %{customdata[0]:.0f}<br>'
+                    'Pedidos: %{customdata[1]:.0f}'
+                    '<extra></extra>'
+                )
+            ))
+            fig_evo_total.update_layout(
+                title=f'Faturamento mês a mês — {_ano_evolucao}',
+                height=330,
+                showlegend=False,
+                margin=dict(l=10,r=16,t=58,b=18),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='#FFFFFF',
+                xaxis=dict(title='',showgrid=False,zeroline=False),
+                yaxis=dict(title='',tickprefix='R$ ',tickformat='.2s',showgrid=True,gridcolor='#EEF0F5',zeroline=False),
+            )
+            st.plotly_chart(
+                fig_evo_total,
+                use_container_width=True,
+                key=f'evolucao_total_{_ano_evolucao}',
+                config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+            )
+        else:
+            st.info(f'Sem faturamento disponível para {_ano_evolucao} no recorte selecionado.')
+
+    # 3) Linha de progresso: realizado, esperado no dia, projeção e meta.
     if _ano_mes_exec and pd.notna(_exec['projecao']) and M:
         _fracao_exec = (_exec['dias_passados'] / _exec['dias_total']) if _exec['dias_total'] else 0
         _esperado_exec = float(M) * _fracao_exec
@@ -983,7 +1059,7 @@ if pagina_dashboard == 'Visão Geral':
             config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
         )
 
-    # 3) Central de prioridades — cards executivos e acionáveis.
+    # 4) Central de prioridades — cards executivos e acionáveis.
     st.markdown('### Pontos de atenção do período')
     st.caption('Os maiores impactos do recorte, resumidos para decisão rápida.')
 
@@ -1108,7 +1184,7 @@ if pagina_dashboard == 'Visão Geral':
     else:
         st.success('Nenhum ponto de atenção automático forte foi identificado no recorte atual.')
 
-    # 4) Ranking RCA interativo.
+    # 5) Ranking RCA interativo.
     st.markdown('### Ranking interativo de RCA')
     _ranking_opcao = st.radio(
         'Indicador',
