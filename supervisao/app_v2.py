@@ -966,8 +966,8 @@ if pagina_dashboard == 'Visão Geral':
             margin=dict(l=10,r=14,t=62,b=14),
             legend=dict(orientation='h', yanchor='bottom', y=1.03, x=0, font=dict(size=11,color=MUTED)),
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#FFFFFF',
-            font=dict(color=TEXT,size=11),
-            hoverlabel=dict(bgcolor='white',bordercolor='#D9DDEA',font_color=TEXT),
+            font=dict(color='#20263A',size=11),
+            hoverlabel=dict(bgcolor='white',bordercolor='#D9DDEA',font_color='#20263A'),
             barcornerradius=9,
         )
         st.plotly_chart(
