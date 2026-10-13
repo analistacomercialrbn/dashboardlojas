@@ -628,16 +628,46 @@ novos_mes['NOVO'] = novos_mes['PRIMEIRA_COMPRA'].dt.to_period('M').astype('strin
 nr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
 
 fim = pd.Period(mes).end_time.normalize()
-vida = hist.groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
-car = clientes[clientes.COD_RCA.isin(cods)][['CODCLI','COD_RCA']].drop_duplicates().merge(vida,on='CODCLI',how='left')
+vida = hist[hist['DATA_FAT'].le(fim)].groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+
+_cols_car = ['CODCLI','COD_RCA'] + (['CLIENTE'] if 'CLIENTE' in clientes.columns else [])
+car = clientes[clientes.COD_RCA.isin(cods)][_cols_car].drop_duplicates('CODCLI').merge(vida,on='CODCLI',how='left')
 if xf_rca:
     cod_xf = set(base.COD_RCA.dropna())
     car = car[car.COD_RCA.isin(cod_xf)].copy()
-car['INATIVO'] = car.ULTIMA.notna() & car.ULTIMA.lt(fim-pd.Timedelta(days=89))
-ir = car.groupby('COD_RCA')['INATIVO'].sum().rename('INATIVADOS').reset_index()
-r = r.merge(nr,on='COD_RCA',how='left').merge(ir,on='COD_RCA',how='left').fillna({'NOVOS':0,'INATIVADOS':0})
 
-novos_total = int(r.NOVOS.sum()); inativos_total = int(r.INATIVADOS.sum())
+# Indicadores oficiais da Ficha Comercial:
+# Curto prazo = completou 3 meses sem comprar e comprou nos últimos 6 meses.
+# Longo prazo = completou 3 meses sem comprar e comprou no último ano.
+# Pela definição literal da ficha, o Longo Prazo inclui os clientes do Curto Prazo.
+_lim3 = fim - pd.DateOffset(months=3)
+_lim6 = fim - pd.DateOffset(months=6)
+_lim12 = fim - pd.DateOffset(months=12)
+car['INATIVO_CURTO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim6)
+car['INATIVO_LONGO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim12)
+car['DIAS_SEM_COMPRA'] = (fim - car['ULTIMA']).dt.days
+
+_fat12 = (
+    hist[hist['DATA_FAT'].between(_lim12,fim,inclusive='both')]
+    .groupby('CODCLI',as_index=False)['VALOR'].sum()
+    .rename(columns={'VALOR':'FAT_12M'})
+)
+car = car.merge(_fat12,on='CODCLI',how='left')
+car['FAT_12M'] = pd.to_numeric(car['FAT_12M'],errors='coerce').fillna(0)
+car = car.merge(ativos[['COD_RCA','RCA']].drop_duplicates('COD_RCA'),on='COD_RCA',how='left')
+
+ir_curto = car.groupby('COD_RCA')['INATIVO_CURTO'].sum().rename('INATIVO_CURTO').reset_index()
+ir_longo = car.groupby('COD_RCA')['INATIVO_LONGO'].sum().rename('INATIVO_LONGO').reset_index()
+r = (
+    r.merge(nr,on='COD_RCA',how='left')
+     .merge(ir_curto,on='COD_RCA',how='left')
+     .merge(ir_longo,on='COD_RCA',how='left')
+     .fillna({'NOVOS':0,'INATIVO_CURTO':0,'INATIVO_LONGO':0})
+)
+
+novos_total = int(r.NOVOS.sum())
+inativos_curto_total = int(r.INATIVO_CURTO.sum())
+inativos_longo_total = int(r.INATIVO_LONGO.sum())
 
 if pagina_dashboard == 'Visão Geral':
     _ultima_data_visao = fat['DATA_FAT'].max() if not fat.empty else pd.NaT
@@ -1244,22 +1274,32 @@ elif pagina_dashboard == 'Carteira':
     _pct_mono = (_mono / len(_pc_carteira) * 100) if len(_pc_carteira) else 0
 
     x1,x2,x3,x4,x5,x6 = st.columns(6)
-    x1.markdown(kpi('Positivados',nint(C),'Clientes que compraram no período'),unsafe_allow_html=True)
+    x1.markdown(kpi('Positivados',nint(C),'Compraram no período'),unsafe_allow_html=True)
     x2.markdown(kpi('Novos',nint(novos_total),'Primeira compra no período'),unsafe_allow_html=True)
-    x3.markdown(kpi('Inativados',nint(inativos_total),'Sem faturamento há 90+ dias'),unsafe_allow_html=True)
-    x4.markdown(kpi('Mix por cliente',dec(_mix_clientes),'Produtos distintos por cliente'),unsafe_allow_html=True)
-    x5.markdown(kpi('Clientes 1 produto',nint(_mono),pct(_pct_mono)+' dos positivados'),unsafe_allow_html=True)
-    x6.markdown(kpi('Até 3 produtos',nint(_ate3),'Potencial de venda cruzada'),unsafe_allow_html=True)
+    x3.markdown(kpi('Inativos • curto',nint(inativos_curto_total),'3 a 6 meses sem comprar'),unsafe_allow_html=True)
+    x4.markdown(kpi('Inativos • longo',nint(inativos_longo_total),'3 a 12 meses • inclui curto'),unsafe_allow_html=True)
+    x5.markdown(kpi('Mix por cliente',dec(_mix_clientes),'Produtos distintos por cliente'),unsafe_allow_html=True)
+    x6.markdown(kpi('Clientes 1 produto',nint(_mono),pct(_pct_mono)+' dos positivados'),unsafe_allow_html=True)
 
     _car_dim = st.radio(
         'Visualizar carteira por',
-        ['Positivados','Novos x Inativados','Mix baixo'],
+        ['Inativos curto x longo','Positivados','Mix baixo'],
         horizontal=True,
         label_visibility='collapsed',
         key='carteira_visual'
     )
 
-    if _car_dim == 'Positivados':
+    if _car_dim == 'Inativos curto x longo':
+        _ci = r[['RCA','INATIVO_CURTO','INATIVO_LONGO']].sort_values('INATIVO_LONGO')
+        _fig = go.Figure()
+        _fig.add_bar(y=_ci.RCA,x=_ci.INATIVO_LONGO,name='Longo prazo (3–12m)',orientation='h',marker_color='#C8CEE1')
+        _fig.add_bar(y=_ci.RCA,x=_ci.INATIVO_CURTO,name='Curto prazo (3–6m)',orientation='h',marker_color=RED)
+        _fig.update_layout(barmode='group',title='Clientes inativos por RCA')
+        _fig.update_traces(hovertemplate='<b>%{y}</b><br>Clientes: %{x:.0f}<extra>%{fullData.name}</extra>')
+        plot_crossfilter(chart_layout(_fig,max(430,28*len(_ci)+100),'v'), 'xf_graf_rca_inativos', 'xf_rca', 'y')
+        st.caption('Regra oficial da ficha: longo prazo considera 3–12 meses sem compra e, portanto, inclui os clientes classificados no curto prazo.')
+
+    elif _car_dim == 'Positivados':
         _cr = r.sort_values('POSITIVADOS')
         _fig = px.bar(
             _cr,x='POSITIVADOS',y='RCA',orientation='h',
@@ -1268,14 +1308,6 @@ elif pagina_dashboard == 'Carteira':
         )
         _fig.update_traces(marker_color=NAVY,textposition='outside')
         plot_crossfilter(chart_layout(_fig,max(430,28*len(_cr)+100),'v'), 'xf_graf_rca_pos', 'xf_rca', 'y')
-
-    elif _car_dim == 'Novos x Inativados':
-        _ci = r[['RCA','NOVOS','INATIVADOS']].sort_values('INATIVADOS')
-        _fig = go.Figure()
-        _fig.add_bar(y=_ci.RCA,x=_ci.NOVOS,name='Novos',orientation='h',marker_color=GREEN)
-        _fig.add_bar(y=_ci.RCA,x=_ci.INATIVADOS,name='Inativados',orientation='h',marker_color=RED)
-        _fig.update_layout(barmode='group',title='Novos x inativados por RCA')
-        plot_crossfilter(chart_layout(_fig,max(430,28*len(_ci)+100),'v'), 'xf_graf_rca_carteira', 'xf_rca', 'y')
 
     else:
         if not _pc_carteira.empty:
@@ -1296,6 +1328,33 @@ elif pagina_dashboard == 'Carteira':
             plot_crossfilter(chart_layout(_fig,max(430,28*len(_mix_rca_car)+100),'v'), 'xf_graf_rca_mixbaixo', 'xf_rca', 'y')
         else:
             st.info('Sem clientes positivados no recorte.')
+
+    st.markdown('### Clientes inativos para ação')
+    _tipo_inat = st.radio(
+        'Faixa de inatividade',
+        ['Curto prazo (3–6 meses)','Longo prazo oficial (3–12 meses)'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='carteira_inativos_faixa'
+    )
+    _col_flag = 'INATIVO_CURTO' if _tipo_inat.startswith('Curto') else 'INATIVO_LONGO'
+    _car_inat = car[car[_col_flag].fillna(False)].copy()
+    if not _car_inat.empty:
+        _car_inat = _car_inat.sort_values(['FAT_12M','DIAS_SEM_COMPRA'],ascending=[False,False]).head(100)
+        _tab_inat = pd.DataFrame({
+            'Cliente': (
+                _car_inat['CLIENTE'].fillna(_car_inat['CODCLI'].astype(str))
+                if 'CLIENTE' in _car_inat.columns else _car_inat['CODCLI'].astype(str)
+            ),
+            'RCA': _car_inat['RCA'].fillna('—'),
+            'Última compra': _car_inat['ULTIMA'].dt.strftime('%d/%m/%Y').fillna('—'),
+            'Dias sem comprar': _car_inat['DIAS_SEM_COMPRA'].map(nint),
+            'Faturamento últimos 12m': _car_inat['FAT_12M'].map(brl),
+        })
+        st.dataframe(_tab_inat,use_container_width=True,hide_index=True,height=min(560,42+35*len(_tab_inat)))
+        st.caption('Ordenado pelo maior faturamento dos últimos 12 meses para ajudar a priorizar recuperação de clientes.')
+    else:
+        st.success('Nenhum cliente nesta faixa de inatividade para o recorte atual.')
 
     st.markdown('### Clientes com maior espaço para ampliar mix')
     if not _pc_carteira.empty:
