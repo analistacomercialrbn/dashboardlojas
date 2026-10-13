@@ -874,16 +874,24 @@ if _ano_mes_exec:
             ))
 
 # Sinais adicionais de carteira e mix.
-if inativos_total > novos_total and inativos_total > 0:
+# Usa o curto prazo como alerta operacional, pois é a faixa mais recuperável.
+if inativos_curto_total > novos_total and inativos_curto_total > 0:
     _atencoes.append((
         'Pressão na carteira',
-        f"Há {nint(inativos_total)} clientes inativados contra {nint(novos_total)} novos no recorte. "
-        "Priorize os inativos de maior histórico antes de ampliar prospecção sem foco."
+        f"Há {nint(inativos_curto_total)} clientes inativos de curto prazo contra {nint(novos_total)} novos no recorte. "
+        "Priorize os clientes de maior histórico antes que avancem para uma inatividade mais longa."
     ))
-elif novos_total > inativos_total and novos_total > 0:
+elif novos_total > inativos_curto_total and novos_total > 0:
     _oportunidades.append((
         'Renovação positiva da carteira',
-        f"O período registra {nint(novos_total)} novos clientes contra {nint(inativos_total)} inativados."
+        f"O período registra {nint(novos_total)} novos clientes contra {nint(inativos_curto_total)} inativos de curto prazo."
+    ))
+
+if inativos_longo_total > 0:
+    _atencoes.append((
+        'Base inativa de longo prazo',
+        f"Há {nint(inativos_longo_total)} clientes na faixa oficial de 3 a 12 meses sem compra. "
+        "Use a tela Carteira para priorizar os de maior faturamento histórico."
     ))
 
 if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
