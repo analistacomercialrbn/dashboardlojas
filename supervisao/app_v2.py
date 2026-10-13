@@ -964,10 +964,9 @@ if pagina_dashboard == 'Visão Geral':
             xaxis=dict(range=[0,_limite_exec], tickprefix='R$ ', tickformat='.2s', showgrid=True, gridcolor='#EEF0F5', zeroline=False),
             yaxis=dict(showticklabels=False,showgrid=False,zeroline=False),
             margin=dict(l=10,r=14,t=62,b=14),
-            legend=dict(orientation='h', yanchor='bottom', y=1.03, x=0, font=dict(size=11,color='#737A8C')),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#FFFFFF',
-            font=dict(color='#20263A',size=11),
-            hoverlabel=dict(bgcolor='white',bordercolor='#D9DDEA',font_color='#20263A'),
+            legend={'orientation':'h','yanchor':'bottom','y':1.03,'x':0},
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='#FFFFFF',
         )
         st.plotly_chart(
             fig_exec,
