@@ -550,10 +550,6 @@ render_app_header(
 )
 
 ativos = rcas[rcas['ATIVO'].eq('S')].copy()
-st.sidebar.markdown(
-    "<div style='font-size:10px;font-weight:800;letter-spacing:.08em;color:#8A91A2;margin:2px 0 7px 2px;'>FILTROS</div>",
-    unsafe_allow_html=True,
-)
 meses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)
 mes = st.sidebar.selectbox('Mês de análise', meses, index=meses.index('2026-08') if '2026-08' in meses else 0, format_func=mes_nome)
 
