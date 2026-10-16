@@ -33,6 +33,11 @@ meta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RC
 """,
 """ativos = rcas[rcas['ATIVO'].eq('S')].copy()
 
+st.sidebar.markdown(
+    "<div style='font-size:10px;font-weight:800;letter-spacing:.08em;color:#8A91A2;margin:2px 0 7px 2px;'>FILTROS</div>",
+    unsafe_allow_html=True,
+)
+
 vendas['ANO_FAT'] = vendas['DATA_FAT'].dt.year.astype('Int64')
 metas['ANO'] = pd.to_numeric(metas['MES'].astype(str).str[:4], errors='coerce').astype('Int64')
 metas['MES_NUM'] = pd.to_numeric(metas['MES'].astype(str).str[5:7], errors='coerce').astype('Int64')
