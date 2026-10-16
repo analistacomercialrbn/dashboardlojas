@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 
+from ui_academy import apply_academy_theme, nav_format, render_app_header
+
 st.set_page_config(page_title='Dashboard de Supervisão', page_icon='📊', layout='wide')
 
 VENDAS_ID = '1ioeKNG2P5HLZpmCTxUa3FaCfI1pfHuyC'
@@ -233,6 +235,9 @@ div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
 }}
 </style>
 """, unsafe_allow_html=True)
+
+# Camada visual compartilhada com Políticas e Rebanho Academy.
+apply_academy_theme()
 
 
 def drive_bytes(fid):
@@ -522,6 +527,7 @@ pagina_dashboard = st.sidebar.radio(
     index=_nav_paginas.index(_nav_atual),
     label_visibility='collapsed',
     key='main_sidebar_navigation',
+    format_func=nav_format,
 )
 if pagina_dashboard == 'Gestão de Metas':
     st.session_state.pop('gm_sidebar_navigation', None)
@@ -531,18 +537,23 @@ else:
 
 st.sidebar.divider()
 
-# Cabeçalho institucional permanece igual em todas as seções do dashboard.
-st.markdown("""
-<div class='brandbar'>
-  <div>
-    <div class='brand-title'>Dashboard de Supervisão</div>
-    <div class='brand-sub'>Gestão comercial • faturamento, carteira, mix e cobertura municipal</div>
-  </div>
-  <div class='brand-word'>REBANHO</div>
-</div>
-""", unsafe_allow_html=True)
+# Cabeçalho no padrão das plataformas Políticas / Rebanho Academy.
+_subtitulos_pagina = {
+    'Visão Geral': 'Resumo executivo • faturamento, meta, ritmo e pontos de atenção',
+    'Carteira': 'Saúde da carteira • novos, inativos, recuperação e oportunidades',
+    'Mix e Oportunidades': 'Produtos • mix, concentração, desempenho e venda cruzada',
+    'Cidades': 'Cobertura comercial • evolução, cidades críticas, produtos e clientes',
+}
+render_app_header(
+    pagina_dashboard,
+    _subtitulos_pagina.get(pagina_dashboard, 'Gestão comercial • dados, análises e decisões')
+)
 
 ativos = rcas[rcas['ATIVO'].eq('S')].copy()
+st.sidebar.markdown(
+    "<div style='font-size:10px;font-weight:800;letter-spacing:.08em;color:#8A91A2;margin:2px 0 7px 2px;'>FILTROS</div>",
+    unsafe_allow_html=True,
+)
 meses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)
 mes = st.sidebar.selectbox('Mês de análise', meses, index=meses.index('2026-08') if '2026-08' in meses else 0, format_func=mes_nome)
 
