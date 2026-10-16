@@ -363,7 +363,7 @@ async function renderCityMap(cities,selectedKey){
           const c=cityMap.get(`${aliasCity(name)}|${uf}`);
           const ratio=c?c.revenue/max:0;
           const selected=c&&c.key===selectedKey;
-          return {color:selected?'#1E2655':'#AAB3C9',weight:selected?3.5:.65,fillColor:selected?'#E5A43A':ratio>.65?'#1E2655':ratio>.35?'#596CA7':ratio>0?'#BBC5DE':'#E8EBF1',fillOpacity:selected?.95:(c?.82:.20)};
+          return {color:selected?'#1E2655':'#AAB3C9',weight:selected?3.5:.65,fillColor:selected?'#E5A43A':ratio>.65?'#1E2655':ratio>.35?'#596CA7':ratio>0?'#BBC5DE':'#E8EBF1',fillOpacity:selected ? .95 : (c ? .82 : .20)};
         },
         onEachFeature:(f,l)=>{
           const name=f.properties?.name||f.properties?.NOME||'';
