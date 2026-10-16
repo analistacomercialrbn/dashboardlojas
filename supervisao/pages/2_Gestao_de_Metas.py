@@ -8,6 +8,7 @@ import streamlit as st
 
 from access_control import auth_bootstrap, render_admin_users, scope_ativos
 from gestao_page_compat import aplicar_formatacao_comparativos
+from ui_academy import apply_academy_theme, nav_format, render_app_header
 import gestao_metas as gm
 
 st.set_page_config(page_title='Gestão de Metas', page_icon='🎯', layout='wide')
@@ -93,6 +94,8 @@ st.markdown(f"""
 }}
 </style>
 """, unsafe_allow_html=True)
+
+apply_academy_theme()
 
 
 @st.cache_data(show_spinner=False)
@@ -514,6 +517,7 @@ _nav_escolha = st.sidebar.radio(
     index=_nav_paginas.index('Gestão de Metas'),
     label_visibility='collapsed',
     key='gm_sidebar_navigation',
+    format_func=nav_format,
 )
 if _nav_escolha != 'Gestão de Metas':
     st.session_state['dashboard_section'] = _nav_escolha
@@ -540,15 +544,10 @@ if USUARIO_ATUAL.get('perfil') == 'ADMIN' and st.session_state.get('admin_users_
     render_admin_users(rcas)
     st.stop()
 
-st.markdown("""
-<div class='brandbar'>
-  <div>
-    <div class='brand-title'>Dashboard de Supervisão</div>
-    <div class='brand-sub'>Gestão de Metas • planejamento • análise histórica • distribuição • aprovação</div>
-  </div>
-  <div class='brand-word'>REBANHO</div>
-</div>
-""", unsafe_allow_html=True)
+render_app_header(
+    'Gestão de Metas',
+    'Planejamento • análise histórica • distribuição • justificativas e aprovação'
+)
 
 if USUARIO_ATUAL.get('perfil') == 'RCA':
     st.info('A Gestão de Metas está disponível para Supervisor, Gerente e Admin. O perfil RCA permanece no acompanhamento operacional.')
