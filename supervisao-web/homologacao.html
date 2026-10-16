@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Supervisão Rebanho • Homologação</title>
+  <link rel="stylesheet" href="/styles.css"/>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="side-brand"><div class="brand-word">REBANHO</div><div class="brand-product">Supervisão Comercial • Homologação</div></div>
+      <div class="user-card"><div class="avatar">AC</div><div><div class="user-name">Ambiente de Homologação</div><div class="user-role">Dados demonstrativos</div></div></div>
+      <nav class="nav">
+        <button data-page="overview" class="nav-item active"><span>⌂</span> Visão Geral</button>
+        <button data-page="carteira" class="nav-item"><span>◫</span> Carteira</button>
+        <button data-page="produtos" class="nav-item"><span>◇</span> Mix e Produtos</button>
+        <button data-page="cidades" class="nav-item"><span>⌖</span> Cidades</button>
+        <button data-page="metas" class="nav-item"><span>◎</span> Gestão de Metas</button>
+      </nav>
+      <div class="side-section-label">FILTROS</div>
+      <div class="filters">
+        <label>Ano</label><select><option>2026</option></select>
+        <label>Mês</label><select><option>Outubro</option></select>
+        <label>Supervisor</label><select><option>Todos</option></select>
+        <label>RCA</label><select><option>Todos</option></select>
+        <label>Departamento</label><select><option>Todos</option></select>
+      </div>
+      <div class="sidebar-bottom"><button class="btn ghost small" disabled>↻ Atualizar bases</button><button class="btn ghost small" disabled>Sair</button></div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><div class="eyebrow">Dashboard de Supervisão</div><h1 id="pageTitle">Visão Geral</h1><div id="pageSubtitle" class="page-subtitle">Versão web independente do Streamlit</div></div>
+        <div class="top-actions"><div class="period-chip">Outubro • 2026</div><div class="brand-pill">REBANHO</div></div>
+      </header>
+      <div class="readonly-banner"><strong>Homologação visual.</strong> Esta URL usa dados demonstrativos somente para validar layout, navegação e experiência antes de conectarmos as bases reais e os perfis de acesso.</div>
+      <section id="content"></section>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="/homologacao.js"></script>
+</body>
+</html>
