@@ -9,6 +9,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from ui_academy import apply_academy_theme, render_sidebar_brand, render_user_card
+
 USERS_PATH = Path(__file__).with_name('usuarios.json')
 GITHUB_REPO = 'analistacomercialrbn/dashboardlojas'
 GITHUB_USERS_PATH = 'supervisao/usuarios.json'
@@ -83,12 +85,21 @@ def _persist_access_users(dados):
 def auth_bootstrap():
     global ACCESS_USERS
     ACCESS_USERS = _load_access_users()
+    apply_academy_theme()
     if not st.session_state.get('auth_user'):
-        st.markdown("<div style='height:5vh'></div>", unsafe_allow_html=True)
-        c1,c2,c3=st.columns([1,1.15,1])
+        st.markdown("<div style='height:7vh'></div>", unsafe_allow_html=True)
+        c1,c2,c3=st.columns([1,1.05,1])
         with c2:
-            st.markdown("<div style='text-align:center;font-size:30px;font-weight:800;color:#1E2655;margin-bottom:4px;'>Dashboard de Supervisão</div>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align:center;color:#737A8C;margin-bottom:22px;'>Acesso restrito • REBANHO</div>", unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div style="background:#fff;border:1px solid #E4E8F0;border-radius:18px;padding:26px 26px 18px;box-shadow:0 12px 34px rgba(30,38,85,.07);">
+                  <div style="font-size:13px;font-weight:900;letter-spacing:.10em;color:#1E2655;">REBANHO</div>
+                  <div style="font-size:27px;font-weight:820;color:#1E2655;margin-top:12px;letter-spacing:-.025em;">Dashboard de Supervisão</div>
+                  <div style="color:#737A8C;font-size:12px;margin-top:6px;margin-bottom:20px;">Acesso à gestão comercial</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             with st.form('login_form'):
                 login=st.text_input('Usuário'); senha=st.text_input('Senha',type='password'); entrar=st.form_submit_button('Entrar',use_container_width=True)
             if entrar:
@@ -100,8 +111,8 @@ def auth_bootstrap():
     usuario=ACCESS_USERS.get(st.session_state.get('auth_user'))
     if not usuario or not usuario.get('ativo'):
         st.session_state.pop('auth_user',None); st.rerun()
-    st.sidebar.markdown(f"**{usuario['nome']}**")
-    st.sidebar.caption(f"Perfil: {usuario['perfil'].title()}")
+    render_sidebar_brand('Supervisão Comercial')
+    render_user_card(usuario['nome'], usuario['perfil'])
     if usuario.get('perfil')=='ADMIN':
         if st.sidebar.button('👥 Usuários e acessos',use_container_width=True):
             st.session_state['admin_users_page']=True; st.rerun()
