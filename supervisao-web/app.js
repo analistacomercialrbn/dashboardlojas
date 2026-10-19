@@ -14,7 +14,7 @@ const state = {
   dimensions:null,
   worker:null,
   page:'overview',
-  filters:{year:'Todos',month:'Todos',supervisor:'Todos',rca:'Todos',department:'Todos'},
+  filters:{year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
   selectedCity:'Todos',
   requestId:0,
   charts:[],
@@ -91,23 +91,25 @@ function bindLogin(){
   });
 }
 function bindShell(){
-  $$('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
+  $('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
     state.page=btn.dataset.page;
     state.selectedCity='Todos';
-    $$('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
+    $('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
     queryPage();
   }));
-  ['filterYear','filterMonth','filterSupervisor','filterRca','filterDepartment'].forEach(id=>{
+  ['filterYear','filterMonth'].forEach(id=>{
     $('#'+id).addEventListener('change',()=>{
       syncFiltersFromUi();
-      if(id==='filterSupervisor') refreshRcaOptions();
       state.selectedCity='Todos';
       queryPage();
     });
   });
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.multi-select')) $('.multi-select.open').forEach(x=>x.classList.remove('open'));
+  });
   $('#clearFilters').addEventListener('click',()=>{
     const latest=state.dimensions?.latest?new Date(state.dimensions.latest):new Date();
-    state.filters={year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:'Todos',rca:'Todos',department:'Todos'};
+    state.filters={year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:[],rca:[],department:[]};
     syncUiFromFilters(); queryPage();
   });
   $('#refreshData').addEventListener('click',()=>initData(true));
@@ -122,7 +124,7 @@ function initData(force=false){
   destroyCharts();
   if(state.worker)state.worker.terminate();
   setStatus(force?'Atualizando bases do Drive…':'Conectando ao Drive…',true);
-  const v=force?Date.now():'1';
+  const v=Date.now();
   state.worker=new Worker('/data-worker.js?v='+v);
   state.worker.onmessage=e=>{
     const m=e.data||{};
@@ -144,16 +146,72 @@ function initData(force=false){
   };
   state.worker.postMessage({type:'init'});
 }
+function normalizeMulti(v){
+  if(Array.isArray(v)) return v.map(String).filter(x=>x&&x!=='Todos');
+  if(v===null||v===undefined||v===''||v==='Todos') return [];
+  return [String(v)];
+}
+function selectedMulti(id){
+  return $$('#'+id+' input[type="checkbox"][data-value]:checked').map(x=>x.dataset.value);
+}
+function multiSummary(values, options){
+  const picked=normalizeMulti(values);
+  if(!picked.length)return 'Todos';
+  if(picked.length===1){
+    const hit=options.find(x=>String(x.value)===String(picked[0]));
+    return hit?.label||picked[0];
+  }
+  return picked.length+' selecionados';
+}
+function fillMultiSelect(el,options,selected,onChange){
+  const picked=new Set(normalizeMulti(selected));
+  el.innerHTML=`
+    <button type="button" class="multi-select-trigger">
+      <span class="multi-select-text">${esc(multiSummary([...picked],options))}</span>
+      <span class="multi-select-arrow">⌄</span>
+    </button>
+    <div class="multi-select-menu">
+      <button type="button" class="multi-select-all">Todos</button>
+      <div class="multi-select-options">
+        ${options.map(o=>`<label class="multi-select-option"><input type="checkbox" data-value="${esc(o.value)}" ${picked.has(String(o.value))?'checked':''}><span>${esc(o.label)}</span></label>`).join('')}
+      </div>
+    </div>`;
+  const trigger=$('.multi-select-trigger',el);
+  trigger.addEventListener('click',e=>{
+    e.stopPropagation();
+    $$('.multi-select.open').filter(x=>x!==el).forEach(x=>x.classList.remove('open'));
+    el.classList.toggle('open');
+  });
+  $('.multi-select-menu',el).addEventListener('click',e=>e.stopPropagation());
+  $('.multi-select-all',el).addEventListener('click',()=>{
+    $$('input[type="checkbox"][data-value]',el).forEach(x=>x.checked=false);
+    $('.multi-select-text',el).textContent='Todos';
+    onChange?.();
+  });
+  $$('input[type="checkbox"][data-value]',el).forEach(ch=>ch.addEventListener('change',()=>{
+    $('.multi-select-text',el).textContent=multiSummary(selectedMulti(el.id),options);
+    onChange?.();
+  }));
+}
+function handleMultiChange(id){
+  syncFiltersFromUi();
+  if(id==='filterSupervisor')refreshRcaOptions();
+  state.selectedCity='Todos';
+  queryPage();
+}
 function setupFilters(){
   const d=state.dimensions||{};
   const latest=d.latest?new Date(d.latest):new Date();
   const defaultYear=d.years?.includes(latest.getFullYear())?latest.getFullYear():(d.years?.[0]||'Todos');
   state.filters.year=String(defaultYear);
   state.filters.month=String(latest.getMonth()+1);
+  state.filters.supervisor=normalizeMulti(state.filters.supervisor);
+  state.filters.rca=normalizeMulti(state.filters.rca);
+  state.filters.department=normalizeMulti(state.filters.department);
   fillSelect($('#filterYear'),['Todos',...(d.years||[]).map(String)],state.filters.year,x=>x==='Todos'?'Todos':x);
   fillSelect($('#filterMonth'),['Todos',...Array.from({length:12},(_,i)=>String(i+1))],state.filters.month,x=>x==='Todos'?'Todos':['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(x)-1]);
-  fillSelect($('#filterSupervisor'),['Todos',...(d.supervisors||[])],state.filters.supervisor);
-  fillSelect($('#filterDepartment'),['Todos',...(d.departments||[])],state.filters.department);
+  fillMultiSelect($('#filterSupervisor'),(d.supervisors||[]).map(x=>({value:String(x),label:String(x)})),state.filters.supervisor,()=>handleMultiChange('filterSupervisor'));
+  fillMultiSelect($('#filterDepartment'),(d.departments||[]).map(x=>({value:String(x),label:String(x)})),state.filters.department,()=>handleMultiChange('filterDepartment'));
   refreshRcaOptions();
   syncUiFromFilters();
 }
@@ -161,28 +219,35 @@ function fillSelect(el,values,selected,labeller=x=>x){
   el.innerHTML=values.map(v=>`<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(labeller(v))}</option>`).join('');
 }
 function refreshRcaOptions(){
-  const sup=$('#filterSupervisor')?.value||state.filters.supervisor;
-  const rcas=(state.dimensions?.rcas||[]).filter(r=>sup==='Todos'||r.supervisor===sup);
-  const values=['Todos',...rcas.map(r=>String(r.code))];
-  if(!values.includes(String(state.filters.rca)))state.filters.rca='Todos';
-  $('#filterRca').innerHTML=values.map(v=>{
-    if(v==='Todos')return '<option value="Todos">Todos</option>';
-    const r=rcas.find(x=>String(x.code)===v);
-    return `<option value="${v}" ${v===String(state.filters.rca)?'selected':''}>${esc(r?.name||v)}</option>`;
-  }).join('');
+  const supervisors=normalizeMulti(state.filters.supervisor);
+  const rcas=(state.dimensions?.rcas||[]).filter(r=>!supervisors.length||supervisors.includes(String(r.supervisor)));
+  const allowed=new Set(rcas.map(r=>String(r.code)));
+  state.filters.rca=normalizeMulti(state.filters.rca).filter(x=>allowed.has(String(x)));
+  fillMultiSelect(
+    $('#filterRca'),
+    rcas.map(r=>({value:String(r.code),label:r.name||String(r.code)})),
+    state.filters.rca,
+    ()=>handleMultiChange('filterRca')
+  );
 }
 function syncFiltersFromUi(){
   state.filters={
-    year:$('#filterYear').value,month:$('#filterMonth').value,supervisor:$('#filterSupervisor').value,
-    rca:$('#filterRca').value,department:$('#filterDepartment').value
+    year:$('#filterYear').value,
+    month:$('#filterMonth').value,
+    supervisor:selectedMulti('filterSupervisor'),
+    rca:selectedMulti('filterRca'),
+    department:selectedMulti('filterDepartment')
   };
 }
 function syncUiFromFilters(){
-  for(const [k,id] of [['year','filterYear'],['month','filterMonth'],['supervisor','filterSupervisor'],['department','filterDepartment']]){
-    if($('#'+id))$('#'+id).value=state.filters[k];
-  }
-  refreshRcaOptions(); $('#filterRca').value=state.filters.rca;
+  $('#filterYear').value=state.filters.year;
+  $('#filterMonth').value=state.filters.month;
+  const d=state.dimensions||{};
+  fillMultiSelect($('#filterSupervisor'),(d.supervisors||[]).map(x=>({value:String(x),label:String(x)})),state.filters.supervisor,()=>handleMultiChange('filterSupervisor'));
+  fillMultiSelect($('#filterDepartment'),(d.departments||[]).map(x=>({value:String(x),label:String(x)})),state.filters.department,()=>handleMultiChange('filterDepartment'));
+  refreshRcaOptions();
 }
+
 function queryPage(){
   if(!state.worker||!state.dimensions)return;
   destroyCharts();
@@ -254,32 +319,60 @@ function renderOverview(p){
 
 function renderCarteira(p){
   const k=p.kpis||{};
+  const inactiveTotal=Number(k.short||0)+Number(k.long||0);
+  const ratio=k.newClients ? (Number(k.short||0)/Number(k.newClients||1)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x' : '—';
   $('#content').innerHTML=`
     <div class="grid kpi-grid">
       ${kpi('Positivados',integer(k.clients),'Compraram no período')}
       ${kpi('Novos',integer(k.newClients),'Primeira compra no período')}
       ${kpi('Inativos • curto',integer(k.short),'3 a 6 meses sem comprar')}
-      ${kpi('Inativos • longo',integer(k.long),'3 a 12 meses • inclui curto')}
+      ${kpi('Inativos • longo',integer(k.long),'6 a 12 meses sem comprar')}
       ${kpi('Mix por cliente',dec(k.mix),'Produtos distintos por cliente')}
       ${kpi('Produtos ativos no recorte',integer(k.products),'Itens faturados')}
     </div>
-    <div class="grid two-col">
-      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Curto e longo prazo conforme a regra comercial.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
+
+    <div class="panel carteira-movement-panel">
+      <div class="panel-title-row"><div><h2>Movimento da carteira</h2><div class="panel-sub">Positivados, novos e inativados no mesmo recorte. A barra de inativados é composta por curto + longo prazo.</div></div></div>
+      <div class="chart-wrap short"><canvas id="portfolioMovementChart"></canvas></div>
+    </div>
+
+    <div class="grid two-col carteira-secondary">
+      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Faixas exclusivas: curto de 3 a 6 meses e longo de 6 a 12 meses.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
       <div class="panel"><div class="panel-title-row"><div><h2>Leitura da carteira</h2><div class="panel-sub">Data de corte: ${fmtDate(k.cutoff)}</div></div></div>
         <div class="metric-list">
-          <div class="metric-line"><div class="name">Relação curto / novos</div><div class="value">${k.newClients?pct(k.short/k.newClients*100):'—'}</div></div>
-          <div class="metric-line"><div class="name">Inativos longo prazo</div><div class="value">${integer(k.long)}</div></div>
+          <div class="metric-line"><div class="name">Relação curto / novos</div><div class="value">${ratio}</div></div>
+          <div class="metric-line"><div class="name">Inativos totais</div><div class="value">${integer(inactiveTotal)}</div></div>
           <div class="metric-line"><div class="name">Clientes ativos no período</div><div class="value">${integer(k.clients)}</div></div>
         </div>
-        <div class="small-note" style="margin-top:18px">O longo prazo segue a definição oficial de 3 a 12 meses sem compra e, por isso, contém os clientes classificados no curto prazo.</div>
+        <div class="small-note" style="margin-top:18px">As faixas não se sobrepõem: curto prazo considera de 3 a 6 meses sem compra e longo prazo de 6 a 12 meses. A relação curto / novos é mostrada em vezes (x), não em percentual.</div>
       </div>
     </div>
     ${sectionHeading('Clientes inativos para ação','Ordenados pelo maior faturamento dos 12 meses anteriores à data de corte.')}
     <div class="table-wrap"><table><thead><tr><th>Cliente</th><th>RCA</th><th>Última compra</th><th class="align-right">Dias</th><th class="align-right">Fat. 12m</th><th>Faixa</th></tr></thead><tbody id="inactiveTable"></tbody></table></div>
   `;
+
+  chart($('#portfolioMovementChart'),'bar',{
+    labels:['Positivados','Novos','Inativados'],
+    datasets:[
+      {label:'Positivados',data:[k.clients,null,null],backgroundColor:'#6176B5',borderRadius:8,stack:'carteira'},
+      {label:'Novos',data:[null,k.newClients,null],backgroundColor:'#2D8B62',borderRadius:8,stack:'carteira'},
+      {label:'Inativos • curto',data:[null,null,k.short],backgroundColor:'#CC4D5B',borderRadius:8,stack:'carteira'},
+      {label:'Inativos • longo',data:[null,null,k.long],backgroundColor:'#D89B35',borderRadius:8,stack:'carteira'}
+    ]
+  },{
+    plugins:{
+      legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},
+      tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:true,callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}
+    },
+    scales:{
+      x:{stacked:true,grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},
+      y:{stacked:true,beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>integer(v)}}
+    }
+  });
+
   const rows=(p.byRca||[]).slice(0,18).reverse();
-  const c=chart($('#inactiveChart'),'bar',{labels:rows.map(x=>x.name),datasets:[
-    {label:'Longo prazo',data:rows.map(x=>x.long),backgroundColor:'#C8CEE1',borderRadius:6},
+  chart($('#inactiveChart'),'bar',{labels:rows.map(x=>x.name),datasets:[
+    {label:'Longo prazo',data:rows.map(x=>x.long),backgroundColor:'#D89B35',borderRadius:6},
     {label:'Curto prazo',data:rows.map(x=>x.short),backgroundColor:'#C94A55',borderRadius:6}
   ]},{indexAxis:'y',plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}},scales:{x:{grid:{color:'#EEF0F5'},ticks:{callback:v=>integer(v)}}}});
   $('#inactiveTable').innerHTML=(p.inactive||[]).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.rcaName)}</td><td>${fmtDate(x.last)}</td><td class="align-right">${integer(x.days)}</td><td class="align-right">${money(x.revenue12)}</td><td><span class="badge ${x.isShort?'red':'amber'}">${x.isShort?'Curto':'Longo'}</span></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Nenhum cliente nesta faixa.</td></tr>';
