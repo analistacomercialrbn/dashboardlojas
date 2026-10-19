@@ -17,6 +17,9 @@
     "salt": "894912174ad635cf1dfdeda03d596e0a",
     "senha_algo": "pbkdf2_sha256",
     "senha_hash": "ef61d45a7dff929505a750421b97407d534c428e093cede26ed66b6998a6ed40",
-    "supervisor": null
+    "supervisor": null,
+    "senha_algo_web": "pbkdf2_sha256",
+    "senha_iteracoes_web": 100000,
+    "senha_hash_web": "f8a172524bfcf6987b33445f42873e62b2b01c750e0cda7bf48661ec016365f3"
   }
 }
