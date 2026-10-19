@@ -186,3 +186,35 @@ button,select{font:inherit}.app-shell{display:grid;grid-template-columns:218px m
 @media(max-width:1250px){.hero-grid{grid-template-columns:repeat(3,1fr)}.hero-kpi{grid-column:span 2}.insights{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:980px){.app-shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.nav{display:grid;grid-template-columns:repeat(5,1fr)}.sidebar-spacer,.sidebar-note,.user-card{display:none}.filterbar{flex-wrap:wrap}.main-grid,.secondary-grid,.city-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.main{padding:14px}.nav{grid-template-columns:repeat(2,1fr)}.hero-grid{grid-template-columns:1fr 1fr}.hero-kpi{grid-column:1/-1}.filter-group,.filter-group.grow{width:calc(50% - 6px);min-width:0;flex:none}.insights{grid-template-columns:1fr}.topbar h1{font-size:22px}}
+
+
+/* Multi-seleção dos filtros laterais */
+.multi-select{position:relative;width:100%}
+.multi-select-trigger{
+  width:100%;height:36px;border:1px solid #DDE2EB;border-radius:9px;background:#fff;color:var(--text);
+  padding:0 9px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;
+  font-size:11px;text-align:left;outline:none
+}
+.multi-select-trigger:hover,.multi-select.open .multi-select-trigger{border-color:#A8B4D9}
+.multi-select-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.multi-select-arrow{color:#7B8397;font-size:12px;flex:none}
+.multi-select-menu{
+  display:none;position:absolute;z-index:40;left:0;right:0;top:calc(100% + 5px);
+  background:#fff;border:1px solid #DDE2EB;border-radius:10px;box-shadow:0 12px 28px rgba(30,38,85,.14);
+  padding:6px;max-height:260px;overflow:auto
+}
+.multi-select.open .multi-select-menu{display:block}
+.multi-select-all{
+  width:100%;height:30px;border:0;border-radius:7px;background:#F5F7FB;color:var(--navy);
+  font-size:10px;font-weight:800;text-align:left;padding:0 9px;cursor:pointer;margin-bottom:4px
+}
+.multi-select-all:hover{background:#EDF1F8}
+.multi-select-options{display:flex;flex-direction:column;gap:1px}
+.multi-select-option{
+  display:flex!important;align-items:center;gap:8px;margin:0!important;padding:7px 8px;border-radius:7px;
+  cursor:pointer;text-transform:none!important;letter-spacing:0!important;font-size:10.5px!important;color:#4B536B!important;font-weight:650!important
+}
+.multi-select-option:hover{background:#F6F8FC}
+.multi-select-option input{width:14px;height:14px;margin:0;flex:none;accent-color:var(--navy)}
+.carteira-movement-panel{margin-bottom:12px}
+.carteira-secondary{margin-bottom:0}
