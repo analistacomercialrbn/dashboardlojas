@@ -141,7 +141,7 @@ class XlsxArchive{
   }
 }
 function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows,latest,validCount){
-  const enc=new TextEncoder();let phase=0,index=0,inflate=null,salesEntry=null,inputStart=0,inputEnd=0,headerSeen=false,pending="",decoder=null;
+  const enc=new TextEncoder();let phase=0,index=0,inflate=null,salesEntry=null,inputStart=0,inputEnd=0,headerSeen=false,pending="",decoder=null,salesStrings=null;
   const rcaMap=new Map(rcaRows.map(r=>[code(r.COD_RCA??r["Cod/Vend."]),{code:code(r.COD_RCA??r["Cod/Vend."]),name:String(r.RCA??r.VENDEDOR??"").trim(),supervisor:String(r.SUPERVISOR??"").trim(),active:norm(r.ATIVO??"S")==="S"}]).filter(([c,r])=>c!=null&&r.name));
   const rcaList=[...rcaMap.values()];
   const meta=metaRows.map(r=>{const codRca=code(r.COD_RCA??r["Cod/Vend."]),mk=monthKey(r.MES??r.MÊS??r.DATA),rr=rcaMap.get(codRca)||{};return {monthKey:mk,year:mk?Number(mk.slice(0,4)):null,month:mk?Number(mk.slice(5,7)):null,rca:codRca,rcaName:rr.name||String(r.RCA??""),supervisor:rr.supervisor||String(r.SUPERVISOR??""),department:String(r.DEPARTAMENTO??r.DEPTO??"").trim(),value:num(r.META)}}).filter(x=>x.year&&x.month&&x.rca!=null);
@@ -156,7 +156,7 @@ function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows
   function startSales(){
     salesEntry=archive.entries.get(archive.sheetPaths.get(sheetName));
     if(!salesEntry)throw new Error("A aba de faturamento não está disponível.");
-    [inputStart,inputEnd]=entryBounds(archive.bytes,salesEntry);decoder=new TextDecoder();pending="";inflate=new pako.Inflate({raw:true,chunkSize:65536});
+    [inputStart,inputEnd]=entryBounds(archive.bytes,salesEntry);decoder=new TextDecoder();pending="";salesStrings=archive.getSharedStrings();inflate=new pako.Inflate({raw:true,chunkSize:65536});
     inflate.onData=chunk=>consumeSales(decoder.decode(chunk,{stream:true}),false,currentWrite);
   }
   let currentWrite=null;
@@ -165,7 +165,7 @@ function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows
     while(true){
       const start=pending.search(/<row\b/);if(start<0){pending=final?"":pending.slice(Math.max(0,pending.length-8));break}
       const finish=pending.indexOf("</row>",start);if(finish<0){if(start>0)pending=pending.slice(start);if(final)throw new Error("Uma linha de faturamento terminou incompleta.");break}
-      const rowXml=pending.slice(start,finish+6);pending=pending.slice(finish+6);emitSaleRow(parseRowXml(rowXml,archive.getSharedStrings()),write);
+      const rowXml=pending.slice(start,finish+6);pending=pending.slice(finish+6);emitSaleRow(parseRowXml(rowXml,salesStrings),write);
     }
     if(final){const tail=pending.trim();if(tail&&/<row\b/.test(tail))throw new Error("A última linha de faturamento está incompleta.")}
   }
