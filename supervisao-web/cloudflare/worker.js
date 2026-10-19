@@ -13,7 +13,6 @@ async function session(req,secret){const c=req.headers.get("cookie")||"";const m
 function safe(u){return {login:u.login,nome:u.nome,perfil:u.perfil,supervisor:u.supervisor||null,cod_rca:u.cod_rca||null}}
 function mime(path){if(path.endsWith(".html"))return "text/html; charset=utf-8";if(path.endsWith(".css"))return "text/css; charset=utf-8";if(path.endsWith(".js"))return "application/javascript; charset=utf-8";return "text/plain; charset=utf-8"}
 async function staticFile(path){if(path==="/"||path==="")path="/index.html";const allowed=new Set(["/index.html","/styles.css","/app.js","/data-worker.js"]);if(!allowed.has(path))return new Response("Not found",{status:404});const r=await fetch(RAW_BASE+path,{cf:{cacheTtl:20,cacheEverything:true}});if(!r.ok)return new Response("Arquivo indisponível",{status:502});const h=new Headers();h.set("content-type",mime(path));h.set("cache-control","no-store, max-age=0");h.set("x-content-type-options","nosniff");return new Response(r.body,{status:200,headers:h})}
-
 const DATA_KEY = "supervisao/dataset/latest.ndjson.gz";
 let REBUILDING = false;
 function norm(v){return String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toUpperCase()}
@@ -52,17 +51,20 @@ function entryBounds(bytes,e){
   const nameLen=view.getUint16(p+26,true),extraLen=view.getUint16(p+28,true),start=p+30+nameLen+extraLen;
   return [start,start+e.compressedSize];
 }
-function streamZipEntry(bytes,e,onChunk,chunkSize=32768){
+async function streamZipEntry(bytes,e,onChunk,chunkSize=32768){
   const [start,finish]=entryBounds(bytes,e);
   if(e.method===0){for(let p=start;p<finish;p+=chunkSize)onChunk(bytes.subarray(p,Math.min(finish,p+chunkSize)));return}
   if(e.method!==8)throw new Error("Método de compactação XLSX não suportado: "+e.method);
-  const inflater=new pako.Inflate({raw:true,chunkSize:65536});inflater.onData=onChunk;
-  for(let p=start;p<finish;p+=chunkSize){inflater.push(bytes.subarray(p,Math.min(finish,p+chunkSize)),p+chunkSize>=finish);if(inflater.err)throw new Error("Falha ao descompactar a planilha XLSX: "+inflater.msg)}
-  if(!inflater.ended)throw new Error("A planilha XLSX terminou antes do fim do fluxo.");
+  const ds=new DecompressionStream("deflate-raw"),reader=ds.readable.getReader(),writer=ds.writable.getWriter();
+  const reading=(async()=>{while(true){const {value,done}=await reader.read();if(done)break;onChunk(value)}})();
+  try{
+    for(let p=start;p<finish;p+=chunkSize)await writer.write(bytes.subarray(p,Math.min(finish,p+chunkSize)));
+    await writer.close();await reading;
+  }catch(e){try{await writer.abort(e)}catch{}throw e}
 }
-function zipEntryText(bytes,e){
+async function zipEntryText(bytes,e){
   let out="",decoder=new TextDecoder();
-  streamZipEntry(bytes,e,chunk=>{out+=decoder.decode(chunk,{stream:true})});
+  await streamZipEntry(bytes,e,chunk=>{out+=decoder.decode(chunk,{stream:true})});
   return out+decoder.decode();
 }
 function normalizeZipPath(target){
@@ -87,36 +89,40 @@ function parseRowXml(rowXml,strings){
   return values;
 }
 class XlsxArchive{
-  constructor(buffer){
-    this.bytes=new Uint8Array(buffer);this.entries=zipEntries(this.bytes);this.shared=null;this.sheetPaths=new Map();
+  constructor(buffer){this.bytes=new Uint8Array(buffer);this.entries=zipEntries(this.bytes);this.shared=null;this.sharedPromise=null;this.sheetPaths=new Map();this.sheetNames=[]}
+  async init(){
     const wb=this.entries.get("xl/workbook.xml"),rels=this.entries.get("xl/_rels/workbook.xml.rels");
     if(!wb||!rels)throw new Error("O arquivo XLSX não contém a estrutura de planilha esperada.");
-    const relText=zipEntryText(this.bytes,rels),relMap=new Map();
+    const relText=await zipEntryText(this.bytes,rels),relMap=new Map();
     for(const m of relText.matchAll(/<Relationship\b([^>]*)\/?\s*>/g)){const a=xmlAttrs(m[1]);if(a.Id&&a.Target)relMap.set(a.Id,normalizeZipPath(a.Target))}
-    const wbText=zipEntryText(this.bytes,wb);
+    const wbText=await zipEntryText(this.bytes,wb);
     for(const m of wbText.matchAll(/<sheet\b([^>]*)\/?\s*>/g)){const a=xmlAttrs(m[1]),path=relMap.get(a["r:id"]);if(a.name&&path)this.sheetPaths.set(a.name,path)}
-    this.sheetNames=[...this.sheetPaths.keys()];
+    this.sheetNames=[...this.sheetPaths.keys()];return this;
   }
-  getSharedStrings(){
+  async getSharedStrings(){
     if(this.shared)return this.shared;
-    const e=this.entries.get("xl/sharedStrings.xml"),values=[];
-    if(!e){this.shared=values;return values}
-    let pending="",decoder=new TextDecoder();
-    const consume=(text,final=false)=>{
-      pending+=text;
-      while(true){
-        const start=pending.search(/<si\b/);if(start<0){pending=final?"":pending.slice(Math.max(0,pending.length-8));return}
-        const finish=pending.indexOf("</si>",start);if(finish<0){if(start>0)pending=pending.slice(start);if(final)throw new Error("Tabela de textos compartilhados XLSX incompleta.");return}
-        values.push(textRuns(pending.slice(start,finish+5)));pending=pending.slice(finish+5);
-      }
-    };
-    streamZipEntry(this.bytes,e,chunk=>consume(decoder.decode(chunk,{stream:true})));
-    consume(decoder.decode(),true);this.shared=values;return values;
+    if(this.sharedPromise)return this.sharedPromise;
+    this.sharedPromise=(async()=>{
+      const e=this.entries.get("xl/sharedStrings.xml"),values=[];
+      if(!e){this.shared=values;return values}
+      let pending="",decoder=new TextDecoder();
+      const consume=(text,final=false)=>{
+        pending+=text;
+        while(true){
+          const start=pending.search(/<si\b/);if(start<0){pending=final?"":pending.slice(Math.max(0,pending.length-8));return}
+          const finish=pending.indexOf("</si>",start);if(finish<0){if(start>0)pending=pending.slice(start);if(final)throw new Error("Tabela de textos compartilhados XLSX incompleta.");return}
+          values.push(textRuns(pending.slice(start,finish+5)));pending=pending.slice(finish+5);
+        }
+      };
+      await streamZipEntry(this.bytes,e,chunk=>consume(decoder.decode(chunk,{stream:true})));
+      consume(decoder.decode(),true);this.shared=values;return values;
+    })();
+    return this.sharedPromise;
   }
-  readRows(name,onRow){
+  async readRows(name,onRow){
     const path=this.sheetPaths.get(name)||[...this.sheetPaths].find(([n])=>norm(n)===norm(name))?.[1],e=path&&this.entries.get(path);
     if(!e)throw new Error("A aba "+name+" não existe na planilha.");
-    const strings=this.getSharedStrings();let pending="",decoder=new TextDecoder();
+    const strings=await this.getSharedStrings();let pending="",decoder=new TextDecoder();
     const consume=(text,final=false)=>{
       pending+=text;
       while(true){
@@ -126,12 +132,12 @@ class XlsxArchive{
         const rowXml=pending.slice(start,finish+6);pending=pending.slice(finish+6);onRow(parseRowXml(rowXml,strings));
       }
     };
-    streamZipEntry(this.bytes,e,chunk=>consume(decoder.decode(chunk,{stream:true})));
+    await streamZipEntry(this.bytes,e,chunk=>consume(decoder.decode(chunk,{stream:true})));
     consume(decoder.decode(),true);
   }
-  readObjects(name){
+  async readObjects(name){
     const out=[];let headers=null;
-    this.readRows(name,row=>{
+    await this.readRows(name,row=>{
       if(!headers){headers=row.map(v=>String(v??"").trim());return}
       const obj={};let any=false;
       for(let j=0;j<headers.length;j++){if(!headers[j])continue;const v=row[j]??null;if(v!==null&&v!=="")any=true;obj[headers[j]]=v}
@@ -140,38 +146,47 @@ class XlsxArchive{
     return out;
   }
 }
+
+async function fetchDriveWorkbook(id,refresh=false){
+  const u=new URL("https://drive.google.com/uc");u.searchParams.set("export","download");u.searchParams.set("id",id);if(refresh)u.searchParams.set("_cb",String(Date.now()));
+  const r=await fetch(u.toString(),refresh?{redirect:"follow",headers:{"cache-control":"no-cache","pragma":"no-cache","user-agent":"Mozilla/5.0"}}:{redirect:"follow",cf:{cacheTtl:600,cacheEverything:true},headers:{"user-agent":"Mozilla/5.0"}});
+  if(!r.ok)throw new Error("Falha ao baixar uma base comercial do Drive ("+r.status+").");
+  const ct=r.headers.get("content-type")||"";if(ct.includes("text/html"))throw new Error("O Drive não disponibilizou a base para download.");
+  return new XlsxArchive(await r.arrayBuffer()).init();
+}
 function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows,latest,validCount){
-  const enc=new TextEncoder();let phase=0,index=0,inflate=null,salesEntry=null,inputStart=0,inputEnd=0,headerSeen=false,pending="",decoder=null,salesStrings=null;
+  const enc=new TextEncoder();let phase=0,index=0,salesReader=null,salesDecoder=null,salesPending="",salesStrings=null,headerSeen=false;
   const rcaMap=new Map(rcaRows.map(r=>[code(r.COD_RCA??r["Cod/Vend."]),{code:code(r.COD_RCA??r["Cod/Vend."]),name:String(r.RCA??r.VENDEDOR??"").trim(),supervisor:String(r.SUPERVISOR??"").trim(),active:norm(r.ATIVO??"S")==="S"}]).filter(([c,r])=>c!=null&&r.name));
   const rcaList=[...rcaMap.values()];
   const meta=metaRows.map(r=>{const codRca=code(r.COD_RCA??r["Cod/Vend."]),mk=monthKey(r.MES??r.MÊS??r.DATA),rr=rcaMap.get(codRca)||{};return {monthKey:mk,year:mk?Number(mk.slice(0,4)):null,month:mk?Number(mk.slice(5,7)):null,rca:codRca,rcaName:rr.name||String(r.RCA??""),supervisor:rr.supervisor||String(r.SUPERVISOR??""),department:String(r.DEPARTAMENTO??r.DEPTO??"").trim(),value:num(r.META)}}).filter(x=>x.year&&x.month&&x.rca!=null);
   const clients=clientRows.map(r=>{const c=code(r.CODCLI??r["Cod/Cliente"]??r.COD_CLIENTE);if(c==null)return null;return[c,{code:c,name:String(r.CLIENTE??r.NOME??r["Nome Cliente"]??c).trim(),rca:code(r.COD_RCA??r["Cod/Vend."])}]}).filter(Boolean);
-  const ix=new Map(headers.map((h,i)=>[h,i])),val=(row,name)=>row?.[ix.get(name)],encode=(type,value)=>JSON.stringify({type,value})+"\n";
-  function emitSaleRow(row,write){
+  const ix=new Map(headers.map((h,i)=>[h,i])),val=(row,name)=>cellValue(row?.[ix.get(name)]),encode=(type,value)=>JSON.stringify({type,value})+"\n";
+  const writeSale=(row,write)=>{
     if(!headerSeen){headerSeen=true;return}
     const date=dateValue(val(row,"Data Faturamento"));if(!date||norm(val(row,"Posição"))!=="FECHADO")return;
     const codRca=code(val(row,"Cod/Vend.")),rr=rcaMap.get(codRca)||{},prod=code(val(row,"Cod/Produto")),v=num(val(row,"Pedidos Enviados")),marginRaw=val(row,"% Margem"),margin=marginRaw===null||marginRaw===undefined?null:num(marginRaw),m=String(date.getMonth()+1).padStart(2,"0");
     write(encode("sale",{date:date.toISOString(),year:date.getFullYear(),month:date.getMonth()+1,monthKey:String(date.getFullYear())+"-"+m,rca:codRca,rcaName:rr.name||String(codRca??""),supervisor:rr.supervisor||"",department:String(val(row,"DEPARTAMENTO")??"").trim(),client:code(val(row,"Cod/Cliente")),product:prod,productName:productLabel(val(row,"Cod/Produto")),order:String(val(row,"NUMPED")??"").trim(),city:String(val(row,"MUNICENT")??"").trim(),uf:norm(val(row,"ESTENT")),value:v,marginPct:Number.isFinite(margin)?margin:null}));
+  };
+  async function startSales(){
+    const entry=archive.entries.get(archive.sheetPaths.get(sheetName));if(!entry)throw new Error("A aba de faturamento não está disponível.");
+    if(entry.method!==0&&entry.method!==8)throw new Error("Método de compactação XLSX não suportado: "+entry.method);
+    const [start,end]=entryBounds(archive.bytes,entry);let pos=start;
+    const compressed=new ReadableStream({pull(controller){if(pos>=end){controller.close();return}const next=Math.min(end,pos+8192);controller.enqueue(archive.bytes.subarray(pos,next));pos=next}});
+    salesDecoder=new TextDecoder();salesStrings=await archive.getSharedStrings();const xml=entry.method===0?compressed:compressed.pipeThrough(new DecompressionStream("deflate-raw"));salesReader=xml.getReader();
   }
-  function startSales(){
-    salesEntry=archive.entries.get(archive.sheetPaths.get(sheetName));
-    if(!salesEntry)throw new Error("A aba de faturamento não está disponível.");
-    [inputStart,inputEnd]=entryBounds(archive.bytes,salesEntry);decoder=new TextDecoder();pending="";salesStrings=archive.getSharedStrings();inflate=new pako.Inflate({raw:true,chunkSize:65536});
-    inflate.onData=chunk=>consumeSales(decoder.decode(chunk,{stream:true}),false,currentWrite);
-  }
-  let currentWrite=null;
   function consumeSales(text,final,write){
-    pending+=text;
+    salesPending+=text;
     while(true){
-      const start=pending.search(/<row\b/);if(start<0){pending=final?"":pending.slice(Math.max(0,pending.length-8));break}
-      const finish=pending.indexOf("</row>",start);if(finish<0){if(start>0)pending=pending.slice(start);if(final)throw new Error("Uma linha de faturamento terminou incompleta.");break}
-      const rowXml=pending.slice(start,finish+6);pending=pending.slice(finish+6);emitSaleRow(parseRowXml(rowXml,salesStrings),write);
+      const start=salesPending.search(/<row\b/);if(start<0){salesPending=final?"":salesPending.slice(Math.max(0,salesPending.length-8));break}
+      const tagEnd=salesPending.indexOf(">",start);if(tagEnd>0&&salesPending[tagEnd-1]==="/"){salesPending=salesPending.slice(tagEnd+1);continue}
+      const finish=salesPending.indexOf("</row>",start);if(finish<0){if(start>0)salesPending=salesPending.slice(start);if(final)throw new Error("Uma linha de faturamento terminou incompleta.");break}
+      const rowXml=salesPending.slice(start,finish+6);salesPending=salesPending.slice(finish+6);writeSale(parseRowXml(rowXml,salesStrings),write);
     }
-    if(final){const tail=pending.trim();if(tail&&/<row\b/.test(tail))throw new Error("A última linha de faturamento está incompleta.")}
+    if(final&&salesPending.trim()&&/<row\b/.test(salesPending))throw new Error("A última linha de faturamento está incompleta.");
   }
   return new ReadableStream({
-    pull(controller){
-      let out="",budget=48*1024;currentWrite=record=>{out+=record};
+    async pull(controller){
+      let out="",budget=48*1024;const write=record=>{out+=record};
       while(out.length<budget){
         let record;
         if(phase===0){record=JSON.stringify({type:"meta",value:{latest:latest.toISOString(),validCount}})+"\n";phase=1;index=0}
@@ -182,16 +197,12 @@ function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows
         else if(phase===3&&index<clients.length)record=encode("client",clients[index++]);
         else if(phase===3){phase=4;index=0;continue}
         else if(phase===4){
-          if(!inflate)startSales();
-          if(inputStart<inputEnd){
-            const next=Math.min(inputEnd,inputStart+8192),final=next>=inputEnd;
-            inflate.push(archive.bytes.subarray(inputStart,next),final);inputStart=next;
-            if(inflate.err)throw new Error("Falha ao descompactar o faturamento: "+inflate.msg);
-            if(final){consumeSales(decoder.decode(),true,currentWrite);phase=5}
-            if(out.length>=budget)break;
-            continue;
-          }
-          phase=5;continue;
+          if(!salesReader)await startSales();
+          const {value,done}=await salesReader.read();
+          if(done){consumeSales(salesDecoder.decode(),true,write);phase=5;continue}
+          consumeSales(salesDecoder.decode(value,{stream:true}),false,write);
+          if(out.length>=budget)break;
+          continue;
         }else{if(out)controller.enqueue(enc.encode(out));controller.close();return}
         out+=record;
       }
@@ -203,32 +214,29 @@ async function rebuildDataset(env,refresh){
   const salesId=env.SALES_FILE_ID,auxId=env.AUX_FILE_ID;
   if(!salesId||!auxId)throw new Error("IDs das bases do Drive não estão configurados.");
   if(!env.DATA_CACHE)throw new Error("Armazenamento de dados não configurado.");
-  let aux=new XlsxArchive(await fetchDriveWorkbook(auxId,refresh));
-  const rcaRows=aux.readObjects("RCA"),clientRows=aux.readObjects("CLIENTES"),metaRows=aux.readObjects("METAS");
+  let aux=await fetchDriveWorkbook(auxId,refresh);
+  const rcaRows=await aux.readObjects("RCA"),clientRows=await aux.readObjects("CLIENTES"),metaRows=await aux.readObjects("METAS");
   aux=null;
-  const vendas=new XlsxArchive(await fetchDriveWorkbook(salesId,refresh));
+  const vendas=await fetchDriveWorkbook(salesId,refresh);
   const salesSheet=vendas.sheetNames.find(n=>norm(n)==="SHEET1")||vendas.sheetNames[0];
   if(!salesSheet)throw new Error("A base de faturamento não possui uma aba legível.");
   let headers=null,headerIx=null,latest=null,validCount=0;
-  vendas.readRows(salesSheet,row=>{
+  await vendas.readRows(salesSheet,row=>{
     if(!headers){headers=row.map(c=>String(cellValue(c)??"").trim());headerIx=new Map(headers.map((h,i)=>[h,i]));return}
-    const val=(name)=>cellValue(row[headerIx.get(name)]),date=dateValue(val("Data Faturamento"));
+    const val=name=>cellValue(row[headerIx.get(name)]),date=dateValue(val("Data Faturamento"));
     if(!date||norm(val("Posição"))!=="FECHADO")return;
     validCount++;if(!latest||date>latest)latest=date;
   });
   if(!validCount||!latest)throw new Error("A base não contém vendas fechadas válidas.");
   const source=buildNdjsonStream(vendas,salesSheet,headers,metaRows,rcaRows,clientRows,latest,validCount);
-  const compressed=source.pipeThrough(new CompressionStream("gzip"));
-  await env.DATA_CACHE.put(DATA_KEY,compressed,{httpMetadata:{contentType:"application/x-ndjson",contentEncoding:"gzip",cacheControl:"private, no-store"}});
+  await env.DATA_CACHE.put(DATA_KEY,source.pipeThrough(new CompressionStream("gzip")),{httpMetadata:{contentType:"application/x-ndjson",contentEncoding:"gzip",cacheControl:"private, no-store"}});
   return {ok:true,rows:validCount,updatedAt:new Date().toISOString()}
 }
-
 export default {async fetch(req,env){const url=new URL(req.url),secret=env.SESSION_SECRET;if(!secret)return json({message:"Configuração de sessão ausente."},503);
 if(url.pathname==="/api/diagcrypto"){try{const k=await crypto.subtle.importKey("raw",enc.encode("teste"),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:enc.encode("salt"),iterations:1000,hash:"SHA-256"},k,256);return json({ok:true,len:bits.byteLength},200)}catch(e){return json({ok:false,error:String(e&&e.message?e.message:e)},500)}}
 if(url.pathname==="/api/login"&&req.method==="POST"){try{const body=await req.json(),login=String(body.login||"").trim().toLowerCase();const us=await loadUsers(),u=us[login];if(!u)return json({message:"Usuário não encontrado."},401);if(!u.ativo)return json({message:"Usuário inativo."},401);let valid=false;try{valid=await verifyPassword(body.password||"",u)}catch(e){return json({message:"Falha interna na validação da senha: "+String(e&&e.message?e.message:e)},500)}if(!valid)return json({message:"Senha inválida."},401);const tok=await issue(login,secret);return json({ok:true,user:safe({login,...u})},200,{"set-cookie":"rbn_session="+tok+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200"})}catch{return json({message:"Não foi possível autenticar."},500)}}
 if(url.pathname==="/api/logout"&&req.method==="POST")return json({ok:true},200,{"set-cookie":"rbn_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"});
 if(url.pathname==="/api/session"){const u=await session(req,secret);return json(u?{authenticated:true,user:safe(u)}:{authenticated:false})}
-
 if(url.pathname==="/api/dataset"){
   const u=await session(req,secret);if(!u)return json({message:"Sessão expirada."},401);
   const role=String(u.perfil||"").toUpperCase();if(role!=="ADMIN"&&role!=="GERENTE")return json({message:"A base comercial está liberada apenas para Admin e Gerente."},403);
@@ -246,6 +254,5 @@ if(url.pathname==="/api/rebuild"&&req.method==="POST"){
   catch(e){return json({message:e?.message||String(e)},502)}
   finally{REBUILDING=false}
 }
-
 if(url.pathname==="/api/file"){const u=await session(req,secret);if(!u)return json({message:"Sessão expirada."},401);const role=String(u.perfil||"").toUpperCase();if(role!=="ADMIN"&&role!=="GERENTE")return json({message:"A prévia web com base integral está liberada apenas para Admin e Gerente."},403);const kind=url.searchParams.get("kind"),id=kind==="vendas"?env.SALES_FILE_ID:kind==="aux"?env.AUX_FILE_ID:null;if(!id)return json({message:"Base inválida."},400);const drive=new URL("https://drive.google.com/uc");drive.searchParams.set("export","download");drive.searchParams.set("id",id);const refresh=url.searchParams.get("refresh")==="1";if(refresh)drive.searchParams.set("_cb",String(Date.now()));const rr=await fetch(drive.toString(),refresh?{redirect:"follow",headers:{"cache-control":"no-cache","pragma":"no-cache","user-agent":"Mozilla/5.0"}}:{redirect:"follow",cf:{cacheTtl:600,cacheEverything:true},headers:{"user-agent":"Mozilla/5.0"}});if(!rr.ok)return json({message:"Falha ao carregar a base do Drive."},502);const ct=rr.headers.get("content-type")||"";if(ct.includes("text/html"))return json({message:"A base do Drive não está disponível para download por link."},502);const h=new Headers();h.set("content-type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");h.set("cache-control",refresh?"private, no-store":"private, max-age=600");return new Response(rr.body,{status:200,headers:h})}
 return staticFile(url.pathname)}};
