@@ -124,7 +124,7 @@ function initData(force=false){
   destroyCharts();
   if(state.worker)state.worker.terminate();
   setStatus(force?'Atualizando bases do Drive…':'Conectando ao Drive…',true);
-  const v=Date.now();
+  const v=force?Date.now():'20261019-4';
   state.worker=new Worker('/data-worker.js?v='+v);
   state.worker.onmessage=e=>{
     const m=e.data||{};
@@ -144,7 +144,11 @@ function initData(force=false){
       $('#content').innerHTML=`<div class="empty"><strong>Não foi possível carregar os dados.</strong><br><br>${esc(m.message||'Erro desconhecido')}</div>`;
     }
   };
-  state.worker.postMessage({type:'init'});
+  state.worker.onerror=e=>{
+    setStatus('',false);
+    $('#content').innerHTML=`<div class="empty"><strong>Falha ao iniciar o processamento das bases.</strong><br><br>${esc(e.message||'Erro no worker de dados')}</div>`;
+  };
+  state.worker.postMessage({type:'init',force});
 }
 function normalizeMulti(v){
   if(Array.isArray(v)) return v.map(String).filter(x=>x&&x!=='Todos');
