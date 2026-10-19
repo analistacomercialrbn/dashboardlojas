@@ -88,7 +88,7 @@ function buildHistory(){
   for(const s of SALES){
     if(s.client==null) continue;
     if(!CLIENT_HISTORY.has(s.client)) CLIENT_HISTORY.set(s.client,[]);
-    CLIENT_HISTORY.get(s.client).push({date:s.date, value:s.value, rca:s.rca});
+    CLIENT_HISTORY.get(s.client).push({date:s.date, value:s.value, rca:s.rca, department:s.department});
   }
   for(const arr of CLIENT_HISTORY.values()) arr.sort((a,b)=>a.date-b.date);
 }
@@ -200,11 +200,18 @@ async function init(){
   }
 }
 
+function multi(v){
+  if(Array.isArray(v))return v.map(String).filter(x=>x&&x!=='Todos');
+  if(v===null||v===undefined||v===''||v==='Todos')return [];
+  return [String(v)];
+}
 function allowedRca(filters){
   const active=RCAS.filter(r=>r.active);
+  const supervisors=multi(filters.supervisor);
+  const rcas=multi(filters.rca);
   return new Set(active.filter(r=>{
-    if(filters.supervisor && filters.supervisor!=='Todos' && r.supervisor!==filters.supervisor) return false;
-    if(filters.rca && filters.rca!=='Todos' && String(r.code)!==String(filters.rca)) return false;
+    if(supervisors.length && !supervisors.includes(String(r.supervisor))) return false;
+    if(rcas.length && !rcas.includes(String(r.code))) return false;
     return true;
   }).map(r=>r.code));
 }
@@ -214,7 +221,7 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
     if(!allowed.has(s.rca)) return false;
     if(filters.year && filters.year!=='Todos' && s.year!==Number(filters.year)) return false;
     if(!ignoreMonth && filters.month && filters.month!=='Todos' && s.month!==Number(filters.month)) return false;
-    if(filters.department && filters.department!=='Todos' && s.department!==filters.department) return false;
+    const departments=multi(filters.department); if(departments.length && !departments.includes(String(s.department))) return false;
     if(city && norm(s.city)!==norm(city)) return false;
     return true;
   });
@@ -225,7 +232,7 @@ function filterMetas(filters,{ignoreMonth=false}={}){
     if(!allowed.has(m.rca)) return false;
     if(filters.year && filters.year!=='Todos' && m.year!==Number(filters.year)) return false;
     if(!ignoreMonth && filters.month && filters.month!=='Todos' && m.month!==Number(filters.month)) return false;
-    if(filters.department && filters.department!=='Todos' && m.department && m.department!==filters.department) return false;
+    const departments=multi(filters.department); if(departments.length && m.department && !departments.includes(String(m.department))) return false;
     return true;
   });
 }
@@ -311,6 +318,7 @@ function carteira(filters){
   const lim6=new Date(cutoff);lim6.setMonth(lim6.getMonth()-6);
   const lim12=new Date(cutoff);lim12.setMonth(lim12.getMonth()-12);
   const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
   const inactive=[];
   const by=new Map();
   let short=0,long=0;
@@ -318,14 +326,16 @@ function carteira(filters){
     const reg=CLIENTS.get(client);
     const owner=reg?.rca ?? hist[hist.length-1]?.rca;
     if(!allowed.has(owner))continue;
+    const scopedHist=departments.length?hist.filter(h=>departments.includes(String(h.department))):hist;
+    if(!scopedHist.length)continue;
     let last=null,rev12=0;
-    for(const h of hist){
+    for(const h of scopedHist){
       if(h.date<=cutoff) last=h.date;
       if(h.date>=lim12 && h.date<=cutoff)rev12+=h.value;
     }
     if(!last)continue;
-    const isShort=last<=lim3 && last>=lim6;
-    const isLong=last<=lim3 && last>=lim12;
+    const isShort=last<=lim3 && last>lim6;
+    const isLong=last<=lim6 && last>=lim12;
     if(!isShort && !isLong)continue;
     const days=Math.floor((cutoff-last)/86400000);
     if(isShort)short++;if(isLong)long++;
@@ -345,7 +355,7 @@ function carteira(filters){
     newClients++;
   }
   inactive.sort((a,b)=>b.revenue12-a.revenue12);
-  return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>b.long-a.long),inactive:inactive.slice(0,120)};
+  return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),inactive:inactive.slice(0,120)};
 }
 function produtos(filters){
   const rows=filterSales(filters);
