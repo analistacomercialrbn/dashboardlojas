@@ -10,6 +10,67 @@ let CLIENT_HISTORY = new Map();
 let LATEST_DATE = null;
 let FORCE_REFRESH = false;
 
+const CACHE_DB = 'rbn-supervisao-cache';
+const CACHE_STORE = 'snapshots';
+const CACHE_KEY = 'normalized-v3';
+
+function openCacheDb(){
+  return new Promise((resolve,reject)=>{
+    if(typeof indexedDB==='undefined') return resolve(null);
+    const req=indexedDB.open(CACHE_DB,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(CACHE_STORE))db.createObjectStore(CACHE_STORE);};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function loadLocalCache(){
+  try{
+    const db=await openCacheDb(); if(!db)return null;
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CACHE_STORE,'readonly');
+      const req=tx.objectStore(CACHE_STORE).get(CACHE_KEY);
+      req.onsuccess=()=>resolve(req.result||null);
+      req.onerror=()=>reject(req.error);
+    });
+  }catch{return null}
+}
+async function saveLocalCache(){
+  try{
+    const db=await openCacheDb(); if(!db)return;
+    const snapshot={
+      savedAt:Date.now(),
+      sales:SALES,
+      metas:METAS,
+      rcas:RCAS,
+      clients:[...CLIENTS.entries()],
+      latest:LATEST_DATE
+    };
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CACHE_STORE,'readwrite');
+      tx.objectStore(CACHE_STORE).put(snapshot,CACHE_KEY);
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch{}
+}
+function restoreLocalCache(snapshot){
+  SALES=Array.isArray(snapshot?.sales)?snapshot.sales:[];
+  METAS=Array.isArray(snapshot?.metas)?snapshot.metas:[];
+  RCAS=Array.isArray(snapshot?.rcas)?snapshot.rcas:[];
+  CLIENTS=new Map(Array.isArray(snapshot?.clients)?snapshot.clients:[]);
+  RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+  LATEST_DATE=snapshot?.latest?new Date(snapshot.latest):null;
+  buildHistory();
+}
+function emitReady(){
+  const years=[...new Set(SALES.map(s=>s.year))].sort((a,b)=>b-a);
+  const departments=[...new Set(SALES.map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const supervisors=[...new Set(RCAS.filter(r=>r.active).map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const activeRcas=RCAS.filter(r=>r.active).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  postStage('Base pronta.',100);
+  postMessage({type:'ready',dimensions:{years,departments,supervisors,rcas:activeRcas,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
+}
+
 const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 function postStage(text, progress=0){ postMessage({type:'stage', text, progress}); }
@@ -80,7 +141,10 @@ async function getWorkbook(kind){
   });
   if(!res.ok) throw new Error(await res.text() || 'Falha ao carregar base');
   const buf=await res.arrayBuffer();
-  return XLSX.read(buf,{type:'array',cellDates:true});
+  const opts={type:'array',cellDates:false,dense:true};
+  if(kind==='aux')opts.sheets=['RCA','CLIENTES','METAS'];
+  else opts.sheets=['Sheet1'];
+  return XLSX.read(buf,opts);
 }
 function addSet(map,key,val){
   if(!map.has(key)) map.set(key,new Set());
@@ -100,6 +164,15 @@ function buildHistory(){
 
 async function init(){
   try{
+    if(!FORCE_REFRESH){
+      postStage('Abrindo base local…',4);
+      const cached=await loadLocalCache();
+      if(cached?.sales?.length){
+        restoreLocalCache(cached);
+        emitReady();
+        return;
+      }
+    }
     postStage('Baixando base de vendedores e metas…',8);
     const aux=await getWorkbook('aux');
     postStage('Lendo estrutura comercial…',18);
@@ -186,20 +259,8 @@ async function init(){
     LATEST_DATE=maxDate;
     buildHistory();
 
-    const years=[...new Set(SALES.map(s=>s.year))].sort((a,b)=>b-a);
-    const departments=[...new Set(SALES.map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-    const supervisors=[...new Set(RCAS.filter(r=>r.active).map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-    const activeRcas=RCAS.filter(r=>r.active).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
-
-    postStage('Base pronta.',100);
-    postMessage({
-      type:'ready',
-      dimensions:{
-        years,departments,supervisors,
-        rcas:activeRcas,
-        latest:LATEST_DATE?LATEST_DATE.toISOString():null
-      }
-    });
+    emitReady();
+    saveLocalCache();
   }catch(err){
     postMessage({type:'error',message:err?.message||String(err)});
   }
