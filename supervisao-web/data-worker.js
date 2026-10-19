@@ -1,6 +1,4 @@
 /* Rebanho Supervisão Web — processamento das bases fora da thread principal. */
-importScripts('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');
-
 let SALES = [];
 let METAS = [];
 let RCAS = [];
@@ -9,6 +7,23 @@ let RCA_BY_CODE = new Map();
 let CLIENT_HISTORY = new Map();
 let LATEST_DATE = null;
 let FORCE_REFRESH = false;
+let XLSX_READY = false;
+
+function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'s';}
+function now(){return performance.now();}
+function ensureXlsx(){
+  if(XLSX_READY && typeof XLSX!=='undefined') return;
+  postStage('Carregando leitor Excel…',5);
+  const t=now();
+  try{
+    importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+  }catch(e){
+    throw new Error('Falha ao carregar o leitor Excel: '+(e?.message||String(e)));
+  }
+  if(typeof XLSX==='undefined') throw new Error('O leitor Excel não foi inicializado.');
+  XLSX_READY=true;
+  postStage('Leitor Excel carregado em '+secs(now()-t)+'.',7);
+}
 
 const CACHE_DB = 'rbn-supervisao-cache';
 const CACHE_STORE = 'snapshots';
@@ -122,29 +137,68 @@ function sheet(wb, wanted){
   const name=wb.SheetNames.find(n=>norm(n)===norm(wanted));
   return name ? wb.Sheets[name] : null;
 }
+function cellValue(cell){
+  if(cell===null||cell===undefined)return null;
+  if(typeof cell==='object' && Object.prototype.hasOwnProperty.call(cell,'v'))return cell.v;
+  return cell;
+}
+function denseRows(ws){
+  if(!ws)return [];
+  if(Array.isArray(ws))return ws;
+  if(Array.isArray(ws['!data']))return ws['!data'];
+  return null;
+}
 function readSheet(wb, wanted){
   const ws=sheet(wb,wanted);
   if(!ws) return [];
-  const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
-  let header=0;
-  for(let i=0;i<Math.min(matrix.length,10);i++){
-    const set=new Set((matrix[i]||[]).map(x=>String(x??'').trim()));
-    if(set.has('Data Faturamento') || set.has('COD_RCA') || set.has('CODCLI')) { header=i; break; }
+  const dense=denseRows(ws);
+  if(!dense){
+    return XLSX.utils.sheet_to_json(ws,{range:0,defval:null,raw:true,blankrows:false});
   }
-  return XLSX.utils.sheet_to_json(ws,{range:header,defval:null,raw:true});
+  if(!dense.length)return [];
+  const headers=(dense[0]||[]).map(c=>String(cellValue(c)??'').trim());
+  const out=[];
+  for(let i=1;i<dense.length;i++){
+    const row=dense[i]; if(!row)continue;
+    const obj={}; let any=false;
+    for(let j=0;j<headers.length;j++){
+      if(!headers[j])continue;
+      const v=cellValue(row[j]);
+      if(v!==null&&v!==undefined&&v!=='')any=true;
+      obj[headers[j]]=v;
+    }
+    if(any)out.push(obj);
+  }
+  return out;
 }
 async function getWorkbook(kind){
+  const isSales=kind==='vendas';
+  const label=isSales?'Faturamento':'Base auxiliar';
+  const baseProgress=isSales?30:10;
   const suffix=FORCE_REFRESH?`&refresh=1&t=${Date.now()}`:'';
+  const tFetch=now();
+  postStage('Baixando '+label.toLowerCase()+'…',baseProgress);
   const res=await fetch(`/api/file?kind=${kind}${suffix}`,{
     credentials:'include',
     cache:FORCE_REFRESH?'no-store':'default'
   });
   if(!res.ok) throw new Error(await res.text() || 'Falha ao carregar base');
   const buf=await res.arrayBuffer();
-  const opts={type:'array',cellDates:false,dense:true};
-  if(kind==='aux')opts.sheets=['RCA','CLIENTES','METAS'];
-  else opts.sheets=['Sheet1'];
-  return XLSX.read(buf,opts);
+  postStage(label+' recebido ('+(buf.byteLength/1048576).toLocaleString('pt-BR',{maximumFractionDigits:1})+' MB) em '+secs(now()-tFetch)+'. Abrindo Excel…',baseProgress+5);
+  const tParse=now();
+  const opts={
+    type:'array',
+    cellDates:false,
+    dense:true,
+    cellText:false,
+    cellHTML:false,
+    cellFormula:false,
+    WTF:false,
+    sheets:isSales?['Sheet1']:['RCA','CLIENTES','METAS']
+  };
+  const wb=XLSX.read(buf,opts);
+  postStage(label+' aberto em '+secs(now()-tParse)+'.',baseProgress+10);
+  return wb;
 }
 function addSet(map,key,val){
   if(!map.has(key)) map.set(key,new Set());
@@ -173,7 +227,7 @@ async function init(){
         return;
       }
     }
-    postStage('Baixando base de vendedores e metas…',8);
+    ensureXlsx();
     const aux=await getWorkbook('aux');
     postStage('Lendo estrutura comercial…',18);
     const rcaRows=readSheet(aux,'RCA');
@@ -218,46 +272,51 @@ async function init(){
     const vendas=await getWorkbook('vendas');
     postStage('Processando faturamento…',45);
     const ws=vendas.Sheets[vendas.SheetNames.find(n=>norm(n)==='SHEET1') || vendas.SheetNames[0]];
-    const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
-    let header=0;
-    for(let i=0;i<Math.min(matrix.length,10);i++){
-      const vals=new Set((matrix[i]||[]).map(x=>String(x??'').trim()));
-      if(vals.has('Data Faturamento') && vals.has('Pedidos Enviados')) {header=i;break;}
-    }
-    const rows=XLSX.utils.sheet_to_json(ws,{range:header,defval:null,raw:true});
+    const data=denseRows(ws);
+    if(!data||!data.length)throw new Error('A planilha de faturamento não possui dados legíveis.');
+    const headers=(data[0]||[]).map(c=>String(cellValue(c)??'').trim());
+    const ix=new Map(headers.map((h,i)=>[h,i]));
+    const val=(row,name)=>cellValue(row?.[ix.get(name)]);
     SALES=[];
     let maxDate=null;
-    for(const r of rows){
-      const date=parseDate(r['Data Faturamento']);
-      if(!date || norm(r['Posição'])!=='FECHADO') continue;
-      const codRca=code(r['Cod/Vend.']);
+    const tRows=now();
+    postStage('Processando '+Math.max(0,data.length-1).toLocaleString('pt-BR')+' linhas de faturamento…',50);
+    for(let i=1;i<data.length;i++){
+      const raw=data[i]; if(!raw)continue;
+      const date=parseDate(val(raw,'Data Faturamento'));
+      if(!date || norm(val(raw,'Posição'))!=='FECHADO') continue;
+      const codRca=code(val(raw,'Cod/Vend.'));
       const rr=RCA_BY_CODE.get(codRca)||{};
-      const prod=code(r['Cod/Produto']);
-      const value=num(r['Pedidos Enviados']);
-      const margin=num(r['% Margem']);
+      const prod=code(val(raw,'Cod/Produto'));
+      const value=num(val(raw,'Pedidos Enviados'));
+      const marginRaw=val(raw,'% Margem');
+      const margin=marginRaw===null||marginRaw===undefined?null:num(marginRaw);
       const row={
         date,
         year:date.getFullYear(),
         month:date.getMonth()+1,
         monthKey:formatMonthKey(date),
         rca:codRca,
-        rcaName:rr.name||String(r.RCA??codRca??''),
-        supervisor:rr.supervisor||String(r.SUPERVISOR??''),
-        department:String(r.DEPARTAMENTO??'').trim(),
-        client:code(r['Cod/Cliente']),
+        rcaName:rr.name||String(codRca??''),
+        supervisor:rr.supervisor||'',
+        department:String(val(raw,'DEPARTAMENTO')??'').trim(),
+        client:code(val(raw,'Cod/Cliente')),
         product:prod,
-        productName:productLabel(r['Cod/Produto']),
-        order:String(r.NUMPED ?? '').trim(),
-        city:String(r.MUNICENT??'').trim(),
-        uf:norm(r.ESTENT??''),
+        productName:productLabel(val(raw,'Cod/Produto')),
+        order:String(val(raw,'NUMPED')??'').trim(),
+        city:String(val(raw,'MUNICENT')??'').trim(),
+        uf:norm(val(raw,'ESTENT')),
         value,
         marginPct:Number.isFinite(margin)?margin:null
       };
       SALES.push(row);
       if(!maxDate || date>maxDate) maxDate=date;
     }
+    postStage(SALES.length.toLocaleString('pt-BR')+' linhas válidas processadas em '+secs(now()-tRows)+'. Montando histórico…',78);
     LATEST_DATE=maxDate;
+    const tHist=now();
     buildHistory();
+    postStage('Histórico comercial montado em '+secs(now()-tHist)+'.',92);
 
     emitReady();
     saveLocalCache();
