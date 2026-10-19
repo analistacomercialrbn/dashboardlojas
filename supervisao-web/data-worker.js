@@ -8,6 +8,7 @@ let CLIENTS = new Map();
 let RCA_BY_CODE = new Map();
 let CLIENT_HISTORY = new Map();
 let LATEST_DATE = null;
+let FORCE_REFRESH = false;
 
 const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
@@ -72,7 +73,11 @@ function readSheet(wb, wanted){
   return XLSX.utils.sheet_to_json(ws,{range:header,defval:null,raw:true});
 }
 async function getWorkbook(kind){
-  const res=await fetch(`/api/file?kind=${kind}&t=${Date.now()}`,{credentials:'include'});
+  const suffix=FORCE_REFRESH?`&refresh=1&t=${Date.now()}`:'';
+  const res=await fetch(`/api/file?kind=${kind}${suffix}`,{
+    credentials:'include',
+    cache:FORCE_REFRESH?'no-store':'default'
+  });
   if(!res.ok) throw new Error(await res.text() || 'Falha ao carregar base');
   const buf=await res.arrayBuffer();
   return XLSX.read(buf,{type:'array',cellDates:true});
@@ -471,7 +476,7 @@ function metasPage(filters){
 
 onmessage=async(e)=>{
   const msg=e.data||{};
-  if(msg.type==='init') return init();
+  if(msg.type==='init'){FORCE_REFRESH=!!msg.force;return init();}
   if(msg.type==='query'){
     try{
       const f=msg.filters||{};
