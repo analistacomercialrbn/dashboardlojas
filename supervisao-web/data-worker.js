@@ -342,22 +342,29 @@ function allowedRca(filters){
 }
 function filterSales(filters,{ignoreMonth=false, city=null}={}){
   const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
+  const targetCity=city?norm(city):null;
   return SALES.filter(s=>{
     if(!allowed.has(s.rca)) return false;
-    if(filters.year && filters.year!=='Todos' && s.year!==Number(filters.year)) return false;
-    if(!ignoreMonth && filters.month && filters.month!=='Todos' && s.month!==Number(filters.month)) return false;
-    const departments=multi(filters.department); if(departments.length && !departments.includes(String(s.department))) return false;
-    if(city && norm(s.city)!==norm(city)) return false;
+    if(targetYear!==null && s.year!==targetYear) return false;
+    if(targetMonth!==null && s.month!==targetMonth) return false;
+    if(departments.length && !departments.includes(String(s.department))) return false;
+    if(targetCity && norm(s.city)!==targetCity) return false;
     return true;
   });
 }
 function filterMetas(filters,{ignoreMonth=false}={}){
   const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
   return METAS.filter(m=>{
     if(!allowed.has(m.rca)) return false;
-    if(filters.year && filters.year!=='Todos' && m.year!==Number(filters.year)) return false;
-    if(!ignoreMonth && filters.month && filters.month!=='Todos' && m.month!==Number(filters.month)) return false;
-    const departments=multi(filters.department); if(departments.length && m.department && !departments.includes(String(m.department))) return false;
+    if(targetYear!==null && m.year!==targetYear) return false;
+    if(targetMonth!==null && m.month!==targetMonth) return false;
+    if(departments.length && m.department && !departments.includes(String(m.department))) return false;
     return true;
   });
 }
