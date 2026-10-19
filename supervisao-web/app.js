@@ -124,7 +124,7 @@ function initData(force=false){
   destroyCharts();
   if(state.worker)state.worker.terminate();
   setStatus(force?'Atualizando bases do Drive…':'Conectando ao Drive…',true);
-  const v=force?Date.now():'20261019-6';
+  const v=force?Date.now():'20261019-7';
   state.worker=new Worker('/data-worker.js?v='+v);
   state.worker.onmessage=e=>{
     const m=e.data||{};
