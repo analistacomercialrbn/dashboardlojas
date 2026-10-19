@@ -7,27 +7,13 @@ let RCA_BY_CODE = new Map();
 let CLIENT_HISTORY = new Map();
 let LATEST_DATE = null;
 let FORCE_REFRESH = false;
-let XLSX_READY = false;
+
 
 function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'s';}
 function now(){return performance.now();}
-function ensureXlsx(){
-  if(XLSX_READY && typeof XLSX!=='undefined') return;
-  postStage('Carregando leitor Excel…',5);
-  const t=now();
-  try{
-    importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
-  }catch(e){
-    throw new Error('Falha ao carregar o leitor Excel: '+(e?.message||String(e)));
-  }
-  if(typeof XLSX==='undefined') throw new Error('O leitor Excel não foi inicializado.');
-  XLSX_READY=true;
-  postStage('Leitor Excel carregado em '+secs(now()-t)+'.',7);
-}
-
 const CACHE_DB = 'rbn-supervisao-cache';
 const CACHE_STORE = 'snapshots';
-const CACHE_KEY = 'normalized-v3';
+const CACHE_KEY = 'server-normalized-v1';
 
 function openCacheDb(){
   return new Promise((resolve,reject)=>{
@@ -109,8 +95,8 @@ function code(v){
 function parseDate(v){
   if(v instanceof Date && !Number.isNaN(v.getTime())) return v;
   if(typeof v === 'number'){
-    const d=XLSX.SSF.parse_date_code(v);
-    if(d) return new Date(d.y,d.m-1,d.d);
+    const d=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000);
+    return Number.isNaN(d.getTime())?null:new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
   }
   if(!v) return null;
   const s=String(v).trim();
@@ -133,73 +119,6 @@ function productLabel(v){
   const name=s.replace(/^\s*\d+\s*-\s*/,'').trim();
   return name || (code(v)!=null ? `Produto ${code(v)}` : 'Sem descrição');
 }
-function sheet(wb, wanted){
-  const name=wb.SheetNames.find(n=>norm(n)===norm(wanted));
-  return name ? wb.Sheets[name] : null;
-}
-function cellValue(cell){
-  if(cell===null||cell===undefined)return null;
-  if(typeof cell==='object' && Object.prototype.hasOwnProperty.call(cell,'v'))return cell.v;
-  return cell;
-}
-function denseRows(ws){
-  if(!ws)return [];
-  if(Array.isArray(ws))return ws;
-  if(Array.isArray(ws['!data']))return ws['!data'];
-  return null;
-}
-function readSheet(wb, wanted){
-  const ws=sheet(wb,wanted);
-  if(!ws) return [];
-  const dense=denseRows(ws);
-  if(!dense){
-    return XLSX.utils.sheet_to_json(ws,{range:0,defval:null,raw:true,blankrows:false});
-  }
-  if(!dense.length)return [];
-  const headers=(dense[0]||[]).map(c=>String(cellValue(c)??'').trim());
-  const out=[];
-  for(let i=1;i<dense.length;i++){
-    const row=dense[i]; if(!row)continue;
-    const obj={}; let any=false;
-    for(let j=0;j<headers.length;j++){
-      if(!headers[j])continue;
-      const v=cellValue(row[j]);
-      if(v!==null&&v!==undefined&&v!=='')any=true;
-      obj[headers[j]]=v;
-    }
-    if(any)out.push(obj);
-  }
-  return out;
-}
-async function getWorkbook(kind){
-  const isSales=kind==='vendas';
-  const label=isSales?'Faturamento':'Base auxiliar';
-  const baseProgress=isSales?30:10;
-  const suffix=FORCE_REFRESH?`&refresh=1&t=${Date.now()}`:'';
-  const tFetch=now();
-  postStage('Baixando '+label.toLowerCase()+'…',baseProgress);
-  const res=await fetch(`/api/file?kind=${kind}${suffix}`,{
-    credentials:'include',
-    cache:FORCE_REFRESH?'no-store':'default'
-  });
-  if(!res.ok) throw new Error(await res.text() || 'Falha ao carregar base');
-  const buf=await res.arrayBuffer();
-  postStage(label+' recebido ('+(buf.byteLength/1048576).toLocaleString('pt-BR',{maximumFractionDigits:1})+' MB) em '+secs(now()-tFetch)+'. Abrindo Excel…',baseProgress+5);
-  const tParse=now();
-  const opts={
-    type:'array',
-    cellDates:false,
-    dense:true,
-    cellText:false,
-    cellHTML:false,
-    cellFormula:false,
-    WTF:false,
-    sheets:isSales?['Sheet1']:['RCA','CLIENTES','METAS']
-  };
-  const wb=XLSX.read(buf,opts);
-  postStage(label+' aberto em '+secs(now()-tParse)+'.',baseProgress+10);
-  return wb;
-}
 function addSet(map,key,val){
   if(!map.has(key)) map.set(key,new Set());
   if(val!==null && val!==undefined) map.get(key).add(val);
@@ -216,113 +135,62 @@ function buildHistory(){
   for(const arr of CLIENT_HISTORY.values()) arr.sort((a,b)=>a.date-b.date);
 }
 
+async function fetchServerDataset(force){
+  if(force){
+    postStage('Atualizando as bases no servidor…',10);
+    const build=await fetch('/api/rebuild?refresh=1',{method:'POST',credentials:'include',cache:'no-store'});
+    let result=null;try{result=await build.json()}catch{}
+    if(!build.ok)throw new Error(result?.message||'O servidor não conseguiu atualizar as bases.');
+    postStage('Bases processadas no servidor. Baixando dados preparados…',35);
+  }
+  let res=await fetch('/api/dataset',{credentials:'include',cache:'no-store'});
+  if(res.status===404&&!force){
+    postStage('Preparando a base comercial no servidor…',15);
+    const build=await fetch('/api/rebuild',{method:'POST',credentials:'include',cache:'no-store'});
+    let result=null;try{result=await build.json()}catch{}
+    if(!build.ok)throw new Error(result?.message||'O servidor não conseguiu preparar as bases.');
+    res=await fetch('/api/dataset',{credentials:'include',cache:'no-store'});
+  }
+  if(!res.ok)throw new Error(await res.text()||'Falha ao carregar a base preparada.');
+  const reader=res.body.getReader(),decoder=new TextDecoder();let pending='',count=0,expectedCount=null;
+  SALES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
+  const consume=line=>{
+    if(!line)return;
+    const item=JSON.parse(line),v=item.value;
+    if(item.type==='meta'){LATEST_DATE=v.latest?new Date(v.latest):null;expectedCount=Number(v.validCount)||0;}
+    else if(item.type==='rca')RCAS.push(v);
+    else if(item.type==='goal')METAS.push(v);
+    else if(item.type==='client')CLIENTS.set(v[0],v[1]);
+    else if(item.type==='sale'){v.date=new Date(v.date);SALES.push(v);count++}
+    if(count&&count%25000===0)postStage('Recebendo dados preparados… '+count.toLocaleString('pt-BR')+' linhas',45+Math.min(45,count/200000*45));
+  };
+  while(true){
+    const {value,done}=await reader.read();
+    if(done)break;
+    pending+=decoder.decode(value,{stream:true});
+    const lines=pending.split('\n');pending=lines.pop()||'';
+    for(const line of lines)consume(line);
+  }
+  pending+=decoder.decode();
+  if(pending.trim())consume(pending);
+  if(!SALES.length)throw new Error('A base preparada não contém vendas fechadas.');
+  if(expectedCount&&SALES.length!==expectedCount)throw new Error('A base preparada chegou incompleta ('+SALES.length.toLocaleString('pt-BR')+' de '+expectedCount.toLocaleString('pt-BR')+' vendas). Tente atualizar novamente.');
+  RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+}
 async function init(){
   try{
     if(!FORCE_REFRESH){
       postStage('Abrindo base local…',4);
       const cached=await loadLocalCache();
-      if(cached?.sales?.length){
-        restoreLocalCache(cached);
-        emitReady();
-        return;
-      }
+      if(cached?.sales?.length){restoreLocalCache(cached);emitReady();return;}
     }
-    ensureXlsx();
-    const aux=await getWorkbook('aux');
-    postStage('Lendo estrutura comercial…',18);
-    const rcaRows=readSheet(aux,'RCA');
-    RCAS=rcaRows.map(r=>({
-      code:code(r.COD_RCA ?? r['Cod/Vend.']),
-      name:String(r.RCA ?? r.VENDEDOR ?? '').trim(),
-      supervisor:String(r.SUPERVISOR ?? '').trim(),
-      active:norm(r.ATIVO ?? 'S')==='S'
-    })).filter(r=>r.code!=null && r.name);
-    RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
-
-    const clientRows=readSheet(aux,'CLIENTES');
-    CLIENTS=new Map();
-    for(const r of clientRows){
-      const c=code(r.CODCLI ?? r['Cod/Cliente'] ?? r.COD_CLIENTE);
-      if(c==null) continue;
-      CLIENTS.set(c,{
-        code:c,
-        name:String(r.CLIENTE ?? r.NOME ?? r['Nome Cliente'] ?? c).trim(),
-        rca:code(r.COD_RCA ?? r['Cod/Vend.'])
-      });
-    }
-
-    const metaRows=readSheet(aux,'METAS');
-    METAS=metaRows.map(r=>{
-      const codRca=code(r.COD_RCA ?? r['Cod/Vend.']);
-      const mk=monthKeyFrom(r.MES ?? r.MÊS ?? r.DATA);
-      const rr=RCA_BY_CODE.get(codRca)||{};
-      return {
-        monthKey:mk,
-        year:mk?Number(mk.slice(0,4)):null,
-        month:mk?Number(mk.slice(5,7)):null,
-        rca:codRca,
-        rcaName:rr.name||String(r.RCA??''),
-        supervisor:rr.supervisor||String(r.SUPERVISOR??''),
-        department:String(r.DEPARTAMENTO ?? r.DEPTO ?? '').trim(),
-        value:num(r.META)
-      };
-    }).filter(x=>x.year && x.month && x.rca!=null);
-
-    postStage('Baixando faturamento…',28);
-    const vendas=await getWorkbook('vendas');
-    postStage('Processando faturamento…',45);
-    const ws=vendas.Sheets[vendas.SheetNames.find(n=>norm(n)==='SHEET1') || vendas.SheetNames[0]];
-    const data=denseRows(ws);
-    if(!data||!data.length)throw new Error('A planilha de faturamento não possui dados legíveis.');
-    const headers=(data[0]||[]).map(c=>String(cellValue(c)??'').trim());
-    const ix=new Map(headers.map((h,i)=>[h,i]));
-    const val=(row,name)=>cellValue(row?.[ix.get(name)]);
-    SALES=[];
-    let maxDate=null;
-    const tRows=now();
-    postStage('Processando '+Math.max(0,data.length-1).toLocaleString('pt-BR')+' linhas de faturamento…',50);
-    for(let i=1;i<data.length;i++){
-      const raw=data[i]; if(!raw)continue;
-      const date=parseDate(val(raw,'Data Faturamento'));
-      if(!date || norm(val(raw,'Posição'))!=='FECHADO') continue;
-      const codRca=code(val(raw,'Cod/Vend.'));
-      const rr=RCA_BY_CODE.get(codRca)||{};
-      const prod=code(val(raw,'Cod/Produto'));
-      const value=num(val(raw,'Pedidos Enviados'));
-      const marginRaw=val(raw,'% Margem');
-      const margin=marginRaw===null||marginRaw===undefined?null:num(marginRaw);
-      const row={
-        date,
-        year:date.getFullYear(),
-        month:date.getMonth()+1,
-        monthKey:formatMonthKey(date),
-        rca:codRca,
-        rcaName:rr.name||String(codRca??''),
-        supervisor:rr.supervisor||'',
-        department:String(val(raw,'DEPARTAMENTO')??'').trim(),
-        client:code(val(raw,'Cod/Cliente')),
-        product:prod,
-        productName:productLabel(val(raw,'Cod/Produto')),
-        order:String(val(raw,'NUMPED')??'').trim(),
-        city:String(val(raw,'MUNICENT')??'').trim(),
-        uf:norm(val(raw,'ESTENT')),
-        value,
-        marginPct:Number.isFinite(margin)?margin:null
-      };
-      SALES.push(row);
-      if(!maxDate || date>maxDate) maxDate=date;
-    }
-    postStage(SALES.length.toLocaleString('pt-BR')+' linhas válidas processadas em '+secs(now()-tRows)+'. Montando histórico…',78);
-    LATEST_DATE=maxDate;
-    const tHist=now();
-    buildHistory();
-    postStage('Histórico comercial montado em '+secs(now()-tHist)+'.',92);
-
-    emitReady();
-    saveLocalCache();
-  }catch(err){
-    postMessage({type:'error',message:err?.message||String(err)});
-  }
+    postStage('Conectando ao serviço de dados…',8);
+    await fetchServerDataset(FORCE_REFRESH);
+    postStage(SALES.length.toLocaleString('pt-BR')+' linhas preparadas recebidas. Montando histórico…',93);
+    const tHist=now();buildHistory();
+    postStage('Histórico comercial montado em '+secs(now()-tHist)+'.',98);
+    emitReady();saveLocalCache();
+  }catch(err){postMessage({type:'error',message:err?.message||String(err)})}
 }
 
 function multi(v){
