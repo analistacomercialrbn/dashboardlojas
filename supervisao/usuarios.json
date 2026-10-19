@@ -14,9 +14,9 @@
     "cod_rca": null,
     "nome": "Airton César",
     "perfil": "ADMIN",
-    "salt": "",
-    "senha_algo": "sha256",
-    "senha_hash": "ca89c4567cd4dfce51afbc27aaa70ab57bfb78957bfabd4fff93efb47ff2f5a9",
+    "salt": "894912174ad635cf1dfdeda03d596e0a",
+    "senha_algo": "pbkdf2_sha256",
+    "senha_hash": "ef61d45a7dff929505a750421b97407d534c428e093cede26ed66b6998a6ed40",
     "supervisor": null
   }
 }
