@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="/styles.css?v=20261016-2" />
+  <link rel="stylesheet" href="/styles.css?v=20261019-3" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -51,11 +51,11 @@
         <label>Mês</label>
         <select id="filterMonth"></select>
         <label>Supervisor</label>
-        <select id="filterSupervisor"></select>
+        <div id="filterSupervisor" class="multi-select"></div>
         <label>RCA</label>
-        <select id="filterRca"></select>
+        <div id="filterRca" class="multi-select"></div>
         <label>Departamento</label>
-        <select id="filterDepartment"></select>
+        <div id="filterDepartment" class="multi-select"></div>
         <button id="clearFilters" class="btn secondary small">Limpar filtros</button>
       </div>
 
@@ -100,6 +100,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/app.js?v=20261016-2"></script>
+  <script src="/app.js?v=20261019-3"></script>
 </body>
 </html>
