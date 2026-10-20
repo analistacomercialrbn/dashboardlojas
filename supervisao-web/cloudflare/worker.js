@@ -1,4 +1,4 @@
-const RAW_BASE = "https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/main/supervisao-web";
+const RAW_BASE = "https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/4e7ccdbcb6e1778f7c4dd4d62cad8c0f2008d676/supervisao-web";
 const USERS_URL = "https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/main/supervisao/usuarios.json";
 const enc = new TextEncoder();
 function json(data,status=200,extra={}){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store, max-age=0",...extra}})}
