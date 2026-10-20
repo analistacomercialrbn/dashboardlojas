@@ -7,6 +7,7 @@ let RCA_BY_CODE = new Map();
 let CLIENT_HISTORY = new Map();
 let LATEST_DATE = null;
 let FORCE_REFRESH = false;
+let SERVER_UPDATED_AT = null;
 
 
 function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'s';}
@@ -14,6 +15,7 @@ function now(){return performance.now();}
 const CACHE_DB = 'rbn-supervisao-cache';
 const CACHE_STORE = 'snapshots';
 const CACHE_KEY = 'server-normalized-v1';
+const LOCAL_CACHE_FALLBACK_MS = 12 * 60 * 60 * 1000;
 
 function openCacheDb(){
   return new Promise((resolve,reject)=>{
@@ -40,6 +42,7 @@ async function saveLocalCache(){
     const db=await openCacheDb(); if(!db)return;
     const snapshot={
       savedAt:Date.now(),
+      serverUpdatedAt:SERVER_UPDATED_AT,
       sales:SALES,
       metas:METAS,
       rcas:RCAS,
@@ -52,9 +55,10 @@ async function saveLocalCache(){
       tx.oncomplete=()=>resolve();
       tx.onerror=()=>reject(tx.error);
     });
-  }catch{}
+  }catch(err){console.warn('Falha ao persistir a cópia local do dashboard:',err?.name||'erro')}
 }
 function restoreLocalCache(snapshot){
+  SERVER_UPDATED_AT=snapshot?.serverUpdatedAt||null;
   SALES=Array.isArray(snapshot?.sales)?snapshot.sales:[];
   METAS=Array.isArray(snapshot?.metas)?snapshot.metas:[];
   RCAS=Array.isArray(snapshot?.rcas)?snapshot.rcas:[];
@@ -135,6 +139,13 @@ function buildHistory(){
   for(const arr of CLIENT_HISTORY.values()) arr.sort((a,b)=>a.date-b.date);
 }
 
+async function fetchServerDatasetInfo(){
+  const res=await fetch('/api/dataset/info',{credentials:'include',cache:'no-store'});
+  if(res.status===404)return null;
+  if(!res.ok){const err=new Error(await res.text()||'Falha ao verificar a versão do snapshot.');err.status=res.status;throw err;}
+  return res.json();
+}
+
 async function fetchServerDataset(force){
   if(force){
     postStage('Atualizando as bases no servidor…',10);
@@ -152,6 +163,7 @@ async function fetchServerDataset(force){
     res=await fetch('/api/dataset',{credentials:'include',cache:'no-store'});
   }
   if(!res.ok)throw new Error(await res.text()||'Falha ao carregar a base preparada.');
+  SERVER_UPDATED_AT=res.headers.get('x-dataset-updated-at')||null;
   const reader=res.body.getReader(),decoder=new TextDecoder();let pending='',count=0,expectedCount=null;
   SALES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
   const consume=line=>{
@@ -182,7 +194,22 @@ async function init(){
     if(!FORCE_REFRESH){
       postStage('Abrindo base local…',4);
       const cached=await loadLocalCache();
-      if(cached?.sales?.length){restoreLocalCache(cached);emitReady();return;}
+      postStage('Conferindo atualização do servidor…',6);
+      let info=null;
+      try{info=await fetchServerDatasetInfo();}
+      catch(err){
+        const cacheAge=Date.now()-Number(cached?.savedAt||0);
+        if(cached?.sales?.length&&cacheAge<LOCAL_CACHE_FALLBACK_MS&&(!err.status||err.status>=500)){
+          restoreLocalCache(cached);emitReady();return;
+        }
+        throw err;
+      }
+      if(cached?.sales?.length){
+        const cacheAge=Date.now()-Number(cached.savedAt||0);
+        const matchesServer=!!info?.updatedAt&&cached.serverUpdatedAt===info.updatedAt;
+        const recentFallback=!info&&cacheAge<LOCAL_CACHE_FALLBACK_MS;
+        if(matchesServer||recentFallback){restoreLocalCache(cached);emitReady();return;}
+      }
     }
     postStage('Conectando ao serviço de dados…',8);
     await fetchServerDataset(FORCE_REFRESH);
