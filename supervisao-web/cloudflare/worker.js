@@ -168,7 +168,7 @@ function buildNdjsonStream(archive,sheetName,metaRows,rcaRows,clientRows){
     const date=dateValue(val("Data Faturamento"));if(!date||norm(val("Posição"))!=="FECHADO")return;
     validCount++;if(!latest||date>latest)latest=date;
     const codRca=code(val("Cod/Vend.")),rr=rcaMap.get(codRca)||{},prod=code(val("Cod/Produto")),v=num(val("Pedidos Enviados")),marginRaw=val("% Margem"),margin=marginRaw===null||marginRaw===undefined?null:num(marginRaw),m=String(date.getMonth()+1).padStart(2,"0");
-    write(encode("sale",{date:date.toISOString(),year:date.getFullYear(),month:date.getMonth()+1,monthKey:String(date.getFullYear())+"-"+m,rca:codRca,rcaName:rr.name||String(codRca??""),supervisor:rr.supervisor||"",department:String(val(row,"DEPARTAMENTO")??"").trim(),client:code(val(row,"Cod/Cliente")),product:prod,productName:productLabel(val(row,"Cod/Produto")),order:String(val(row,"NUMPED")??"").trim(),city:String(val(row,"MUNICENT")??"").trim(),uf:norm(val(row,"ESTENT")),value:v,marginPct:Number.isFinite(margin)?margin:null}));
+    write(encode("sale",{date:date.toISOString(),year:date.getFullYear(),month:date.getMonth()+1,monthKey:String(date.getFullYear())+"-"+m,rca:codRca,rcaName:rr.name||String(codRca??""),supervisor:rr.supervisor||"",department:String(val("DEPARTAMENTO")??"").trim(),client:code(val(row,"Cod/Cliente")),product:prod,productName:productLabel(val(row,"Cod/Produto")),order:String(val(row,"NUMPED")??"").trim(),city:String(val(row,"MUNICENT")??"").trim(),uf:norm(val(row,"ESTENT")),value:v,marginPct:Number.isFinite(margin)?margin:null}));
   };
   async function startSales(){
     const entry=archive.entries.get(archive.sheetPaths.get(sheetName));if(!entry)throw new Error("A aba de faturamento não está disponível.");
@@ -214,6 +214,36 @@ function buildNdjsonStream(archive,sheetName,metaRows,rcaRows,clientRows){
     }
   });
 }
+async function putGzipMultipart(bucket,key,source){
+  const upload=await bucket.createMultipartUpload(key,{httpMetadata:{contentType:"application/x-ndjson",contentEncoding:"gzip",cacheControl:"private, no-store"}});
+  const reader=source.pipeThrough(new CompressionStream("gzip")).getReader();
+  const parts=[],partSize=10*1024*1024;
+  let buffers=[],size=0,partNumber=1;
+  const sendPart=async()=>{
+    const body=new Uint8Array(size);let offset=0;
+    for(const buffer of buffers){body.set(buffer,offset);offset+=buffer.byteLength}
+    parts.push(await upload.uploadPart(partNumber++,body));
+    buffers=[];size=0;
+  };
+  try{
+    while(true){
+      const {value,done}=await reader.read();
+      if(done)break;
+      let offset=0;
+      while(offset<value.byteLength){
+        const length=Math.min(partSize-size,value.byteLength-offset);
+        buffers.push(value.subarray(offset,offset+length));size+=length;offset+=length;
+        if(size===partSize)await sendPart();
+      }
+    }
+    if(size)await sendPart();
+    if(!parts.length)throw new Error("A base processada ficou vazia.");
+    return await upload.complete(parts);
+  }catch(error){
+    try{await upload.abort()}catch{}
+    throw error;
+  }finally{reader.releaseLock()}
+}
 async function rebuildDataset(env,refresh){
   const salesId=env.SALES_FILE_ID,auxId=env.AUX_FILE_ID;
   if(!salesId||!auxId)throw new Error("IDs das bases do Drive não estão configurados.");
@@ -225,7 +255,7 @@ async function rebuildDataset(env,refresh){
   const salesSheet=vendas.sheetNames.find(n=>norm(n)==="SHEET1")||vendas.sheetNames[0];
   if(!salesSheet)throw new Error("A base de faturamento não possui uma aba legível.");
   const source=buildNdjsonStream(vendas,salesSheet,metaRows,rcaRows,clientRows);
-  await env.DATA_CACHE.put(DATA_KEY,source.pipeThrough(new CompressionStream("gzip")),{httpMetadata:{contentType:"application/x-ndjson",contentEncoding:"gzip",cacheControl:"private, no-store"}});
+  await putGzipMultipart(env.DATA_CACHE,DATA_KEY,source);
   const stored=await env.DATA_CACHE.head(DATA_KEY);
   if(!stored)throw new Error("A base foi processada, mas o snapshot não foi encontrado no R2.");
   return {ok:true,rows:Number(stored.customMetadata?.validCount)||null,updatedAt:stored.uploaded?.toISOString?.()||new Date().toISOString()}
