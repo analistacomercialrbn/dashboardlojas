@@ -281,7 +281,7 @@ function insight(i){
   let val=i.value;
   if(i.kind==='money')val=money(val,true);
   else if(i.kind==='percent'||typeof val==='number')val=pct(val);
-  return `<div class="insight-card ${esc(i.level||'attention')}"><div class="insight-badge">${i.level==='critical'?'● Crítico':i.level==='opportunity'?'● Oportunidade':'● Atenção'}</div><div class="insight-value">${esc(val)}</div><div class="insight-title">${esc(i.title)}</div><div class="insight-text">${esc(i.text||'')}</div></div>`;
+  return `<div class="insight ${esc(i.level||'attention')}"><div class="insight-badge">${i.level==='critical'?'● Crítico':i.level==='opportunity'?'● Oportunidade':'● Atenção'}</div><div class="insight-value">${esc(val)}</div><div class="insight-title">${esc(i.title)}</div><div class="insight-text">${esc(i.text||'')}</div></div>`;
 }
 function sectionHeading(title,sub=''){return `<div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div>`}
 
@@ -295,9 +295,10 @@ function renderPage(page,payload){
 
 function renderOverview(p){
   const k=p.kpis||{};
+  const attainment=Math.max(0,Math.min(100,Number(k.attainment)||0));
   $('#content').innerHTML=`
-    <div class="grid kpi-grid">
-      ${kpi('Faturamento',money(k.revenue,true),'Recorte selecionado')}
+    <div class="grid hero-grid">
+      <div class="hero-kpi"><div class="hero-label">Faturamento</div><div class="hero-value">${money(k.revenue,true)}</div><div class="hero-note">Realizado no recorte selecionado</div></div>
       ${kpi('Meta',money(k.meta,true),'Meta do recorte')}
       ${kpi('Atingimento',pct(k.attainment),'Realizado ÷ meta')}
       ${kpi('Clientes positivados',integer(k.clients),'Clientes únicos')}
@@ -305,22 +306,31 @@ function renderOverview(p){
       ${kpi('Mix médio',dec(k.mix),'Produtos por cliente')}
     </div>
     ${sectionHeading('Pontos de atenção do período','Leitura automática que acompanha os filtros selecionados.')}
-    <div class="grid insight-grid">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Recorte estável',value:'—',text:'Nenhum alerta forte identificado.'}]).map(insight).join('')}</div>
-    <div class="grid two-col">
-      <div class="panel"><div class="panel-title-row"><div><h2>Faturamento mês a mês</h2><div class="panel-sub">Ano selecionado • o filtro de mês não reduz esta série.</div></div></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
-      <div class="panel"><div class="panel-title-row"><div><h2>Ranking por RCA</h2><div class="panel-sub">Maiores faturamentos no recorte.</div></div></div><div class="chart-wrap"><canvas id="overviewRca"></canvas></div></div>
+    <div class="grid insights">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Recorte estável',value:'—',text:'Nenhum alerta forte identificado.'}]).map(insight).join('')}</div>
+    ${sectionHeading('Desempenho do período','Evolução mensal e acompanhamento da meta no recorte selecionado.')}
+    <div class="grid main-grid">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Faturamento mês a mês</div><div class="panel-sub">Ano selecionado • o filtro de mês não reduz esta série.</div></div><span class="panel-chip">${esc(state.filters.year||'Ano')}</span></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
+      <div class="panel goal-card">
+        <div class="panel-head"><div><div class="panel-title">Meta do período</div><div class="panel-sub">Realizado em relação à meta cadastrada.</div></div></div>
+        <div class="goal-ring-wrap"><div class="goal-ring" style="background:conic-gradient(var(--navy) 0 ${attainment}%,#E9EDF5 ${attainment}% 100%)"></div><div class="goal-center"><strong>${pct(k.attainment)}</strong><span>atingido</span></div></div>
+        <div class="goal-line"><span>Realizado</span><strong>${money(k.revenue,true)}</strong></div>
+        <div class="goal-line"><span>Meta</span><strong>${money(k.meta,true)}</strong></div>
+        <div class="goal-line"><span>Diferença</span><strong>${money(Number(k.meta||0)-Number(k.revenue||0),true)}</strong></div>
+      </div>
     </div>
-    ${sectionHeading('Departamentos','Participação do faturamento no período.')}
-    <div class="panel"><div id="depList" class="metric-list"></div></div>
+    ${sectionHeading('Resultado por equipe e departamento','Faturamento no recorte atual.')}
+    <div class="grid secondary-grid">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Ranking por RCA</div><div class="panel-sub">Maiores faturamentos no recorte.</div></div></div><div class="chart-wrap short"><canvas id="overviewRca"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Departamentos</div><div class="panel-sub">Participação do faturamento no período.</div></div></div><div id="depList" class="metric-list"></div></div>
+    </div>
   `;
   const monthly=p.monthly||[];
-  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1E2655',backgroundColor:'rgba(30,38,85,.08)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]});
+  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1D285F',backgroundColor:'rgba(29,40,95,.08)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]});
   const top=(p.rca||[]).slice(0,10).reverse();
   chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[{data:top.map(x=>x.revenue),backgroundColor:'#42548D',borderRadius:7,barThickness:16}]},{indexAxis:'y'});
   const total=(p.departments||[]).reduce((a,x)=>a+x.revenue,0)||1;
-  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<div class="metric-line"><div><div class="name">${esc(x.key||'Sem departamento')}</div><div class="progress"><i style="width:${Math.min(100,x.revenue/total*100)}%"></i></div></div><div class="value">${money(x.revenue,true)} · ${pct(x.revenue/total*100)}</div></div>`).join('');
+  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<div class="metric-row"><div><div class="metric-name">${esc(x.key||'Sem departamento')}</div><div class="progress"><i style="width:${Math.min(100,x.revenue/total*100)}%"></i></div></div><div class="metric-value">${money(x.revenue,true)} · ${pct(x.revenue/total*100)}</div></div>`).join('');
 }
-
 function renderCarteira(p){
   const k=p.kpis||{};
   const inactiveTotal=Number(k.short||0)+Number(k.long||0);
