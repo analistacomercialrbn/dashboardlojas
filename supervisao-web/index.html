@@ -33,9 +33,7 @@
         <div class="brand-word">REBANHO</div>
         <div class="brand-product">Supervisão Comercial</div>
       </div>
-
       <div id="userCard" class="user-card"></div>
-
       <nav class="nav">
         <button data-page="overview" class="nav-item active"><span>⌂</span> Visão Geral</button>
         <button data-page="carteira" class="nav-item"><span>◫</span> Carteira</button>
@@ -43,26 +41,8 @@
         <button data-page="cidades" class="nav-item"><span>⌖</span> Cidades</button>
         <button data-page="metas" class="nav-item"><span>◎</span> Gestão de Metas</button>
       </nav>
-
-      <div class="side-section-label">FILTROS</div>
-      <div class="filters">
-        <label>Ano</label>
-        <select id="filterYear"></select>
-        <label>Mês</label>
-        <select id="filterMonth"></select>
-        <label>Supervisor</label>
-        <div id="filterSupervisor" class="multi-select"></div>
-        <label>RCA</label>
-        <div id="filterRca" class="multi-select"></div>
-        <label>Departamento</label>
-        <div id="filterDepartment" class="multi-select"></div>
-        <button id="clearFilters" class="btn secondary small">Limpar filtros</button>
-      </div>
-
-      <div class="sidebar-bottom">
-        <button id="refreshData" class="btn ghost small">↻ Atualizar bases</button>
-        <button id="logoutBtn" class="btn ghost small">Sair</button>
-      </div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-note"><span class="sidebar-note-dot"></span><div><strong>Bases comerciais</strong><span>Indicadores do período selecionado</span></div></div>
     </aside>
 
     <main class="main">
@@ -72,11 +52,22 @@
           <h1 id="pageTitle">Visão Geral</h1>
           <div id="pageSubtitle" class="page-subtitle"></div>
         </div>
-        <div class="top-actions">
+        <div class="topbar-right">
           <div id="periodChip" class="period-chip"></div>
-          <div class="brand-pill">REBANHO</div>
+          <button id="refreshData" class="icon-btn" type="button" title="Atualizar bases" aria-label="Atualizar bases">↻</button>
+          <button id="logoutBtn" class="btn ghost small" type="button">Sair</button>
         </div>
       </header>
+
+      <div class="filterbar">
+        <div class="filterbar-title">Filtros</div>
+        <div class="filter-group"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
+        <div class="filter-group"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
+        <div class="filter-group grow"><label>Supervisor</label><div id="filterSupervisor" class="multi-select"></div></div>
+        <div class="filter-group grow"><label>RCA</label><div id="filterRca" class="multi-select"></div></div>
+        <div class="filter-group grow"><label>Departamento</label><div id="filterDepartment" class="multi-select"></div></div>
+        <button id="clearFilters" class="filter-clear" type="button">Limpar filtros</button>
+      </div>
 
       <div id="dataStatus" class="status-card">
         <div class="spinner"></div>
