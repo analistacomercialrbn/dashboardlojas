@@ -230,17 +230,43 @@ async function rebuildDataset(env,refresh){
   if(!stored)throw new Error("A base foi processada, mas o snapshot não foi encontrado no R2.");
   return {ok:true,rows:Number(stored.customMetadata?.validCount)||null,updatedAt:stored.uploaded?.toISOString?.()||new Date().toISOString()}
 }
-export default {async fetch(req,env){const url=new URL(req.url),secret=env.SESSION_SECRET;if(!secret)return json({message:"Configuração de sessão ausente."},503);
+export default {
+async scheduled(controller,env){
+  if(!env.DATA_CACHE){console.error(JSON.stringify({event:"snapshot_refresh_failed",error:"storage_not_configured"}));return}
+  if(REBUILDING){console.log(JSON.stringify({event:"snapshot_refresh_skipped",reason:"already_running"}));return}
+  try{
+    const current=await env.DATA_CACHE.head(DATA_KEY);
+    const ageMs=current?Date.now()-current.uploaded.getTime():Infinity;
+    if(ageMs<20*60*60*1000){console.log(JSON.stringify({event:"snapshot_refresh_skipped",ageMs}));return}
+  }catch(error){console.error(JSON.stringify({event:"snapshot_refresh_failed",error:error?.message||String(error)}));throw error}
+  REBUILDING=true;
+  const started=Date.now();
+  try{
+    const result=await rebuildDataset(env,true);
+    console.log(JSON.stringify({event:"snapshot_refresh_completed",durationMs:Date.now()-started,rows:result.rows,updatedAt:result.updatedAt}));
+  }catch(error){
+    console.error(JSON.stringify({event:"snapshot_refresh_failed",durationMs:Date.now()-started,error:error?.message||String(error)}));
+    throw error;
+  }finally{REBUILDING=false}
+},
+async fetch(req,env){const url=new URL(req.url),secret=env.SESSION_SECRET;if(!secret)return json({message:"Configuração de sessão ausente."},503);
 if(url.pathname==="/api/diagcrypto"){try{const k=await crypto.subtle.importKey("raw",enc.encode("teste"),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:enc.encode("salt"),iterations:1000,hash:"SHA-256"},k,256);return json({ok:true,len:bits.byteLength},200)}catch(e){return json({ok:false,error:String(e&&e.message?e.message:e)},500)}}
 if(url.pathname==="/api/login"&&req.method==="POST"){try{const body=await req.json(),login=String(body.login||"").trim().toLowerCase();const us=await loadUsers(),u=us[login];if(!u)return json({message:"Usuário não encontrado."},401);if(!u.ativo)return json({message:"Usuário inativo."},401);let valid=false;try{valid=await verifyPassword(body.password||"",u)}catch(e){return json({message:"Falha interna na validação da senha: "+String(e&&e.message?e.message:e)},500)}if(!valid)return json({message:"Senha inválida."},401);const tok=await issue(login,secret);return json({ok:true,user:safe({login,...u})},200,{"set-cookie":"rbn_session="+tok+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200"})}catch{return json({message:"Não foi possível autenticar."},500)}}
 if(url.pathname==="/api/logout"&&req.method==="POST")return json({ok:true},200,{"set-cookie":"rbn_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"});
 if(url.pathname==="/api/session"){const u=await session(req,secret);return json(u?{authenticated:true,user:safe(u)}:{authenticated:false})}
+if(url.pathname==="/api/dataset/info"){
+  const u=await session(req,secret);if(!u)return json({message:"Sessão expirada."},401);
+  const role=String(u.perfil||"").toUpperCase();if(role!=="ADMIN"&&role!=="GERENTE")return json({message:"A base comercial está liberada apenas para Admin e Gerente."},403);
+  if(!env.DATA_CACHE)return json({message:"Armazenamento de dados não configurado."},503);
+  const object=await env.DATA_CACHE.head(DATA_KEY);if(!object)return json({message:"Base processada ainda não existe."},404);
+  return json({exists:true,updatedAt:object.uploaded.toISOString()});
+}
 if(url.pathname==="/api/dataset"){
   const u=await session(req,secret);if(!u)return json({message:"Sessão expirada."},401);
   const role=String(u.perfil||"").toUpperCase();if(role!=="ADMIN"&&role!=="GERENTE")return json({message:"A base comercial está liberada apenas para Admin e Gerente."},403);
   if(!env.DATA_CACHE)return json({message:"Armazenamento de dados não configurado."},503);
   const object=await env.DATA_CACHE.get(DATA_KEY);if(!object)return json({message:"Base processada ainda não existe."},404);
-  const h=new Headers({"content-type":"application/x-ndjson; charset=utf-8","content-encoding":"gzip","cache-control":"private, no-store","x-content-type-options":"nosniff"});
+  const h=new Headers({"content-type":"application/x-ndjson; charset=utf-8","content-encoding":"gzip","cache-control":"private, no-store","x-content-type-options":"nosniff","x-dataset-updated-at":object.uploaded.toISOString()});
   return new Response(object.body,{status:200,headers:h});
 }
 if(url.pathname==="/api/rebuild"&&req.method==="POST"){
