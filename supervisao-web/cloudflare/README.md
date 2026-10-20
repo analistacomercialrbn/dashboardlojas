@@ -12,4 +12,4 @@ O Worker precisa destas configurações:
 
 O bucket guarda apenas o conjunto NDJSON compactado. As planilhas do Drive são lidas e nunca são modificadas. O acesso às rotas `/api/dataset` e `/api/rebuild` mantém a verificação de sessão e o bloqueio para ADMIN/GERENTE.
 
-A rota `POST /api/rebuild` seleciona somente as abas necessárias, percorre a aba de faturamento duas vezes e transmite os registros normalizados por fluxo ao R2.
+A rota `POST /api/rebuild` seleciona somente as abas necessárias, percorre a aba de faturamento uma vez e transmite os registros normalizados por fluxo ao R2. O registro de metadados (data mais recente e quantidade válida) é emitido no final do fluxo para evitar uma segunda leitura da planilha.
