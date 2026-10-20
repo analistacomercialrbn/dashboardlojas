@@ -154,17 +154,20 @@ async function fetchDriveWorkbook(id,refresh=false){
   const ct=r.headers.get("content-type")||"";if(ct.includes("text/html"))throw new Error("O Drive não disponibilizou a base para download.");
   return new XlsxArchive(await r.arrayBuffer()).init();
 }
-function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows,latest,validCount){
+function buildNdjsonStream(archive,sheetName,metaRows,rcaRows,clientRows){
   const enc=new TextEncoder();let phase=0,index=0,salesReader=null,salesDecoder=null,salesPending="",salesStrings=null,headerSeen=false;
   const rcaMap=new Map(rcaRows.map(r=>[code(r.COD_RCA??r["Cod/Vend."]),{code:code(r.COD_RCA??r["Cod/Vend."]),name:String(r.RCA??r.VENDEDOR??"").trim(),supervisor:String(r.SUPERVISOR??"").trim(),active:norm(r.ATIVO??"S")==="S"}]).filter(([c,r])=>c!=null&&r.name));
   const rcaList=[...rcaMap.values()];
   const meta=metaRows.map(r=>{const codRca=code(r.COD_RCA??r["Cod/Vend."]),mk=monthKey(r.MES??r.MÊS??r.DATA),rr=rcaMap.get(codRca)||{};return {monthKey:mk,year:mk?Number(mk.slice(0,4)):null,month:mk?Number(mk.slice(5,7)):null,rca:codRca,rcaName:rr.name||String(r.RCA??""),supervisor:rr.supervisor||String(r.SUPERVISOR??""),department:String(r.DEPARTAMENTO??r.DEPTO??"").trim(),value:num(r.META)}}).filter(x=>x.year&&x.month&&x.rca!=null);
   const clients=clientRows.map(r=>{const c=code(r.CODCLI??r["Cod/Cliente"]??r.COD_CLIENTE);if(c==null)return null;return[c,{code:c,name:String(r.CLIENTE??r.NOME??r["Nome Cliente"]??c).trim(),rca:code(r.COD_RCA??r["Cod/Vend."])}]}).filter(Boolean);
-  const ix=new Map(headers.map((h,i)=>[h,i])),val=(row,name)=>cellValue(row?.[ix.get(name)]),encode=(type,value)=>JSON.stringify({type,value})+"\n";
+  let headers=null,ix=null,latest=null,validCount=0;
+  const encode=(type,value)=>JSON.stringify({type,value})+"\n";
   const writeSale=(row,write)=>{
-    if(!headerSeen){headerSeen=true;return}
-    const date=dateValue(val(row,"Data Faturamento"));if(!date||norm(val(row,"Posição"))!=="FECHADO")return;
-    const codRca=code(val(row,"Cod/Vend.")),rr=rcaMap.get(codRca)||{},prod=code(val(row,"Cod/Produto")),v=num(val(row,"Pedidos Enviados")),marginRaw=val(row,"% Margem"),margin=marginRaw===null||marginRaw===undefined?null:num(marginRaw),m=String(date.getMonth()+1).padStart(2,"0");
+    if(!headerSeen){headers=row.map(v=>String(cellValue(v)??"").trim());ix=new Map(headers.map((h,i)=>[h,i]));headerSeen=true;return}
+    const val=name=>cellValue(row?.[ix.get(name)]);
+    const date=dateValue(val("Data Faturamento"));if(!date||norm(val("Posição"))!=="FECHADO")return;
+    validCount++;if(!latest||date>latest)latest=date;
+    const codRca=code(val("Cod/Vend.")),rr=rcaMap.get(codRca)||{},prod=code(val("Cod/Produto")),v=num(val("Pedidos Enviados")),marginRaw=val("% Margem"),margin=marginRaw===null||marginRaw===undefined?null:num(marginRaw),m=String(date.getMonth()+1).padStart(2,"0");
     write(encode("sale",{date:date.toISOString(),year:date.getFullYear(),month:date.getMonth()+1,monthKey:String(date.getFullYear())+"-"+m,rca:codRca,rcaName:rr.name||String(codRca??""),supervisor:rr.supervisor||"",department:String(val(row,"DEPARTAMENTO")??"").trim(),client:code(val(row,"Cod/Cliente")),product:prod,productName:productLabel(val(row,"Cod/Produto")),order:String(val(row,"NUMPED")??"").trim(),city:String(val(row,"MUNICENT")??"").trim(),uf:norm(val(row,"ESTENT")),value:v,marginPct:Number.isFinite(margin)?margin:null}));
   };
   async function startSales(){
@@ -189,8 +192,8 @@ function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows
       let out="",budget=48*1024;const write=record=>{out+=record};
       while(out.length<budget){
         let record;
-        if(phase===0){record=JSON.stringify({type:"meta",value:{latest:latest.toISOString(),validCount}})+"\n";phase=1;index=0}
-        else if(phase===1&&index<rcaList.length)record=encode("rca",rcaList[index++]);
+        if(phase===0){phase=1;index=0}
+        if(phase===1&&index<rcaList.length)record=encode("rca",rcaList[index++]);
         else if(phase===1){phase=2;index=0;continue}
         else if(phase===2&&index<meta.length)record=encode("goal",meta[index++]);
         else if(phase===2){phase=3;index=0;continue}
@@ -199,11 +202,12 @@ function buildNdjsonStream(archive,sheetName,headers,metaRows,rcaRows,clientRows
         else if(phase===4){
           if(!salesReader)await startSales();
           const {value,done}=await salesReader.read();
-          if(done){consumeSales(salesDecoder.decode(),true,write);phase=5;continue}
+          if(done){consumeSales(salesDecoder.decode(),true,write);if(!validCount||!latest)throw new Error("A base não contém vendas fechadas válidas.");phase=5;continue}
           consumeSales(salesDecoder.decode(value,{stream:true}),false,write);
           if(out.length>=budget)break;
           continue;
-        }else{if(out)controller.enqueue(enc.encode(out));controller.close();return}
+        }else if(phase===5){out+=JSON.stringify({type:"meta",value:{latest:latest.toISOString(),validCount}})+"\n";phase=6;break}
+        else{if(out)controller.enqueue(enc.encode(out));controller.close();return}
         out+=record;
       }
       if(out)controller.enqueue(enc.encode(out));
@@ -220,17 +224,11 @@ async function rebuildDataset(env,refresh){
   const vendas=await fetchDriveWorkbook(salesId,refresh);
   const salesSheet=vendas.sheetNames.find(n=>norm(n)==="SHEET1")||vendas.sheetNames[0];
   if(!salesSheet)throw new Error("A base de faturamento não possui uma aba legível.");
-  let headers=null,headerIx=null,latest=null,validCount=0;
-  await vendas.readRows(salesSheet,row=>{
-    if(!headers){headers=row.map(c=>String(cellValue(c)??"").trim());headerIx=new Map(headers.map((h,i)=>[h,i]));return}
-    const val=name=>cellValue(row[headerIx.get(name)]),date=dateValue(val("Data Faturamento"));
-    if(!date||norm(val("Posição"))!=="FECHADO")return;
-    validCount++;if(!latest||date>latest)latest=date;
-  });
-  if(!validCount||!latest)throw new Error("A base não contém vendas fechadas válidas.");
-  const source=buildNdjsonStream(vendas,salesSheet,headers,metaRows,rcaRows,clientRows,latest,validCount);
+  const source=buildNdjsonStream(vendas,salesSheet,metaRows,rcaRows,clientRows);
   await env.DATA_CACHE.put(DATA_KEY,source.pipeThrough(new CompressionStream("gzip")),{httpMetadata:{contentType:"application/x-ndjson",contentEncoding:"gzip",cacheControl:"private, no-store"}});
-  return {ok:true,rows:validCount,updatedAt:new Date().toISOString()}
+  const stored=await env.DATA_CACHE.head(DATA_KEY);
+  if(!stored)throw new Error("A base foi processada, mas o snapshot não foi encontrado no R2.");
+  return {ok:true,rows:Number(stored.customMetadata?.validCount)||null,updatedAt:stored.uploaded?.toISOString?.()||new Date().toISOString()}
 }
 export default {async fetch(req,env){const url=new URL(req.url),secret=env.SESSION_SECRET;if(!secret)return json({message:"Configuração de sessão ausente."},503);
 if(url.pathname==="/api/diagcrypto"){try{const k=await crypto.subtle.importKey("raw",enc.encode("teste"),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:enc.encode("salt"),iterations:1000,hash:"SHA-256"},k,256);return json({ok:true,len:bits.byteLength},200)}catch(e){return json({ok:false,error:String(e&&e.message?e.message:e)},500)}}
