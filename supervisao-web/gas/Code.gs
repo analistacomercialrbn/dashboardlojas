@@ -149,13 +149,18 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/main/supervisao-web/gas/gas-app.html';
 
 function doGet() {
-  return HtmlService.createTemplateFromFile('Index').evaluate()
-    .setTitle('Dashboard de Supervisão • Rebanho');
-}
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  const cache = CacheService.getScriptCache();
+  let html = cache.get('DASHBOARD_GAS_UI_V1');
+  if (!html) {
+    const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
+    if (response.getResponseCode() !== 200) throw new Error('Não foi possível carregar a interface do dashboard.');
+    html = response.getContentText();
+    cache.put('DASHBOARD_GAS_UI_V1', html, 3600);
+  }
+  return HtmlService.createHtmlOutput(html).setTitle('Dashboard de Supervisão • Rebanho');
 }
 function authorizeDashboard() {
   const response = UrlFetchApp.fetch(AUTH.usersUrl, { muteHttpExceptions: true });
