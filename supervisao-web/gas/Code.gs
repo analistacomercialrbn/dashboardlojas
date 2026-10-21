@@ -62,8 +62,8 @@ function headerIndex_(headers) { const map = {}; headers.forEach((h, i) => { map
 function cell_(row, index, name) { return index[name] == null ? null : row[index[name]]; }
 function readAuxiliary_() {
   const ss = SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId);
-  const rcaSheet = ss.getSheetByName('RCA'), clientSheet = ss.getSheetByName('CLIENTES'), goalSheet = ss.getSheetByName('METAS');
-  if (!rcaSheet || !clientSheet || !goalSheet) throw new Error('A base auxiliar precisa ter as abas RCA, CLIENTES e METAS.');
+  const rcaSheet = ss.getSheetByName('RCA'), clientSheet = ss.getSheetByName('CLIENTES'), goalSheet = ss.getSheetByName('METAS'), routeSheet = ss.getSheetByName('ROTAS');
+  if (!rcaSheet || !clientSheet || !goalSheet || !routeSheet) throw new Error('A base auxiliar precisa ter as abas RCA, CLIENTES, METAS e ROTAS.');
   const rcaValues = rcaSheet.getDataRange().getValues(), rcaIx = headerIndex_(rcaValues.shift() || []), rcaMap = new Map();
   rcaValues.forEach(row => {
     const c = code_(cell_(row, rcaIx, 'COD_RCA')), name = String(cell_(row, rcaIx, 'RCA') || '').trim();
@@ -71,6 +71,12 @@ function readAuxiliary_() {
   });
   const clientValues = clientSheet.getDataRange().getValues(), clientIx = headerIndex_(clientValues.shift() || []), clients = [];
   clientValues.forEach(row => { const c = code_(cell_(row, clientIx, 'CODCLI')); if (c != null) clients.push([c, { code: c, name: String(cell_(row, clientIx, 'CLIENTE') || c).trim(), rca: code_(cell_(row, clientIx, 'COD_RCA')) }]); });
+  const routeValues = routeSheet.getDataRange().getValues(), routeIx = headerIndex_(routeValues.shift() || []), routeMap = new Map();
+  ['COD_RCA', 'PRACA', 'ROTA'].forEach(name => { if (routeIx[name] == null) throw new Error('A aba ROTAS não contém a coluna ' + name + '.'); });
+  routeValues.forEach(row => {
+    const rca = code_(cell_(row, routeIx, 'COD_RCA')), city = norm_(cell_(row, routeIx, 'PRACA')), route = String(cell_(row, routeIx, 'ROTA') || '').trim();
+    if (rca != null && city && route) routeMap.set(rca + '|' + city, route);
+  });
   const goalValues = goalSheet.getDataRange().getValues(), goalIx = headerIndex_(goalValues.shift() || []), goals = [];
   goalValues.forEach(row => {
     const key = String(cell_(row, goalIx, 'MES') || '').trim(), match = key.match(/^(20\d{2})-(0?[1-9]|1[0-2])$/), rca = code_(cell_(row, goalIx, 'COD_RCA'));
@@ -78,7 +84,7 @@ function readAuxiliary_() {
     const person = rcaMap.get(rca) || {};
     goals.push({ monthKey: match[1] + '-' + String(Number(match[2])).padStart(2, '0'), year: Number(match[1]), month: Number(match[2]), rca: rca, rcaName: person.name || '', supervisor: person.supervisor || '', department: String(cell_(row, goalIx, 'DEPARTAMENTO') || '').trim(), value: num_(cell_(row, goalIx, 'META')) });
   });
-  return { rcas: Array.from(rcaMap.values()), rcaMap: rcaMap, clients: clients, goals: goals };
+  return { rcas: Array.from(rcaMap.values()), rcaMap: rcaMap, clients: clients, goals: goals, routeMap: routeMap };
 }
 function buildSnapshotRecords_() {
   const aux = readAuxiliary_(), source = SpreadsheetApp.openById(CFG.salesSpreadsheetId), records = [];
@@ -102,7 +108,8 @@ function buildSnapshotRecords_() {
       const rcaCode = code_(cell_(row, ix, 'Cod/Vend.')), rca = aux.rcaMap.get(rcaCode) || {}, clientCode = code_(cell_(row, ix, 'Cod/Cliente'));
       const rawProduct = String(cell_(row, ix, 'Cod/Produto') || '').trim(), productCode = code_(rawProduct);
       const productName = rawProduct.replace(/^\s*\d+\s*-\s*/, '').trim() || (productCode == null ? 'Sem descrição' : 'Produto ' + productCode);
-      const sale = { date: iso, year: orderYear, month: orderDate.getUTCMonth() + 1, monthKey: orderYear + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'), rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: clientCode, product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: String(cell_(row, ix, 'MUNICENT') || '').trim(), uf: norm_(cell_(row, ix, 'ESTENT')), value: num_(cell_(row, ix, 'Pedidos Enviados')), marginPct: null };
+      const city = String(cell_(row, ix, 'MUNICENT') || '').trim(), region = aux.routeMap.get(String(rcaCode) + '|' + norm_(city)) || '';
+      const sale = { date: iso, year: orderYear, month: orderDate.getUTCMonth() + 1, monthKey: orderYear + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'), rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: clientCode, product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')), marginPct: null };
       records.push(JSON.stringify({ type: 'sale', value: sale })); validCount++; if (!latest || iso > latest) latest = iso;
     });
   });
@@ -139,7 +146,7 @@ function datasetPage_(offset, limit) {
 }
 function validateSources_() {
   const sales = SpreadsheetApp.openById(CFG.salesSpreadsheetId), aux = SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId);
-  return { ok: true, years: CFG.years.map(year => { const sheet = sales.getSheetByName(year); return { year: year, exists: !!sheet, rowsIncludingHeader: sheet ? sheet.getLastRow() : 0 }; }), auxiliarySheets: ['RCA', 'CLIENTES', 'METAS'].map(name => ({ name: name, exists: !!aux.getSheetByName(name) })), cacheSpreadsheetId: CFG.cacheSpreadsheetId };
+  return { ok: true, years: CFG.years.map(year => { const sheet = sales.getSheetByName(year); return { year: year, exists: !!sheet, rowsIncludingHeader: sheet ? sheet.getLastRow() : 0 }; }), auxiliarySheets: ['RCA', 'CLIENTES', 'METAS', 'ROTAS'].map(name => ({ name: name, exists: !!aux.getSheetByName(name) })), cacheSpreadsheetId: CFG.cacheSpreadsheetId };
 }
 function installProperties() {
   return validateSources_();
