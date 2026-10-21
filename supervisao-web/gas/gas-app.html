@@ -967,21 +967,51 @@ function setStatus(text,show=true){
   $('#dataStatusText').textContent=text;
   $('#dataStatus').classList.toggle('hidden',!show);
 }
+function createInlineDataEngine(source){
+  const script=document.createElement('script');
+  const nonce=document.querySelector('script[nonce]')?.nonce;
+  if(nonce)script.nonce=nonce;
+  const engine={
+    onmessage:null,
+    onerror:null,
+    postMessage(message){
+      if(typeof window.__rebanhoEngineReceive!=='function')throw new Error('O processador alternativo não foi inicializado.');
+      window.__rebanhoEngineReceive({data:message});
+    },
+    terminate(){
+      script.remove();
+      delete window.__rebanhoEngineReceive;
+      delete window.__rebanhoEngineSend;
+    }
+  };
+  window.__rebanhoEngineSend=message=>Promise.resolve().then(()=>engine.onmessage?.({data:message}));
+  script.textContent=`(function(){let onmessage;const postMessage=message=>window.__rebanhoEngineSend(message);${source}\nwindow.__rebanhoEngineReceive=onmessage;})();`;
+  document.head.appendChild(script);
+  if(typeof window.__rebanhoEngineReceive!=='function'){
+    script.remove();delete window.__rebanhoEngineSend;
+    throw new Error('O navegador bloqueou o processador alternativo do Apps Script.');
+  }
+  return engine;
+}
 function initData(force=false){
   destroyCharts();
   if(state.worker)state.worker.terminate();
   setStatus(force?'Atualizando bases no Apps Script…':'Carregando bases comerciais…',true);
   const workerSource=document.getElementById('workerSource')?.textContent||'';
   if(!workerSource.trim()) throw new Error('O processador local não foi carregado.');
-  const workerUrl=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
-  state.worker=new Worker(workerUrl);
-  state.worker.addEventListener('error',()=>URL.revokeObjectURL(workerUrl),{once:true});
-  state.worker.onmessage=e=>{
+  let workerUrl=null,usingFallback=false,firstWorkerMessage=false,fallbackTimer=null;
+  const handleMessage=e=>{
     const m=e.data||{};
     if(m.type==='serverRequest'){
+      const activeWorker=state.worker;
+      let settled=false;
+      const timeout=setTimeout(()=>{
+        if(settled)return;settled=true;
+        activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:'O Apps Script não respondeu à solicitação em 30 segundos.'});
+      },30000);
       api('/api/'+m.action,{method:'POST',body:JSON.stringify(m.payload||{})})
-        .then(data=>state.worker?.postMessage({type:'serverResponse',requestId:m.requestId,data}))
-        .catch(error=>state.worker?.postMessage({type:'serverResponse',requestId:m.requestId,error:error?.message||String(error)}));
+        .then(data=>{if(settled)return;settled=true;clearTimeout(timeout);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,data});})
+        .catch(error=>{if(settled)return;settled=true;clearTimeout(timeout);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:error?.message||String(error)});});
       return;
     }
     if(m.type==='stage'){setStatus(m.text,true);}
@@ -1000,11 +1030,37 @@ function initData(force=false){
       $('#content').innerHTML=`<div class="empty"><strong>Não foi possível carregar os dados.</strong><br><br>${esc(m.message||'Erro desconhecido')}</div>`;
     }
   };
-  state.worker.onerror=e=>{
-    setStatus('',false);
-    $('#content').innerHTML=`<div class="empty"><strong>Falha ao iniciar o processamento das bases.</strong><br><br>${esc(e.message||'Erro no worker de dados')}</div>`;
+  const startFallback=error=>{
+    if(usingFallback)return;
+    usingFallback=true;clearTimeout(fallbackTimer);
+    try{state.worker?.terminate();}catch{}
+    if(workerUrl){URL.revokeObjectURL(workerUrl);workerUrl=null;}
+    try{
+      const fallback=createInlineDataEngine(workerSource);
+      state.worker=fallback;fallback.onmessage=handleMessage;
+      setStatus('Iniciando processador compatível com o Apps Script…',true);
+      fallback.postMessage({type:'init',force});
+    }catch(fallbackError){
+      setStatus('',false);
+      $('#content').innerHTML=`<div class="empty"><strong>Falha ao iniciar o processamento das bases.</strong><br><br>${esc(fallbackError?.message||error?.message||'Erro no processador de dados.')}</div>`;
+    }
   };
-  state.worker.postMessage({type:'init',force});
+  try{
+    workerUrl=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
+    const worker=new Worker(workerUrl);
+    state.worker=worker;
+    worker.addEventListener('error',e=>{
+      if(!firstWorkerMessage){startFallback(e);return;}
+      setStatus('',false);
+      $('#content').innerHTML=`<div class="empty"><strong>Falha no processamento das bases.</strong><br><br>${esc(e.message||'Erro no processador de dados.')}</div>`;
+    },{once:true});
+    worker.onmessage=e=>{
+      if(!firstWorkerMessage){firstWorkerMessage=true;clearTimeout(fallbackTimer);if(workerUrl){URL.revokeObjectURL(workerUrl);workerUrl=null;}}
+      handleMessage(e);
+    };
+    fallbackTimer=setTimeout(()=>{if(!firstWorkerMessage)startFallback(new Error('O processador em segundo plano não respondeu.'));},3000);
+    worker.postMessage({type:'init',force});
+  }catch(error){startFallback(error);}
 }
 function normalizeMulti(v){
   if(Array.isArray(v)) return v.map(String).filter(x=>x&&x!=='Todos');
