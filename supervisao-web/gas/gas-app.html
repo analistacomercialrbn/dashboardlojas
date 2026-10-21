@@ -182,7 +182,7 @@ button,select{font:inherit}.app-shell{display:grid;grid-template-columns:218px m
 .sidebar-spacer{flex:1}.sidebar-note{display:flex;gap:9px;align-items:center;background:#F8FAFD;border:1px solid var(--border);padding:10px;border-radius:12px;margin-bottom:8px}.sidebar-note-dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}.sidebar-note strong{display:block;font-size:10px;color:var(--navy)}.sidebar-note span{display:block;font-size:9px;color:var(--muted);margin-top:2px}
 .user-card{display:flex;gap:9px;align-items:center;padding:10px 8px}.avatar{width:34px;height:34px;border-radius:10px;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:850}.user-name{font-size:11px;font-weight:780}.user-role{font-size:9px;color:var(--muted);margin-top:2px}
 .main{min-width:0;padding:22px clamp(20px,2.7vw,42px) 44px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.eyebrow{font-size:9px;letter-spacing:.09em;text-transform:uppercase;font-weight:850;color:#8992A5}.topbar h1{font-size:27px;line-height:1.1;letter-spacing:-.035em;color:var(--navy);margin:4px 0 0}.page-subtitle{font-size:11px;color:var(--muted);margin-top:4px}.topbar-right{display:flex;align-items:center;gap:8px}.sync-pill{font-size:9.5px;color:#596176;background:#fff;border:1px solid var(--border);border-radius:999px;padding:7px 10px;display:flex;align-items:center;gap:6px}.sync-pill span{width:7px;height:7px;background:var(--green);border-radius:50%}.icon-btn{width:34px;height:34px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--navy);cursor:pointer}
-.filterbar{display:flex;align-items:end;gap:9px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:11px 12px;margin-bottom:12px;box-shadow:0 3px 10px rgba(30,38,85,.025)}.filterbar-title{align-self:center;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.06em;color:#8A92A4;padding:0 6px 0 2px}.filter-group{width:128px}.filter-group.grow{min-width:190px;flex:1}.filter-group label{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.055em;color:#9299A9;font-weight:800;margin:0 0 4px 2px}.filter-group select{width:100%;height:34px;border:1px solid #DEE3EC;border-radius:9px;background:#fff;padding:0 9px;color:#454D62;font-size:10.5px;outline:none}.filter-clear{height:34px;border:1px solid transparent;background:transparent;color:#7A8293;font-size:10px;font-weight:750;cursor:pointer;padding:0 8px}
+.filterbar{display:flex;flex-wrap:wrap;align-items:end;gap:9px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:11px 12px;margin-bottom:12px;box-shadow:0 3px 10px rgba(30,38,85,.025)}.filter-group.geo{width:130px;flex:none}.filter-group.period{width:95px;flex:none}.filterbar-title{align-self:center;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.06em;color:#8A92A4;padding:0 6px 0 2px}.filter-group{width:128px}.filter-group.grow{min-width:190px;flex:1}.filter-group label{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.055em;color:#9299A9;font-weight:800;margin:0 0 4px 2px}.filter-group select{width:100%;height:34px;border:1px solid #DEE3EC;border-radius:9px;background:#fff;padding:0 9px;color:#454D62;font-size:10.5px;outline:none}.filter-clear{height:34px;border:1px solid transparent;background:transparent;color:#7A8293;font-size:10px;font-weight:750;cursor:pointer;padding:0 8px}
 .demo-banner{background:#FFF8EA;border:1px solid #F0DEB5;color:#816125;border-radius:12px;padding:10px 12px;font-size:10px;margin-bottom:14px}
 .grid{display:grid;gap:12px}.hero-grid{grid-template-columns:1.35fr repeat(4,minmax(0,.65fr));margin-bottom:12px}.hero-kpi{background:linear-gradient(135deg,var(--navy),#2C3B7E);border-radius:16px;padding:17px 18px;color:#fff;min-height:118px;position:relative;overflow:hidden}.hero-kpi:after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.06);right:-45px;top:-70px}.hero-label{font-size:9px;text-transform:uppercase;letter-spacing:.075em;color:#CAD3F0;font-weight:800}.hero-value{font-size:31px;font-weight:880;letter-spacing:-.035em;margin-top:8px}.hero-note{font-size:10px;color:#DDE3F5;margin-top:6px}.kpi-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px 15px;min-height:118px}.kpi-label{font-size:8.5px;text-transform:uppercase;letter-spacing:.065em;color:#8A92A3;font-weight:850}.kpi-value{font-size:22px;color:var(--navy);font-weight:850;letter-spacing:-.025em;margin-top:10px}.kpi-note{font-size:9.5px;color:var(--muted);margin-top:6px;line-height:1.35}
 .panel{background:#fff;border:1px solid var(--border);border-radius:16px;padding:15px 16px;min-width:0;box-shadow:0 4px 14px rgba(30,38,85,.025)}.panel-title{font-size:15px;color:var(--navy);font-weight:820;letter-spacing:-.02em}.panel-sub{font-size:9.5px;color:var(--muted);margin-top:3px}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:11px}.panel-chip{font-size:9px;font-weight:800;border-radius:999px;padding:5px 8px;background:#F0F3F9;color:var(--navy)}
@@ -283,11 +283,14 @@ button,select{font:inherit}.app-shell{display:grid;grid-template-columns:218px m
 
       <div class="filterbar">
         <div class="filterbar-title">Filtros</div>
-        <div class="filter-group"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
-        <div class="filter-group"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
+        <div class="filter-group geo"><label for="filterUf">Estado</label><select id="filterUf"></select></div>
+        <div class="filter-group geo"><label for="filterRegion">Região</label><select id="filterRegion"></select></div>
+        <div class="filter-group geo"><label for="filterCity">Cidade</label><select id="filterCity"></select></div>
         <div class="filter-group grow"><label>Supervisor</label><div id="filterSupervisor" class="multi-select"></div></div>
         <div class="filter-group grow"><label>RCA</label><div id="filterRca" class="multi-select"></div></div>
         <div class="filter-group grow"><label>Departamento</label><div id="filterDepartment" class="multi-select"></div></div>
+        <div class="filter-group period"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
+        <div class="filter-group period"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
         <button id="clearFilters" class="filter-clear" type="button">Limpar filtros</button>
       </div>
 
@@ -390,8 +393,9 @@ function emitReady(){
   const departments=[...new Set(SALES.map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const supervisors=[...new Set(RCAS.filter(r=>r.active).map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const activeRcas=RCAS.filter(r=>r.active).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  const geography=[...new Map(SALES.filter(s=>s.uf&&s.region&&s.city).map(s=>{const uf=String(s.uf).trim().toUpperCase(),region=String(s.region).trim(),city=String(s.city).trim();return [uf+'|'+normalize(region)+'|'+normalize(city),{uf,region,city}]})).values()];
   postStage('Base pronta.',100);
-  postMessage({type:'ready',dimensions:{years,departments,supervisors,rcas:activeRcas,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
+  postMessage({type:'ready',dimensions:{years,departments,supervisors,rcas:activeRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
 }
 
 const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -567,23 +571,30 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
   const departments=multi(filters.department);
   const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
   const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
-  const targetCity=city?norm(city):null;
+  const targetUf=filters.uf&&filters.uf!=='Todos'?String(filters.uf).toUpperCase():null;
+  const targetRegion=filters.region&&filters.region!=='Todos'?normalize(filters.region):null;
+  const targetCity=city?norm(city):(filters.city&&filters.city!=='Todos'?norm(filters.city):null);
   return SALES.filter(s=>{
     if(!allowed.has(s.rca)) return false;
     if(targetYear!==null && s.year!==targetYear) return false;
     if(targetMonth!==null && s.month!==targetMonth) return false;
     if(departments.length && !departments.includes(String(s.department))) return false;
+    if(targetUf && String(s.uf||'').toUpperCase()!==targetUf) return false;
+    if(targetRegion && normalize(s.region||'')!==targetRegion) return false;
     if(targetCity && norm(s.city)!==targetCity) return false;
     return true;
   });
 }
 function filterMetas(filters,{ignoreMonth=false}={}){
   const allowed=allowedRca(filters);
+  const hasGeo=!!((filters.uf&&filters.uf!=='Todos')||(filters.region&&filters.region!=='Todos')||(filters.city&&filters.city!=='Todos'));
+  const allowedByGeo=hasGeo?new Set(filterSales(filters,{ignoreMonth}).map(s=>s.rca)):null;
   const departments=multi(filters.department);
   const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
   const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
   return METAS.filter(m=>{
     if(!allowed.has(m.rca)) return false;
+    if(allowedByGeo&&!allowedByGeo.has(m.rca)) return false;
     if(targetYear!==null && m.year!==targetYear) return false;
     if(targetMonth!==null && m.month!==targetMonth) return false;
     if(departments.length && m.department && !departments.includes(String(m.department))) return false;
@@ -863,7 +874,7 @@ const state = {
   dimensions:null,
   worker:null,
   page:'overview',
-  filters:{year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
+  filters:{uf:'Todos',region:'Todos',city:'Todos',year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
   selectedCity:'Todos',
   requestId:0,
   charts:[],
@@ -955,6 +966,16 @@ function bindShell(){
     $$('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
     queryPage();
   }));
+  ['filterUf','filterRegion','filterCity'].forEach(id=>{
+    $('#'+id).addEventListener('change',()=>{
+      syncFiltersFromUi();
+      if(id==='filterUf'){state.filters.region='Todos';state.filters.city='Todos';}
+      if(id==='filterRegion')state.filters.city='Todos';
+      updateGeoFilterUi();
+      state.selectedCity='Todos';
+      queryPage();
+    });
+  });
   ['filterYear','filterMonth'].forEach(id=>{
     $('#'+id).addEventListener('change',()=>{
       syncFiltersFromUi();
@@ -967,7 +988,7 @@ function bindShell(){
   });
   $('#clearFilters').addEventListener('click',()=>{
     const latest=state.dimensions?.latest?new Date(state.dimensions.latest):new Date();
-    state.filters={year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:[],rca:[],department:[]};
+    state.filters={uf:'Todos',region:'Todos',city:'Todos',year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:[],rca:[],department:[]};
     syncUiFromFilters(); queryPage();
   });
   $('#refreshData').addEventListener('click',()=>initData(true));
@@ -1135,6 +1156,8 @@ function setupFilters(){
   state.filters.supervisor=normalizeMulti(state.filters.supervisor);
   state.filters.rca=normalizeMulti(state.filters.rca);
   state.filters.department=normalizeMulti(state.filters.department);
+  state.filters.uf=state.filters.uf||'Todos';state.filters.region=state.filters.region||'Todos';state.filters.city=state.filters.city||'Todos';
+  updateGeoFilterUi();
   fillSelect($('#filterYear'),['Todos',...(d.years||[]).map(String)],state.filters.year,x=>x==='Todos'?'Todos':x);
   fillSelect($('#filterMonth'),['Todos',...Array.from({length:12},(_,i)=>String(i+1))],state.filters.month,x=>x==='Todos'?'Todos':['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(x)-1]);
   fillMultiSelect($('#filterSupervisor'),(d.supervisors||[]).map(x=>({value:String(x),label:String(x)})),state.filters.supervisor,()=>handleMultiChange('filterSupervisor'));
@@ -1144,6 +1167,21 @@ function setupFilters(){
 }
 function fillSelect(el,values,selected,labeller=x=>x){
   el.innerHTML=values.map(v=>`<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(labeller(v))}</option>`).join('');
+}
+function updateGeoFilterUi(){
+  const rows=state.dimensions?.geography||[];
+  const uf=state.filters.uf||'Todos',region=state.filters.region||'Todos';
+  const ufs=[...new Set(rows.map(x=>x.uf))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const regionRows=rows.filter(x=>uf==='Todos'||x.uf===uf);
+  const regions=[...new Set(regionRows.map(x=>x.region))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(region!=='Todos'&&!regions.includes(region))state.filters.region='Todos';
+  const activeRegion=state.filters.region||'Todos';
+  const cityRows=rows.filter(x=>(uf==='Todos'||x.uf===uf)&&(activeRegion==='Todos'||x.region===activeRegion));
+  const cities=[...new Set(cityRows.map(x=>x.city))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(state.filters.city!=='Todos'&&!cities.includes(state.filters.city))state.filters.city='Todos';
+  fillSelect($('#filterUf'),['Todos',...ufs],state.filters.uf,x=>x==='Todos'?'Todos':x);
+  fillSelect($('#filterRegion'),['Todos',...regions],state.filters.region,x=>x==='Todos'?'Todas':x);
+  fillSelect($('#filterCity'),['Todos',...cities],state.filters.city,x=>x==='Todos'?'Todas':x);
 }
 function refreshRcaOptions(){
   const supervisors=normalizeMulti(state.filters.supervisor);
@@ -1159,6 +1197,9 @@ function refreshRcaOptions(){
 }
 function syncFiltersFromUi(){
   state.filters={
+    uf:$('#filterUf').value,
+    region:$('#filterRegion').value,
+    city:$('#filterCity').value,
     year:$('#filterYear').value,
     month:$('#filterMonth').value,
     supervisor:selectedMulti('filterSupervisor'),
@@ -1167,6 +1208,7 @@ function syncFiltersFromUi(){
   };
 }
 function syncUiFromFilters(){
+  updateGeoFilterUi();
   $('#filterYear').value=state.filters.year;
   $('#filterMonth').value=state.filters.month;
   const d=state.dimensions||{};
