@@ -482,7 +482,7 @@ async function fetchServerDataset(force){
   SERVER_UPDATED_AT=SERVER_INFO.updatedAt||null;
   SALES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
   let received=0,expected=Number(SERVER_INFO.recordCount)||0;
-  const pageSize=2000;
+  const pageSize=5000;
   const consume=records=>{
     for(const line of records||[]){
       if(!line)continue;
