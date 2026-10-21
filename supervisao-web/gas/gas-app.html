@@ -1194,7 +1194,9 @@ function destroyCharts(){
   state.charts=[];
 }
 function chart(canvas,type,data,options={}){
-  const c=new Chart(canvas,{type,data,options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>money(v,true)}}},...options}});
+  const horizontal=options.indexAxis==='y';
+  const moneyTick=value=>money(value,true);
+  const c=new Chart(canvas,{type,data,options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:horizontal,color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(horizontal?{callback:moneyTick}:{})}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(!horizontal?{callback:moneyTick}:{})}}},...options}});
   state.charts.push(c);return c;
 }
 function kpi(label,value,note=''){
