@@ -1,0 +1,1376 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1E2655" />
+  <title>Dashboard de Supervisão • Rebanho</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <style>
+:root{
+  --navy:#1E2655;
+  --navy2:#2D396F;
+  --blue:#4F67A7;
+  --bg:#F5F7FB;
+  --panel:#FFFFFF;
+  --text:#20263A;
+  --muted:#737A8C;
+  --border:#E4E8F0;
+  --green:#2E8B57;
+  --red:#C94A55;
+  --amber:#D99A2B;
+  --soft:#EEF1F8;
+  --shadow:0 8px 24px rgba(30,38,85,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+button,input,select{font:inherit}
+.hidden{display:none!important}
+.app-shell{display:grid;grid-template-columns:246px minmax(0,1fr);min-height:100vh}
+.sidebar{position:sticky;top:0;height:100vh;background:#fff;border-right:1px solid var(--border);padding:16px 14px 14px;display:flex;flex-direction:column;overflow:auto;z-index:20}
+.side-brand{padding:5px 8px 16px;border-bottom:1px solid #EEF0F5}
+.brand-word{font-weight:900;letter-spacing:.1em;color:var(--navy);font-size:20px}
+.brand-product{font-size:11px;color:var(--muted);font-weight:650;margin-top:5px}
+.user-card{display:flex;gap:10px;align-items:center;background:#F7F8FC;border:1px solid #E9ECF3;border-radius:13px;padding:10px;margin:12px 0}
+.avatar{width:34px;height:34px;border-radius:10px;background:var(--navy);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:850;flex:none}
+.user-name{font-size:12px;font-weight:800;line-height:1.2}
+.user-role{font-size:10px;color:var(--muted);margin-top:3px}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav-item{display:flex;align-items:center;gap:9px;width:100%;border:1px solid transparent;background:transparent;border-radius:10px;padding:9px 10px;color:#4B536B;font-size:12px;font-weight:700;cursor:pointer;text-align:left;transition:.15s ease}
+.nav-item span{width:17px;color:#7B8397;text-align:center}
+.nav-item:hover{background:#F4F6FA;color:var(--navy)}
+.nav-item.active{background:var(--soft);border-color:#E1E6F1;color:var(--navy);box-shadow:inset 3px 0 0 var(--navy)}
+.side-section-label{font-size:9px;letter-spacing:.09em;font-weight:850;color:#9299A9;margin:18px 4px 7px}
+.filters{display:flex;flex-direction:column;gap:6px}
+.filters label{font-size:9px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+select,input{width:100%;height:36px;border:1px solid #DDE2EB;border-radius:9px;padding:0 9px;background:#fff;color:var(--text);outline:none}
+select:focus,input:focus{border-color:#A8B4D9;box-shadow:0 0 0 3px rgba(79,103,167,.09)}
+.sidebar-bottom{margin-top:auto;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:14px}
+.btn{border:1px solid #DCE1EB;border-radius:9px;background:#fff;color:var(--text);font-weight:750;cursor:pointer;min-height:38px;padding:0 12px;transition:.15s ease}
+.btn:hover{border-color:#BBC4D7;color:var(--navy)}
+.btn.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+.btn.primary:hover{background:var(--navy2);color:#fff}
+.btn.secondary{background:#F6F8FC}
+.btn.ghost{background:transparent}
+.btn.small{min-height:33px;font-size:11px}
+.main{min-width:0;padding:18px clamp(18px,2.5vw,38px) 42px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:18px;background:#fff;border:1px solid var(--border);border-radius:16px;padding:14px 18px;box-shadow:0 5px 18px rgba(30,38,85,.04);margin-bottom:16px}
+.eyebrow{font-size:9px;color:#7B8397;text-transform:uppercase;letter-spacing:.09em;font-weight:850}
+.topbar h1{margin:4px 0 0;color:var(--navy);font-size:25px;line-height:1.1;letter-spacing:-.03em}
+.page-subtitle{font-size:11px;color:var(--muted);margin-top:5px}
+.top-actions{display:flex;align-items:center;gap:8px}
+.period-chip{font-size:10px;color:var(--navy);background:#F0F3F9;border:1px solid #E1E6F0;border-radius:999px;padding:7px 10px;font-weight:750;white-space:nowrap}
+.brand-pill{background:var(--navy);color:#fff;padding:9px 12px;border-radius:10px;font-weight:900;letter-spacing:.08em;font-size:12px}
+.status-card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin:0 0 16px;box-shadow:0 4px 14px rgba(30,38,85,.035)}
+.status-card strong{font-size:12px;color:var(--navy)}
+#dataStatusText{font-size:10px;color:var(--muted);margin-top:3px}
+.spinner{width:20px;height:20px;border:2px solid #DCE2EF;border-top-color:var(--navy);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.grid{display:grid;gap:12px}
+.kpi-grid{grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:14px}
+.kpi-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.kpi-grid.five{grid-template-columns:repeat(5,minmax(0,1fr))}
+.kpi-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;min-height:82px}
+.kpi-label{font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.065em;color:#7A8294}
+.kpi-value{font-size:22px;font-weight:850;color:var(--navy);margin-top:5px;line-height:1.05;white-space:nowrap}
+.kpi-note{font-size:9.5px;color:#8A91A2;margin-top:5px;line-height:1.25}
+.panel{background:#fff;border:1px solid var(--border);border-radius:15px;padding:14px 15px;min-width:0}
+.panel-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.panel h2,.panel h3{margin:0;color:var(--navy);letter-spacing:-.02em}
+.panel h2{font-size:18px}.panel h3{font-size:15px}
+.panel-sub{font-size:10px;color:var(--muted);margin-top:4px}
+.two-col{grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr)}
+.equal-col{grid-template-columns:repeat(2,minmax(0,1fr))}
+.three-col{grid-template-columns:repeat(3,minmax(0,1fr))}
+.chart-wrap{height:310px;position:relative}
+.chart-wrap.short{height:250px}
+.chart-wrap.tall{height:390px}
+.section-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin:20px 0 10px}
+.section-heading h2{font-size:19px;color:var(--navy);margin:0;letter-spacing:-.025em}
+.section-heading p{font-size:10px;color:var(--muted);margin:3px 0 0}
+.insight-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px}
+.insight-card{border:1px solid var(--border);border-radius:14px;background:#fff;padding:13px 14px;min-height:145px;position:relative;overflow:hidden}
+.insight-card:before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:#B7C0D9}
+.insight-card.critical:before{background:var(--red)}.insight-card.attention:before{background:var(--amber)}.insight-card.opportunity:before{background:var(--green)}
+.insight-badge{font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.insight-value{font-size:22px;font-weight:850;color:var(--navy);margin-top:9px}
+.insight-title{font-size:11px;font-weight:800;color:#3B4359;margin-top:6px}
+.insight-text{font-size:10px;color:var(--muted);line-height:1.45;margin-top:5px}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}
+table{width:100%;border-collapse:collapse;background:#fff;font-size:11px}
+thead th{position:sticky;top:0;background:#F7F8FB;color:#687085;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.05em;padding:10px 11px;border-bottom:1px solid var(--border);z-index:1}
+tbody td{padding:9px 11px;border-bottom:1px solid #EEF0F4;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#FAFBFD}
+.align-right{text-align:right}
+.muted{color:var(--muted)}
+.positive{color:var(--green);font-weight:800}.negative{color:var(--red);font-weight:800}
+.page-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.inline-select{width:auto;min-width:190px}
+.city-layout{grid-template-columns:minmax(0,1.35fr) minmax(340px,.65fr)}
+#cityMap{height:560px;border-radius:13px;overflow:hidden;border:1px solid var(--border);background:#F3F5F9}
+.leaflet-container{font-family:inherit}
+.city-detail{display:flex;flex-direction:column;gap:12px}
+.city-list{max-height:560px;overflow:auto;border:1px solid var(--border);border-radius:12px}
+.city-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-bottom:1px solid #EEF0F4;cursor:pointer;background:#fff}
+.city-row:last-child{border-bottom:none}.city-row:hover,.city-row.active{background:#F1F4FA}
+.city-row strong{font-size:11px}.city-row span{font-size:10px;color:var(--muted)}
+.progress{height:7px;background:#EEF1F5;border-radius:999px;overflow:hidden}
+.progress>i{display:block;height:100%;background:var(--navy);border-radius:999px}
+.empty{padding:28px;text-align:center;background:#fff;border:1px dashed #D7DDE8;border-radius:14px;color:var(--muted);font-size:11px}
+.login-shell{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at top right,#E7ECF8 0,transparent 33%),var(--bg)}
+.login-card{width:min(420px,100%);background:#fff;border:1px solid var(--border);border-radius:20px;padding:28px;box-shadow:0 18px 46px rgba(30,38,85,.09)}
+.login-brand{font-size:13px;letter-spacing:.11em;font-weight:950;color:var(--navy)}
+.login-card h1{margin:15px 0 7px;color:var(--navy);font-size:27px;letter-spacing:-.03em}
+.login-card p{font-size:11px;color:var(--muted);line-height:1.5;margin:0 0 22px}
+.login-card form{display:flex;flex-direction:column;gap:8px}
+.login-card label{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:850;margin-top:4px}
+.login-card .btn{margin-top:10px}
+.form-error{font-size:10px;color:var(--red);min-height:14px;margin-top:5px}
+.skeleton{background:linear-gradient(90deg,#F0F2F6 25%,#E6EAF0 37%,#F0F2F6 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:10px}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+.small-note{font-size:9.5px;color:var(--muted);line-height:1.45}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:9px;font-weight:800;background:#EEF1F8;color:var(--navy)}
+.badge.red{background:#FCEBED;color:#9D3440}.badge.green{background:#EAF6EF;color:#287A4E}.badge.amber{background:#FFF3DD;color:#9B6815}
+.metric-list{display:flex;flex-direction:column;gap:9px}
+.metric-line{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:12px;align-items:center}
+.metric-line .name{font-size:10.5px;font-weight:750;color:#3F475C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.metric-line .value{font-size:10px;color:var(--muted);text-align:right}
+.readonly-banner{background:#F5F7FC;border:1px solid #E1E6F1;border-radius:13px;padding:12px 14px;font-size:10.5px;color:#596176;margin-bottom:12px}
+@media(max-width:1300px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.insight-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1020px){
+  .app-shell{grid-template-columns:1fr}
+  .sidebar{position:relative;height:auto;border-right:none;border-bottom:1px solid var(--border)}
+  .nav{display:grid;grid-template-columns:repeat(5,1fr)}
+  .nav-item{justify-content:center}.nav-item span{display:none}
+  .filters{display:grid;grid-template-columns:repeat(5,1fr);align-items:end}
+  .filters label{display:none}
+  .sidebar-bottom{margin-top:10px}
+  .two-col,.equal-col,.city-layout{grid-template-columns:1fr}
+  #cityMap{height:430px}
+}
+@media(max-width:700px){
+  .main{padding:12px}
+  .topbar{align-items:flex-start;padding:12px 13px}.brand-pill{display:none}
+  .topbar h1{font-size:20px}.page-subtitle{display:none}
+  .nav{grid-template-columns:repeat(2,1fr)}
+  .filters{grid-template-columns:1fr 1fr}
+  .kpi-grid,.kpi-grid.four,.kpi-grid.five,.insight-grid,.three-col{grid-template-columns:1fr 1fr}
+  .kpi-value{font-size:20px}
+  .sidebar-bottom{grid-template-columns:1fr 1fr}
+}
+@media(max-width:460px){.kpi-grid,.kpi-grid.four,.kpi-grid.five,.insight-grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr}}
+
+
+/* =========================================================
+   REBANHO — REDESIGN GERENCIAL (override visual atual)
+   Mantém as classes funcionais da aplicação conectada acima
+   e aplica abaixo o visual aprovado na homologação.
+   ========================================================= */
+
+:root{
+  --navy:#1D285F;--navy2:#273674;--ink:#20263A;--muted:#788195;--bg:#F4F6FA;
+  --panel:#FFF;--border:#E4E8F0;--soft:#EEF2F8;--blue:#6176B5;--green:#2D8B62;
+  --red:#CC4D5B;--amber:#D89B35;--shadow:0 10px 28px rgba(30,38,85,.055);
+}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+button,select{font:inherit}.app-shell{display:grid;grid-template-columns:218px minmax(0,1fr);min-height:100vh}
+.sidebar{position:sticky;top:0;height:100vh;background:#fff;border-right:1px solid var(--border);padding:20px 14px 14px;display:flex;flex-direction:column}
+.side-brand{padding:0 10px 18px;border-bottom:1px solid #EEF0F5}.brand-word{font-size:19px;font-weight:950;letter-spacing:.1em;color:var(--navy)}.brand-product{font-size:10px;color:var(--muted);font-weight:650;margin-top:5px}
+.nav{display:flex;flex-direction:column;gap:5px;padding-top:16px}.nav-item{border:0;background:transparent;border-radius:11px;padding:10px 11px;display:flex;align-items:center;gap:10px;text-align:left;color:#586178;cursor:pointer;font-size:12px}.nav-item span{width:18px;text-align:center;color:#8891A5}.nav-item b{font-weight:720}.nav-item:hover{background:#F6F7FA;color:var(--navy)}.nav-item.active{background:#EDF1F8;color:var(--navy);box-shadow:inset 3px 0 0 var(--navy)}
+.sidebar-spacer{flex:1}.sidebar-note{display:flex;gap:9px;align-items:center;background:#F8FAFD;border:1px solid var(--border);padding:10px;border-radius:12px;margin-bottom:8px}.sidebar-note-dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}.sidebar-note strong{display:block;font-size:10px;color:var(--navy)}.sidebar-note span{display:block;font-size:9px;color:var(--muted);margin-top:2px}
+.user-card{display:flex;gap:9px;align-items:center;padding:10px 8px}.avatar{width:34px;height:34px;border-radius:10px;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:850}.user-name{font-size:11px;font-weight:780}.user-role{font-size:9px;color:var(--muted);margin-top:2px}
+.main{min-width:0;padding:22px clamp(20px,2.7vw,42px) 44px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.eyebrow{font-size:9px;letter-spacing:.09em;text-transform:uppercase;font-weight:850;color:#8992A5}.topbar h1{font-size:27px;line-height:1.1;letter-spacing:-.035em;color:var(--navy);margin:4px 0 0}.page-subtitle{font-size:11px;color:var(--muted);margin-top:4px}.topbar-right{display:flex;align-items:center;gap:8px}.sync-pill{font-size:9.5px;color:#596176;background:#fff;border:1px solid var(--border);border-radius:999px;padding:7px 10px;display:flex;align-items:center;gap:6px}.sync-pill span{width:7px;height:7px;background:var(--green);border-radius:50%}.icon-btn{width:34px;height:34px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--navy);cursor:pointer}
+.filterbar{display:flex;align-items:end;gap:9px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:11px 12px;margin-bottom:12px;box-shadow:0 3px 10px rgba(30,38,85,.025)}.filterbar-title{align-self:center;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.06em;color:#8A92A4;padding:0 6px 0 2px}.filter-group{width:128px}.filter-group.grow{min-width:190px;flex:1}.filter-group label{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.055em;color:#9299A9;font-weight:800;margin:0 0 4px 2px}.filter-group select{width:100%;height:34px;border:1px solid #DEE3EC;border-radius:9px;background:#fff;padding:0 9px;color:#454D62;font-size:10.5px;outline:none}.filter-clear{height:34px;border:1px solid transparent;background:transparent;color:#7A8293;font-size:10px;font-weight:750;cursor:pointer;padding:0 8px}
+.demo-banner{background:#FFF8EA;border:1px solid #F0DEB5;color:#816125;border-radius:12px;padding:10px 12px;font-size:10px;margin-bottom:14px}
+.grid{display:grid;gap:12px}.hero-grid{grid-template-columns:1.35fr repeat(4,minmax(0,.65fr));margin-bottom:12px}.hero-kpi{background:linear-gradient(135deg,var(--navy),#2C3B7E);border-radius:16px;padding:17px 18px;color:#fff;min-height:118px;position:relative;overflow:hidden}.hero-kpi:after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.06);right:-45px;top:-70px}.hero-label{font-size:9px;text-transform:uppercase;letter-spacing:.075em;color:#CAD3F0;font-weight:800}.hero-value{font-size:31px;font-weight:880;letter-spacing:-.035em;margin-top:8px}.hero-note{font-size:10px;color:#DDE3F5;margin-top:6px}.kpi-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px 15px;min-height:118px}.kpi-label{font-size:8.5px;text-transform:uppercase;letter-spacing:.065em;color:#8A92A3;font-weight:850}.kpi-value{font-size:22px;color:var(--navy);font-weight:850;letter-spacing:-.025em;margin-top:10px}.kpi-note{font-size:9.5px;color:var(--muted);margin-top:6px;line-height:1.35}
+.panel{background:#fff;border:1px solid var(--border);border-radius:16px;padding:15px 16px;min-width:0;box-shadow:0 4px 14px rgba(30,38,85,.025)}.panel-title{font-size:15px;color:var(--navy);font-weight:820;letter-spacing:-.02em}.panel-sub{font-size:9.5px;color:var(--muted);margin-top:3px}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:11px}.panel-chip{font-size:9px;font-weight:800;border-radius:999px;padding:5px 8px;background:#F0F3F9;color:var(--navy)}
+.main-grid{grid-template-columns:minmax(0,1.6fr) minmax(300px,.7fr);margin-bottom:12px}.secondary-grid{grid-template-columns:1fr 1fr}.chart-wrap{height:300px;position:relative}.chart-wrap.short{height:235px}.chart-wrap.tall{height:365px}
+.goal-card{display:flex;flex-direction:column;gap:14px}.goal-ring{width:150px;height:150px;border-radius:50%;margin:4px auto 0;background:conic-gradient(var(--navy) 0 95.6%,#E9EDF5 95.6% 100%);display:grid;place-items:center}.goal-ring:after{content:"";width:116px;height:116px;border-radius:50%;background:#fff}.goal-center{position:absolute;text-align:center;pointer-events:none}.goal-center strong{display:block;font-size:24px;color:var(--navy)}.goal-center span{font-size:9px;color:var(--muted)}.goal-ring-wrap{position:relative;display:grid;place-items:center}.goal-line{display:flex;justify-content:space-between;gap:10px;font-size:10px;border-top:1px solid #EEF0F4;padding-top:9px}.goal-line span{color:var(--muted)}.goal-line strong{color:#40485F}
+.section-head{display:flex;justify-content:space-between;align-items:end;margin:18px 0 9px}.section-head h2{font-size:18px;color:var(--navy);margin:0;letter-spacing:-.025em}.section-head p{font-size:9.5px;color:var(--muted);margin:3px 0 0}
+.insights{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px}.insight{background:#fff;border:1px solid var(--border);border-radius:14px;padding:13px 14px;min-height:128px;position:relative;overflow:hidden}.insight:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#BFC6D8}.insight.attention:before{background:var(--amber)}.insight.critical:before{background:var(--red)}.insight.opportunity:before{background:var(--green)}.insight-badge{font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:850;color:#8A92A4}.insight-value{font-size:20px;font-weight:850;color:var(--navy);margin-top:10px}.insight-title{font-size:10.5px;font-weight:800;margin-top:5px}.insight-text{font-size:9.5px;color:var(--muted);line-height:1.4;margin-top:4px}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}table{width:100%;border-collapse:collapse;background:#fff;font-size:10.5px}thead th{background:#F8F9FB;color:#737B8E;text-align:left;font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;padding:10px;border-bottom:1px solid var(--border)}tbody td{padding:9px 10px;border-bottom:1px solid #EEF0F4}tbody tr:last-child td{border-bottom:0}.align-right{text-align:right}.badge{display:inline-flex;border-radius:999px;padding:4px 7px;font-size:8.5px;font-weight:800;background:#EEF1F8;color:var(--navy)}.badge.red{background:#FCEAEC;color:#A43B47}.badge.amber{background:#FFF3DE;color:#986710}
+.metric-list{display:flex;flex-direction:column;gap:10px}.metric-row{display:grid;grid-template-columns:minmax(0,1fr) 90px;align-items:center;gap:10px}.metric-name{font-size:10px;font-weight:730;color:#475066;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.metric-value{font-size:9.5px;color:var(--muted);text-align:right}.progress{height:6px;background:#EEF1F5;border-radius:999px;overflow:hidden;margin-top:5px}.progress i{display:block;height:100%;background:var(--navy);border-radius:999px}
+.city-grid{grid-template-columns:minmax(0,1.55fr) minmax(310px,.65fr)}#cityMap{height:510px;border-radius:13px;background:linear-gradient(135deg,#F0F3F8,#E7EBF2);display:grid;place-items:center;border:1px solid #E4E8F0}.map-placeholder{text-align:center;color:#7E8799}.map-placeholder b{display:block;color:var(--navy);margin-top:8px}.city-list{max-height:510px;overflow:auto;border:1px solid var(--border);border-radius:12px}.city-row{display:flex;justify-content:space-between;gap:10px;padding:10px 11px;border-bottom:1px solid #EEF0F4}.city-row:last-child{border-bottom:0}.city-row strong{font-size:10.5px}.city-row span{font-size:9.5px;color:var(--muted)}
+@media(max-width:1250px){.hero-grid{grid-template-columns:repeat(3,1fr)}.hero-kpi{grid-column:span 2}.insights{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:980px){.app-shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.nav{display:grid;grid-template-columns:repeat(5,1fr)}.sidebar-spacer,.sidebar-note,.user-card{display:none}.filterbar{flex-wrap:wrap}.main-grid,.secondary-grid,.city-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.main{padding:14px}.nav{grid-template-columns:repeat(2,1fr)}.hero-grid{grid-template-columns:1fr 1fr}.hero-kpi{grid-column:1/-1}.filter-group,.filter-group.grow{width:calc(50% - 6px);min-width:0;flex:none}.insights{grid-template-columns:1fr}.topbar h1{font-size:22px}}
+
+
+/* Multi-seleção dos filtros laterais */
+.multi-select{position:relative;width:100%}
+.multi-select-trigger{
+  width:100%;height:36px;border:1px solid #DDE2EB;border-radius:9px;background:#fff;color:var(--text);
+  padding:0 9px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;
+  font-size:11px;text-align:left;outline:none
+}
+.multi-select-trigger:hover,.multi-select.open .multi-select-trigger{border-color:#A8B4D9}
+.multi-select-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.multi-select-arrow{color:#7B8397;font-size:12px;flex:none}
+.multi-select-menu{
+  display:none;position:absolute;z-index:40;left:0;right:0;top:calc(100% + 5px);
+  background:#fff;border:1px solid #DDE2EB;border-radius:10px;box-shadow:0 12px 28px rgba(30,38,85,.14);
+  padding:6px;max-height:260px;overflow:auto
+}
+.multi-select.open .multi-select-menu{display:block}
+.multi-select-all{
+  width:100%;height:30px;border:0;border-radius:7px;background:#F5F7FB;color:var(--navy);
+  font-size:10px;font-weight:800;text-align:left;padding:0 9px;cursor:pointer;margin-bottom:4px
+}
+.multi-select-all:hover{background:#EDF1F8}
+.multi-select-options{display:flex;flex-direction:column;gap:1px}
+.multi-select-option{
+  display:flex!important;align-items:center;gap:8px;margin:0!important;padding:7px 8px;border-radius:7px;
+  cursor:pointer;text-transform:none!important;letter-spacing:0!important;font-size:10.5px!important;color:#4B536B!important;font-weight:650!important
+}
+.multi-select-option:hover{background:#F6F8FC}
+.multi-select-option input{width:14px;height:14px;margin:0;flex:none;accent-color:var(--navy)}
+.carteira-movement-panel{margin-bottom:12px}
+.carteira-secondary{margin-bottom:0}
+
+</style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+</head>
+<body>
+  <div id="loginView" class="login-shell hidden">
+    <div class="login-card">
+      <div class="login-brand">REBANHO</div>
+      <h1>Dashboard de Supervisão</h1>
+      <p>Gestão comercial, carteira, produtos, cidades e metas em uma única aplicação.</p>
+      <form id="loginForm">
+        <label>Usuário</label>
+        <input id="loginUser" autocomplete="username" required />
+        <label>Senha</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required />
+        <button class="btn primary" type="submit">Entrar</button>
+        <div id="loginError" class="form-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="side-brand">
+        <div class="brand-word">REBANHO</div>
+        <div class="brand-product">Supervisão Comercial</div>
+      </div>
+      <div id="userCard" class="user-card"></div>
+      <nav class="nav">
+        <button data-page="overview" class="nav-item active"><span>⌂</span> Visão Geral</button>
+        <button data-page="carteira" class="nav-item"><span>◫</span> Carteira</button>
+        <button data-page="produtos" class="nav-item"><span>◇</span> Mix e Produtos</button>
+        <button data-page="cidades" class="nav-item"><span>⌖</span> Cidades</button>
+        <button data-page="metas" class="nav-item"><span>◎</span> Gestão de Metas</button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-note"><span class="sidebar-note-dot"></span><div><strong>Bases comerciais</strong><span>Indicadores do período selecionado</span></div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Dashboard de Supervisão</div>
+          <h1 id="pageTitle">Visão Geral</h1>
+          <div id="pageSubtitle" class="page-subtitle"></div>
+        </div>
+        <div class="topbar-right">
+          <div id="periodChip" class="period-chip"></div>
+          <button id="refreshData" class="icon-btn" type="button" title="Atualizar bases" aria-label="Atualizar bases">↻</button>
+          <button id="logoutBtn" class="btn ghost small" type="button">Sair</button>
+        </div>
+      </header>
+
+      <div class="filterbar">
+        <div class="filterbar-title">Filtros</div>
+        <div class="filter-group"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
+        <div class="filter-group"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
+        <div class="filter-group grow"><label>Supervisor</label><div id="filterSupervisor" class="multi-select"></div></div>
+        <div class="filter-group grow"><label>RCA</label><div id="filterRca" class="multi-select"></div></div>
+        <div class="filter-group grow"><label>Departamento</label><div id="filterDepartment" class="multi-select"></div></div>
+        <button id="clearFilters" class="filter-clear" type="button">Limpar filtros</button>
+      </div>
+
+      <div id="dataStatus" class="status-card">
+        <div class="spinner"></div>
+        <div>
+          <strong>Carregando bases comerciais</strong>
+          <div id="dataStatusText">Conectando ao Drive…</div>
+        </div>
+      </div>
+
+      <section id="content"></section>
+    </main>
+  </div>
+
+  <template id="kpiTemplate">
+    <div class="kpi-card">
+      <div class="kpi-label"></div>
+      <div class="kpi-value"></div>
+      <div class="kpi-note"></div>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script id="workerSource" type="text/plain">/* Rebanho Supervisão Web — processamento das bases fora da thread principal. */
+let SALES = [];
+let METAS = [];
+let RCAS = [];
+let CLIENTS = new Map();
+let RCA_BY_CODE = new Map();
+let CLIENT_HISTORY = new Map();
+let LATEST_DATE = null;
+let FORCE_REFRESH = false;
+let SERVER_UPDATED_AT = null;
+let SERVER_INFO = null;
+let SERVER_REQUEST_ID = 0;
+const SERVER_REQUESTS = new Map();
+
+
+function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'s';}
+function now(){return performance.now();}
+const CACHE_DB = 'rbn-supervisao-cache';
+const CACHE_STORE = 'snapshots';
+const CACHE_KEY = 'server-normalized-v1';
+const LOCAL_CACHE_FALLBACK_MS = 12 * 60 * 60 * 1000;
+
+function openCacheDb(){
+  return new Promise((resolve,reject)=>{
+    if(typeof indexedDB==='undefined') return resolve(null);
+    const req=indexedDB.open(CACHE_DB,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(CACHE_STORE))db.createObjectStore(CACHE_STORE);};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function loadLocalCache(){
+  try{
+    const db=await openCacheDb(); if(!db)return null;
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CACHE_STORE,'readonly');
+      const req=tx.objectStore(CACHE_STORE).get(CACHE_KEY);
+      req.onsuccess=()=>resolve(req.result||null);
+      req.onerror=()=>reject(req.error);
+    });
+  }catch{return null}
+}
+async function saveLocalCache(){
+  try{
+    const db=await openCacheDb(); if(!db)return;
+    const snapshot={
+      savedAt:Date.now(),
+      serverUpdatedAt:SERVER_UPDATED_AT,
+      sales:SALES,
+      metas:METAS,
+      rcas:RCAS,
+      clients:[...CLIENTS.entries()],
+      latest:LATEST_DATE
+    };
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CACHE_STORE,'readwrite');
+      tx.objectStore(CACHE_STORE).put(snapshot,CACHE_KEY);
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(err){console.warn('Falha ao persistir a cópia local do dashboard:',err?.name||'erro')}
+}
+function restoreLocalCache(snapshot){
+  SERVER_UPDATED_AT=snapshot?.serverUpdatedAt||null;
+  SALES=Array.isArray(snapshot?.sales)?snapshot.sales:[];
+  METAS=Array.isArray(snapshot?.metas)?snapshot.metas:[];
+  RCAS=Array.isArray(snapshot?.rcas)?snapshot.rcas:[];
+  CLIENTS=new Map(Array.isArray(snapshot?.clients)?snapshot.clients:[]);
+  RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+  LATEST_DATE=snapshot?.latest?new Date(snapshot.latest):null;
+  buildHistory();
+}
+function emitReady(){
+  const years=[...new Set(SALES.map(s=>s.year))].sort((a,b)=>b-a);
+  const departments=[...new Set(SALES.map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const supervisors=[...new Set(RCAS.filter(r=>r.active).map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const activeRcas=RCAS.filter(r=>r.active).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  postStage('Base pronta.',100);
+  postMessage({type:'ready',dimensions:{years,departments,supervisors,rcas:activeRcas,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
+}
+
+const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+function postStage(text, progress=0){ postMessage({type:'stage', text, progress}); }
+function norm(v){
+  return String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+}
+function num(v){
+  if(v === null || v === undefined || v === '') return 0;
+  if(typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  let s=String(v).trim();
+  if(!s) return 0;
+  if(s.includes(',') && s.includes('.')) s=s.replace(/\./g,'').replace(',','.');
+  else if(s.includes(',')) s=s.replace(',','.');
+  const n=Number(s.replace(/[^0-9.-]/g,''));
+  return Number.isFinite(n)?n:0;
+}
+function code(v){
+  const m=String(v ?? '').match(/^\s*(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+function parseDate(v){
+  if(v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  if(typeof v === 'number'){
+    const d=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000);
+    return Number.isNaN(d.getTime())?null:new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
+  }
+  if(!v) return null;
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/);
+  if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  m=s.match(/^(\d{1,2})[\/](-?\d{1,2})[\/](\d{4})/);
+  if(m) return new Date(+m[3],+m[2]-1,+m[1]);
+  const d=new Date(s);
+  return Number.isNaN(d.getTime())?null:d;
+}
+function monthKeyFrom(v){
+  const d=parseDate(v);
+  if(d) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  const s=String(v ?? '');
+  const m=s.match(/(20\d{2})[^0-9]?(0?[1-9]|1[0-2])/);
+  return m ? `${m[1]}-${String(+m[2]).padStart(2,'0')}` : '';
+}
+function productLabel(v){
+  const s=String(v ?? '').trim();
+  const name=s.replace(/^\s*\d+\s*-\s*/,'').trim();
+  return name || (code(v)!=null ? `Produto ${code(v)}` : 'Sem descrição');
+}
+function addSet(map,key,val){
+  if(!map.has(key)) map.set(key,new Set());
+  if(val!==null && val!==undefined) map.get(key).add(val);
+}
+function formatMonthKey(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`}
+
+function buildHistory(){
+  CLIENT_HISTORY=new Map();
+  for(const s of SALES){
+    if(s.client==null) continue;
+    if(!CLIENT_HISTORY.has(s.client)) CLIENT_HISTORY.set(s.client,[]);
+    CLIENT_HISTORY.get(s.client).push({date:s.date, value:s.value, rca:s.rca, department:s.department});
+  }
+  for(const arr of CLIENT_HISTORY.values()) arr.sort((a,b)=>a.date-b.date);
+}
+
+function serverRequest(action,payload={}){
+  const requestId=++SERVER_REQUEST_ID;
+  return new Promise((resolve,reject)=>{
+    SERVER_REQUESTS.set(requestId,{resolve,reject});
+    postMessage({type:'serverRequest',requestId,action,payload});
+  });
+}
+async function fetchServerDatasetInfo(){
+  return await serverRequest('info');
+}
+async function fetchServerDataset(force){
+  if(force){
+    postStage('Atualizando as bases no Apps Script…',10);
+    const result=await serverRequest('refresh');
+    if(!result?.ok)throw new Error(result?.message||'Não foi possível atualizar as bases.');
+    SERVER_INFO=await fetchServerDatasetInfo();
+    postStage('Bases processadas. Carregando páginas do cache…',30);
+  }else{
+    SERVER_INFO=await fetchServerDatasetInfo();
+    if(!SERVER_INFO?.exists)throw new Error('A base preparada ainda não existe. Clique em “Atualizar bases” para criá-la.');
+  }
+  if(!SERVER_INFO?.exists)throw new Error('Não há snapshot preparado no cache do Apps Script.');
+  SERVER_UPDATED_AT=SERVER_INFO.updatedAt||null;
+  SALES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
+  let received=0,expected=Number(SERVER_INFO.recordCount)||0;
+  const pageSize=5000,concurrency=4;
+  const consume=records=>{
+    for(const line of records||[]){
+      if(!line)continue;
+      const item=typeof line==='string'?JSON.parse(line):line,v=item.value;
+      if(item.type==='meta'){LATEST_DATE=v.latest?new Date(v.latest):null;}
+      else if(item.type==='rca')RCAS.push(v);
+      else if(item.type==='goal')METAS.push(v);
+      else if(item.type==='client')CLIENTS.set(v[0],v[1]);
+      else if(item.type==='sale'){v.date=new Date(v.date);SALES.push(v);}
+      received++;
+    }
+  };
+  const offsets=[];for(let offset=0;offset<expected;offset+=pageSize)offsets.push(offset);
+  for(let i=0;i<offsets.length;i+=concurrency){
+    const pages=await Promise.all(offsets.slice(i,i+concurrency).map(offset=>serverRequest('page',{offset,limit:pageSize})));
+    for(const page of pages){if(!page?.ok)throw new Error(page?.message||'Falha ao ler uma página do cache.');consume(page.records);}
+    postStage('Carregando cache preparado… '+Math.min(received,expected).toLocaleString('pt-BR')+' de '+expected.toLocaleString('pt-BR')+' registros',35+Math.min(55,received/Math.max(expected,1)*55));
+  }
+  if(!SALES.length)throw new Error('A base preparada não contém vendas fechadas.');
+  if(SALES.length!==Number(SERVER_INFO.salesCount))throw new Error('O cache chegou incompleto ('+SALES.length.toLocaleString('pt-BR')+' vendas). Clique em “Atualizar bases” e tente novamente.');
+  RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+}
+async function init(){
+  try{
+    if(!FORCE_REFRESH){
+      postStage('Abrindo base local…',4);
+      const cached=await loadLocalCache();
+      postStage('Conferindo atualização do servidor…',6);
+      let info=null;
+      try{info=await fetchServerDatasetInfo();}
+      catch(err){
+        const cacheAge=Date.now()-Number(cached?.savedAt||0);
+        if(cached?.sales?.length&&cacheAge<LOCAL_CACHE_FALLBACK_MS&&(!err.status||err.status>=500)){
+          restoreLocalCache(cached);emitReady();return;
+        }
+        throw err;
+      }
+      if(cached?.sales?.length){
+        const cacheAge=Date.now()-Number(cached.savedAt||0);
+        const matchesServer=!!info?.updatedAt&&cached.serverUpdatedAt===info.updatedAt;
+        const recentFallback=!info&&cacheAge<LOCAL_CACHE_FALLBACK_MS;
+        if(matchesServer||recentFallback){restoreLocalCache(cached);emitReady();return;}
+      }
+    }
+    postStage('Conectando ao serviço de dados…',8);
+    await fetchServerDataset(FORCE_REFRESH);
+    postStage(SALES.length.toLocaleString('pt-BR')+' linhas preparadas recebidas. Montando histórico…',93);
+    const tHist=now();buildHistory();
+    postStage('Histórico comercial montado em '+secs(now()-tHist)+'.',98);
+    emitReady();saveLocalCache();
+  }catch(err){postMessage({type:'error',message:err?.message||String(err)})}
+}
+
+function multi(v){
+  if(Array.isArray(v))return v.map(String).filter(x=>x&&x!=='Todos');
+  if(v===null||v===undefined||v===''||v==='Todos')return [];
+  return [String(v)];
+}
+function allowedRca(filters){
+  const active=RCAS.filter(r=>r.active);
+  const supervisors=multi(filters.supervisor);
+  const rcas=multi(filters.rca);
+  return new Set(active.filter(r=>{
+    if(supervisors.length && !supervisors.includes(String(r.supervisor))) return false;
+    if(rcas.length && !rcas.includes(String(r.code))) return false;
+    return true;
+  }).map(r=>r.code));
+}
+function filterSales(filters,{ignoreMonth=false, city=null}={}){
+  const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
+  const targetCity=city?norm(city):null;
+  return SALES.filter(s=>{
+    if(!allowed.has(s.rca)) return false;
+    if(targetYear!==null && s.year!==targetYear) return false;
+    if(targetMonth!==null && s.month!==targetMonth) return false;
+    if(departments.length && !departments.includes(String(s.department))) return false;
+    if(targetCity && norm(s.city)!==targetCity) return false;
+    return true;
+  });
+}
+function filterMetas(filters,{ignoreMonth=false}={}){
+  const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
+  return METAS.filter(m=>{
+    if(!allowed.has(m.rca)) return false;
+    if(targetYear!==null && m.year!==targetYear) return false;
+    if(targetMonth!==null && m.month!==targetMonth) return false;
+    if(departments.length && m.department && !departments.includes(String(m.department))) return false;
+    return true;
+  });
+}
+function metrics(rows){
+  const clients=new Set(),orders=new Set(),products=new Set();
+  const byClient=new Map();
+  let revenue=0, marginNum=0, marginBase=0;
+  for(const s of rows){
+    revenue+=s.value;
+    if(s.client!=null){clients.add(s.client);addSet(byClient,s.client,s.product);}
+    if(s.order) orders.add(s.order);
+    if(s.product!=null) products.add(s.product);
+    if(Number.isFinite(s.marginPct)){marginNum+=s.value*s.marginPct;marginBase+=s.value;}
+  }
+  let mix=0;
+  if(byClient.size) mix=[...byClient.values()].reduce((a,set)=>a+set.size,0)/byClient.size;
+  return {
+    revenue,clients:clients.size,orders:orders.size,products:products.size,mix,
+    ticket:orders.size?revenue/orders.size:0,
+    margin:marginBase?marginNum/marginBase:null
+  };
+}
+function totalMeta(rows){return rows.reduce((a,x)=>a+x.value,0)}
+function groupRevenue(rows,keyFn){
+  const m=new Map();
+  for(const s of rows){
+    const k=keyFn(s);
+    if(!m.has(k)) m.set(k,{key:k,revenue:0,clients:new Set(),orders:new Set(),products:new Set()});
+    const g=m.get(k);g.revenue+=s.value;
+    if(s.client!=null)g.clients.add(s.client);if(s.order)g.orders.add(s.order);if(s.product!=null)g.products.add(s.product);
+  }
+  return [...m.values()].map(g=>({key:g.key,revenue:g.revenue,clients:g.clients.size,orders:g.orders.size,products:g.products.size}));
+}
+function monthSeries(rows){
+  const g=groupRevenue(rows,s=>s.month);
+  return g.sort((a,b)=>a.key-b.key).map(x=>({month:x.key,label:MONTHS[x.key],revenue:x.revenue,clients:x.clients,orders:x.orders}));
+}
+function previousFilters(filters){
+  if(!filters.year || filters.year==='Todos' || !filters.month || filters.month==='Todos') return null;
+  let y=Number(filters.year),m=Number(filters.month)-1;if(m===0){m=12;y--}
+  return {...filters,year:y,month:m};
+}
+function compactInsights(filters,rows){
+  const out=[];
+  const pf=previousFilters(filters);
+  if(pf){
+    const prev=filterSales(pf);
+    const now=metrics(rows),before=metrics(prev);
+    if(before.revenue>0){
+      const v=(now.revenue/before.revenue-1)*100;
+      if(v<0)out.push({level:v<=-10?'critical':'attention',title:'Queda do faturamento',value:v,text:'versus mês anterior'});
+      else if(v>5)out.push({level:'opportunity',title:'Crescimento do faturamento',value:v,text:'versus mês anterior'});
+    }
+  }
+  const rcaGroups=groupRevenue(rows,s=>s.rca).sort((a,b)=>a.revenue-b.revenue);
+  if(rcaGroups.length>1){
+    const low=rcaGroups[0], rr=RCA_BY_CODE.get(low.key)||{};
+    out.push({level:'attention',title:'Menor faturamento por RCA',value:low.revenue,text:rr.name||String(low.key),kind:'money'});
+  }
+  const dep=groupRevenue(rows,s=>s.department).sort((a,b)=>b.revenue-a.revenue);
+  const total=rows.reduce((a,s)=>a+s.value,0);
+  if(dep.length && total){
+    const share=dep[0].revenue/total*100;
+    if(share>=45)out.push({level:'attention',title:'Concentração por departamento',value:share,text:dep[0].key,kind:'percent'});
+  }
+  return out.slice(0,4);
+}
+function overview(filters){
+  const rows=filterSales(filters);
+  const yearRows=filterSales(filters,{ignoreMonth:true});
+  const k=metrics(rows);
+  const meta=totalMeta(filterMetas(filters));
+  const rca=groupRevenue(rows,s=>s.rca).map(x=>({...x,name:(RCA_BY_CODE.get(x.key)||{}).name||String(x.key)})).sort((a,b)=>b.revenue-a.revenue);
+  const departments=groupRevenue(rows,s=>s.department).sort((a,b)=>b.revenue-a.revenue);
+  return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
+}
+function carteira(filters){
+  const rows=filterSales(filters);
+  const k=metrics(rows);
+  const cutoff=rows.length?new Date(Math.max(...rows.map(s=>s.date.getTime()))):LATEST_DATE;
+  if(!cutoff)return {kpis:{...k,newClients:0,short:0,long:0},byRca:[],inactive:[]};
+  const lim3=new Date(cutoff);lim3.setMonth(lim3.getMonth()-3);
+  const lim6=new Date(cutoff);lim6.setMonth(lim6.getMonth()-6);
+  const lim12=new Date(cutoff);lim12.setMonth(lim12.getMonth()-12);
+  const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const inactive=[];
+  const by=new Map();
+  let short=0,long=0;
+  for(const [client,hist] of CLIENT_HISTORY){
+    const reg=CLIENTS.get(client);
+    const owner=reg?.rca ?? hist[hist.length-1]?.rca;
+    if(!allowed.has(owner))continue;
+    const scopedHist=departments.length?hist.filter(h=>departments.includes(String(h.department))):hist;
+    if(!scopedHist.length)continue;
+    let last=null,rev12=0;
+    for(const h of scopedHist){
+      if(h.date<=cutoff) last=h.date;
+      if(h.date>=lim12 && h.date<=cutoff)rev12+=h.value;
+    }
+    if(!last)continue;
+    const isShort=last<=lim3 && last>lim6;
+    const isLong=last<=lim6 && last>=lim12;
+    if(!isShort && !isLong)continue;
+    const days=Math.floor((cutoff-last)/86400000);
+    if(isShort)short++;if(isLong)long++;
+    const rr=RCA_BY_CODE.get(owner)||{};
+    if(!by.has(owner))by.set(owner,{rca:owner,name:rr.name||String(owner),short:0,long:0});
+    if(isShort)by.get(owner).short++;if(isLong)by.get(owner).long++;
+    inactive.push({client,name:reg?.name||String(client),rca:owner,rcaName:rr.name||String(owner),last:last.toISOString(),days,revenue12:rev12,isShort,isLong});
+  }
+  const periodClients=new Set(rows.map(s=>s.client).filter(x=>x!=null));
+  let newClients=0;
+  for(const cli of periodClients){
+    const hist=CLIENT_HISTORY.get(cli)||[];
+    if(!hist.length)continue;
+    const first=hist[0].date;
+    if(filters.year!=='Todos' && first.getFullYear()!==Number(filters.year))continue;
+    if(filters.month!=='Todos' && first.getMonth()+1!==Number(filters.month))continue;
+    newClients++;
+  }
+  inactive.sort((a,b)=>b.revenue12-a.revenue12);
+  return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),inactive:inactive.slice(0,120)};
+}
+function produtos(filters){
+  const rows=filterSales(filters);
+  const byProd=new Map();
+  const byRca=new Map();
+  for(const s of rows){
+    if(s.product==null)continue;
+    if(!byProd.has(s.product))byProd.set(s.product,{code:s.product,name:s.productName,revenue:0,clients:new Set(),orders:new Set(),rcas:new Set()});
+    const p=byProd.get(s.product);p.revenue+=s.value;if(s.client!=null)p.clients.add(s.client);if(s.order)p.orders.add(s.order);if(s.rca!=null)p.rcas.add(s.rca);
+    if(!byRca.has(s.rca))byRca.set(s.rca,new Map());
+    const rm=byRca.get(s.rca);
+    if(!rm.has(s.product))rm.set(s.product,{code:s.product,name:s.productName,revenue:0});
+    rm.get(s.product).revenue+=s.value;
+  }
+  const arr=[...byProd.values()].map(p=>({code:p.code,name:p.name,revenue:p.revenue,clients:p.clients.size,orders:p.orders.size,rcas:p.rcas.size}));
+  const top=[...arr].sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+  const bottom=[...arr].filter(x=>x.revenue>0).sort((a,b)=>a.revenue-b.revenue).slice(0,10);
+  const top2=[];
+  for(const [rca,map] of byRca){
+    const rr=RCA_BY_CODE.get(rca)||{};
+    const list=[...map.values()].sort((a,b)=>b.revenue-a.revenue);
+    const total=list.reduce((a,x)=>a+x.revenue,0), first=list[0],second=list[1];
+    if(first)top2.push({rca,name:rr.name||String(rca),first,second:second||null,share:total?((first.revenue+(second?.revenue||0))/total*100):0,total});
+  }
+  top2.sort((a,b)=>b.total-a.total);
+  return {kpis:{products:arr.length,clients:new Set(rows.map(s=>s.client).filter(x=>x!=null)).size},top,bottom,top2};
+}
+function cidades(filters, selectedCity=null){
+  const rows=filterSales(filters);
+  const cityMap=new Map();
+  for(const s of rows){
+    if(!s.city)continue;
+    const key=`${norm(s.city)}|${s.uf}`;
+    if(!cityMap.has(key))cityMap.set(key,{key,city:s.city,uf:s.uf,revenue:0,clients:new Set(),orders:new Set(),products:new Set()});
+    const c=cityMap.get(key);c.revenue+=s.value;if(s.client!=null)c.clients.add(s.client);if(s.order)c.orders.add(s.order);if(s.product!=null)c.products.add(s.product);
+  }
+  const list=[...cityMap.values()].map(c=>({key:c.key,city:c.city,uf:c.uf,revenue:c.revenue,clients:c.clients.size,orders:c.orders.size,products:c.products.size})).sort((a,b)=>b.revenue-a.revenue);
+  const chosen=selectedCity && selectedCity!=='Todos' ? list.find(c=>c.key===selectedCity) : null;
+  const focus=chosen?filterSales(filters,{city:chosen.city}):rows;
+  const yearFocus=chosen?filterSales(filters,{ignoreMonth:true,city:chosen.city}):filterSales(filters,{ignoreMonth:true});
+  const p=produtosForRows(focus);
+  const cli=clientRanking(focus);
+  const insights=cityInsights(filters,list,chosen);
+  return {cities:list,selected:chosen,monthly:monthSeries(yearFocus),products:p.slice(0,12),clients:cli.slice(0,20),insights};
+}
+function produtosForRows(rows){
+  const m=new Map();
+  for(const s of rows){
+    if(s.product==null)continue;
+    if(!m.has(s.product))m.set(s.product,{code:s.product,name:s.productName,revenue:0,clients:new Set(),orders:new Set()});
+    const x=m.get(s.product);x.revenue+=s.value;if(s.client!=null)x.clients.add(s.client);if(s.order)x.orders.add(s.order);
+  }
+  return [...m.values()].map(x=>({...x,clients:x.clients.size,orders:x.orders.size})).sort((a,b)=>b.revenue-a.revenue);
+}
+function clientRanking(rows){
+  const m=new Map();
+  for(const s of rows){
+    if(s.client==null)continue;
+    if(!m.has(s.client))m.set(s.client,{code:s.client,name:CLIENTS.get(s.client)?.name||String(s.client),revenue:0,orders:new Set(),products:new Set()});
+    const x=m.get(s.client);x.revenue+=s.value;if(s.order)x.orders.add(s.order);if(s.product!=null)x.products.add(s.product);
+  }
+  return [...m.values()].map(x=>({...x,orders:x.orders.size,products:x.products.size})).sort((a,b)=>b.revenue-a.revenue);
+}
+function cityInsights(filters,list,chosen){
+  const out=[];
+  if(!chosen && list.length>1){
+    const low=[...list].filter(x=>x.revenue>0).sort((a,b)=>a.revenue-b.revenue)[0];
+    if(low)out.push({level:'attention',title:'Menor faturamento por cidade',value:low.revenue,text:`${low.city} - ${low.uf}`,kind:'money'});
+  }
+  const pf=previousFilters(filters);
+  if(pf){
+    const prev=cidadesSimple(pf);
+    const prevMap=new Map(prev.map(x=>[x.key,x]));
+    const candidates=(chosen?[chosen]:list).map(c=>{
+      const p=prevMap.get(c.key);return p&&p.revenue>0?{...c,variation:(c.revenue/p.revenue-1)*100,prev:p.revenue}:null
+    }).filter(Boolean).sort((a,b)=>a.variation-b.variation);
+    if(candidates.length&&candidates[0].variation<0){
+      const x=candidates[0];out.push({level:x.variation<=-20?'critical':'attention',title:chosen?'Queda da cidade':'Cidade com maior queda',value:x.variation,text:`${x.city} - ${x.uf}`,kind:'percent',foot:`${x.prev}|${x.revenue}`});
+    }
+  }
+  const focus=chosen?filterSales(filters,{city:chosen.city}):filterSales(filters);
+  const prod=produtosForRows(focus);
+  const prevF=previousFilters(filters);
+  if(prevF && prod.length){
+    const prevProd=produtosForRows(chosen?filterSales(prevF,{city:chosen.city}):filterSales(prevF));
+    const pm=new Map(prevProd.map(x=>[x.code,x]));
+    const drops=prod.map(x=>{const p=pm.get(x.code);return p&&p.revenue>0?{...x,var:(x.revenue/p.revenue-1)*100,prev:p.revenue}:null}).filter(Boolean).sort((a,b)=>a.var-b.var);
+    if(drops.length&&drops[0].var<0){const x=drops[0];out.push({level:x.var<=-25?'critical':'attention',title:'Produto em queda',value:x.var,text:x.name,kind:'percent'});}
+  }
+  return out.slice(0,4);
+}
+function cidadesSimple(filters){
+  const rows=filterSales(filters),m=new Map();
+  for(const s of rows){
+    if(!s.city)continue;const key=`${norm(s.city)}|${s.uf}`;
+    if(!m.has(key))m.set(key,{key,city:s.city,uf:s.uf,revenue:0});m.get(key).revenue+=s.value;
+  }
+  return [...m.values()];
+}
+function metasPage(filters){
+  const rows=filterSales(filters,{ignoreMonth:true});
+  const metas=filterMetas(filters,{ignoreMonth:true});
+  const revMonths=monthSeries(rows);
+  const metaByMonth=new Map();
+  for(const m of metas)metaByMonth.set(m.month,(metaByMonth.get(m.month)||0)+m.value);
+  const monthly=Array.from({length:12},(_,i)=>({month:i+1,label:MONTHS[i+1],revenue:revMonths.find(x=>x.month===i+1)?.revenue||0,meta:metaByMonth.get(i+1)||0}));
+  const supMap=new Map();
+  for(const m of metas){
+    const k=m.supervisor||'Sem supervisor';supMap.set(k,(supMap.get(k)||0)+m.value);
+  }
+  return {monthly,supervisors:[...supMap].map(([name,meta])=>({name,meta})).sort((a,b)=>b.meta-a.meta),totalMeta:[...metaByMonth.values()].reduce((a,b)=>a+b,0),totalRevenue:rows.reduce((a,s)=>a+s.value,0)};
+}
+
+onmessage=async(e)=>{
+  const msg=e.data||{};
+  if(msg.type==='serverResponse'){
+    const pending=SERVER_REQUESTS.get(msg.requestId);if(!pending)return;
+    SERVER_REQUESTS.delete(msg.requestId);
+    if(msg.error)pending.reject(new Error(msg.error));else pending.resolve(msg.data);
+    return;
+  }
+  if(msg.type==='init'){FORCE_REFRESH=!!msg.force;return init();}
+  if(msg.type==='query'){
+    try{
+      const f=msg.filters||{};
+      let payload;
+      if(msg.page==='overview')payload=overview(f);
+      else if(msg.page==='carteira')payload=carteira(f);
+      else if(msg.page==='produtos')payload=produtos(f);
+      else if(msg.page==='cidades')payload=cidades(f,msg.selectedCity);
+      else if(msg.page==='metas')payload=metasPage(f);
+      else payload={};
+      postMessage({type:'result',requestId:msg.requestId,page:msg.page,payload});
+    }catch(err){postMessage({type:'queryError',requestId:msg.requestId,message:err?.message||String(err)});}
+  }
+};
+</script>
+  <script>const $ = (s, root=document) => root.querySelector(s);
+const $$ = (s, root=document) => [...root.querySelectorAll(s)];
+
+const PAGE_META = {
+  overview: ['Visão Geral','Resumo executivo • faturamento, meta, ritmo e pontos de atenção'],
+  carteira: ['Carteira','Saúde da carteira • novos, inativos, recuperação e oportunidades'],
+  produtos: ['Mix e Produtos','Produtos • mix, concentração, desempenho e venda cruzada'],
+  cidades: ['Cidades','Cobertura comercial • evolução, pontos críticos, produtos e clientes'],
+  metas: ['Gestão de Metas','Planejamento • histórico, distribuição e acompanhamento']
+};
+
+const state = {
+  user:null,
+  dimensions:null,
+  worker:null,
+  page:'overview',
+  filters:{year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
+  selectedCity:'Todos',
+  requestId:0,
+  charts:[],
+  map:null,
+  mapLayers:[],
+  lastPayload:null
+};
+
+function money(v, compact=false){
+  const n=Number(v||0);
+  if(compact){
+    if(Math.abs(n)>=1e6) return `R$ ${(n/1e6).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} mi`;
+    if(Math.abs(n)>=1e3) return `R$ ${(n/1e3).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} mil`;
+  }
+  return n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+}
+function pct(v){
+  if(v===null||v===undefined||Number.isNaN(Number(v))) return '—';
+  return Number(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+}
+function integer(v){return Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:0})}
+function dec(v){return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function fmtDate(v){if(!v)return '—'; return new Date(v).toLocaleDateString('pt-BR')}
+function initials(name){return String(name||'RB').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase()}
+function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function normalize(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()}
+function aliasCity(v){
+  const n=normalize(v);
+  const aliases={ITAPAGE:'ITAPAJE',PINRETAMA:'PINDORETAMA'};
+  return aliases[n]||n;
+}
+
+function api(url, opts={}){
+  let action=String(url||'').replace(/^\/api\//,'').split(/[/?]/)[0];
+  const body=opts.body ? JSON.parse(opts.body) : {};
+  if(action==='session') action='session';
+  if(action==='login') action='login';
+  if(action==='logout') action='logout';
+  return new Promise((resolve,reject)=>{
+    google.script.run.withSuccessHandler(result=>{
+      if(!result || result.ok===false){reject(new Error(result?.message||'Falha na comunicação com o Apps Script.'));return;}
+      if(action==='login' && result.token) sessionStorage.setItem('dashboardSession',result.token);
+      if(action==='logout') sessionStorage.removeItem('dashboardSession');
+      resolve(result);
+    }).withFailureHandler(error=>reject(new Error(error?.message||String(error))))
+      .dashboardApi(action,body,sessionStorage.getItem('dashboardSession')||'');
+  });
+}
+
+async function bootstrap(){
+  bindLogin();
+  try{
+    const s=await api('/api/session');
+    if(s?.authenticated){state.user=s.user; enterApp();}
+    else showLogin();
+  }catch{showLogin();}
+}
+
+function showLogin(){
+  $('#loginView').classList.remove('hidden');
+  $('#appView').classList.add('hidden');
+}
+function enterApp(){
+  $('#loginView').classList.add('hidden');
+  $('#appView').classList.remove('hidden');
+  renderUser();
+  bindShell();
+  initData();
+}
+function renderUser(){
+  const u=state.user||{};
+  $('#userCard').innerHTML=`<div class="avatar">${esc(initials(u.nome))}</div><div><div class="user-name">${esc(u.nome||u.login)}</div><div class="user-role">${esc((u.perfil||'').toLowerCase())}</div></div>`;
+}
+function bindLogin(){
+  $('#loginForm').addEventListener('submit',async e=>{
+    e.preventDefault(); $('#loginError').textContent='';
+    const btn=e.currentTarget.querySelector('button'); btn.disabled=true; btn.textContent='Entrando…';
+    try{
+      const data=await api('/api/login',{method:'POST',body:JSON.stringify({login:$('#loginUser').value,password:$('#loginPassword').value})});
+      state.user=data.user; enterApp();
+    }catch(err){$('#loginError').textContent=err.message||'Usuário ou senha inválidos.'}
+    finally{btn.disabled=false;btn.textContent='Entrar'}
+  });
+}
+function bindShell(){
+  $('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
+    state.page=btn.dataset.page;
+    state.selectedCity='Todos';
+    $('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
+    queryPage();
+  }));
+  ['filterYear','filterMonth'].forEach(id=>{
+    $('#'+id).addEventListener('change',()=>{
+      syncFiltersFromUi();
+      state.selectedCity='Todos';
+      queryPage();
+    });
+  });
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.multi-select')) $('.multi-select.open').forEach(x=>x.classList.remove('open'));
+  });
+  $('#clearFilters').addEventListener('click',()=>{
+    const latest=state.dimensions?.latest?new Date(state.dimensions.latest):new Date();
+    state.filters={year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:[],rca:[],department:[]};
+    syncUiFromFilters(); queryPage();
+  });
+  $('#refreshData').addEventListener('click',()=>initData(true));
+  $('#logoutBtn').addEventListener('click',async()=>{try{await api('/api/logout',{method:'POST'})}catch{} location.reload()});
+}
+
+function setStatus(text,show=true){
+  $('#dataStatusText').textContent=text;
+  $('#dataStatus').classList.toggle('hidden',!show);
+}
+function initData(force=false){
+  destroyCharts();
+  if(state.worker)state.worker.terminate();
+  setStatus(force?'Atualizando bases no Apps Script…':'Carregando bases comerciais…',true);
+  const workerSource=document.getElementById('workerSource')?.textContent||'';
+  if(!workerSource.trim()) throw new Error('O processador local não foi carregado.');
+  const workerUrl=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
+  state.worker=new Worker(workerUrl);
+  state.worker.addEventListener('error',()=>URL.revokeObjectURL(workerUrl),{once:true});
+  state.worker.onmessage=e=>{
+    const m=e.data||{};
+    if(m.type==='serverRequest'){
+      api('/api/'+m.action,{method:'POST',body:JSON.stringify(m.payload||{})})
+        .then(data=>state.worker?.postMessage({type:'serverResponse',requestId:m.requestId,data}))
+        .catch(error=>state.worker?.postMessage({type:'serverResponse',requestId:m.requestId,error:error?.message||String(error)}));
+      return;
+    }
+    if(m.type==='stage'){setStatus(m.text,true);}
+    else if(m.type==='ready'){
+      state.dimensions=m.dimensions;
+      setupFilters();
+      setStatus('',false);
+      queryPage();
+    }else if(m.type==='result'){
+      if(m.requestId!==state.requestId)return;
+      setStatus('',false);
+      state.lastPayload=m.payload;
+      renderPage(m.page,m.payload);
+    }else if(m.type==='error'||m.type==='queryError'){
+      setStatus('',false);
+      $('#content').innerHTML=`<div class="empty"><strong>Não foi possível carregar os dados.</strong><br><br>${esc(m.message||'Erro desconhecido')}</div>`;
+    }
+  };
+  state.worker.onerror=e=>{
+    setStatus('',false);
+    $('#content').innerHTML=`<div class="empty"><strong>Falha ao iniciar o processamento das bases.</strong><br><br>${esc(e.message||'Erro no worker de dados')}</div>`;
+  };
+  state.worker.postMessage({type:'init',force});
+}
+function normalizeMulti(v){
+  if(Array.isArray(v)) return v.map(String).filter(x=>x&&x!=='Todos');
+  if(v===null||v===undefined||v===''||v==='Todos') return [];
+  return [String(v)];
+}
+function selectedMulti(id){
+  return $$('#'+id+' input[type="checkbox"][data-value]:checked').map(x=>x.dataset.value);
+}
+function multiSummary(values, options){
+  const picked=normalizeMulti(values);
+  if(!picked.length)return 'Todos';
+  if(picked.length===1){
+    const hit=options.find(x=>String(x.value)===String(picked[0]));
+    return hit?.label||picked[0];
+  }
+  return picked.length+' selecionados';
+}
+function fillMultiSelect(el,options,selected,onChange){
+  const picked=new Set(normalizeMulti(selected));
+  el.innerHTML=`
+    <button type="button" class="multi-select-trigger">
+      <span class="multi-select-text">${esc(multiSummary([...picked],options))}</span>
+      <span class="multi-select-arrow">⌄</span>
+    </button>
+    <div class="multi-select-menu">
+      <button type="button" class="multi-select-all">Todos</button>
+      <div class="multi-select-options">
+        ${options.map(o=>`<label class="multi-select-option"><input type="checkbox" data-value="${esc(o.value)}" ${picked.has(String(o.value))?'checked':''}><span>${esc(o.label)}</span></label>`).join('')}
+      </div>
+    </div>`;
+  const trigger=$('.multi-select-trigger',el);
+  trigger.addEventListener('click',e=>{
+    e.stopPropagation();
+    $$('.multi-select.open').filter(x=>x!==el).forEach(x=>x.classList.remove('open'));
+    el.classList.toggle('open');
+  });
+  $('.multi-select-menu',el).addEventListener('click',e=>e.stopPropagation());
+  $('.multi-select-all',el).addEventListener('click',()=>{
+    $$('input[type="checkbox"][data-value]',el).forEach(x=>x.checked=false);
+    $('.multi-select-text',el).textContent='Todos';
+    onChange?.();
+  });
+  $$('input[type="checkbox"][data-value]',el).forEach(ch=>ch.addEventListener('change',()=>{
+    $('.multi-select-text',el).textContent=multiSummary(selectedMulti(el.id),options);
+    onChange?.();
+  }));
+}
+function handleMultiChange(id){
+  syncFiltersFromUi();
+  if(id==='filterSupervisor')refreshRcaOptions();
+  state.selectedCity='Todos';
+  queryPage();
+}
+function setupFilters(){
+  const d=state.dimensions||{};
+  const latest=d.latest?new Date(d.latest):new Date();
+  const defaultYear=d.years?.includes(latest.getFullYear())?latest.getFullYear():(d.years?.[0]||'Todos');
+  state.filters.year=String(defaultYear);
+  state.filters.month=String(latest.getMonth()+1);
+  state.filters.supervisor=normalizeMulti(state.filters.supervisor);
+  state.filters.rca=normalizeMulti(state.filters.rca);
+  state.filters.department=normalizeMulti(state.filters.department);
+  fillSelect($('#filterYear'),['Todos',...(d.years||[]).map(String)],state.filters.year,x=>x==='Todos'?'Todos':x);
+  fillSelect($('#filterMonth'),['Todos',...Array.from({length:12},(_,i)=>String(i+1))],state.filters.month,x=>x==='Todos'?'Todos':['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(x)-1]);
+  fillMultiSelect($('#filterSupervisor'),(d.supervisors||[]).map(x=>({value:String(x),label:String(x)})),state.filters.supervisor,()=>handleMultiChange('filterSupervisor'));
+  fillMultiSelect($('#filterDepartment'),(d.departments||[]).map(x=>({value:String(x),label:String(x)})),state.filters.department,()=>handleMultiChange('filterDepartment'));
+  refreshRcaOptions();
+  syncUiFromFilters();
+}
+function fillSelect(el,values,selected,labeller=x=>x){
+  el.innerHTML=values.map(v=>`<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(labeller(v))}</option>`).join('');
+}
+function refreshRcaOptions(){
+  const supervisors=normalizeMulti(state.filters.supervisor);
+  const rcas=(state.dimensions?.rcas||[]).filter(r=>!supervisors.length||supervisors.includes(String(r.supervisor)));
+  const allowed=new Set(rcas.map(r=>String(r.code)));
+  state.filters.rca=normalizeMulti(state.filters.rca).filter(x=>allowed.has(String(x)));
+  fillMultiSelect(
+    $('#filterRca'),
+    rcas.map(r=>({value:String(r.code),label:r.name||String(r.code)})),
+    state.filters.rca,
+    ()=>handleMultiChange('filterRca')
+  );
+}
+function syncFiltersFromUi(){
+  state.filters={
+    year:$('#filterYear').value,
+    month:$('#filterMonth').value,
+    supervisor:selectedMulti('filterSupervisor'),
+    rca:selectedMulti('filterRca'),
+    department:selectedMulti('filterDepartment')
+  };
+}
+function syncUiFromFilters(){
+  $('#filterYear').value=state.filters.year;
+  $('#filterMonth').value=state.filters.month;
+  const d=state.dimensions||{};
+  fillMultiSelect($('#filterSupervisor'),(d.supervisors||[]).map(x=>({value:String(x),label:String(x)})),state.filters.supervisor,()=>handleMultiChange('filterSupervisor'));
+  fillMultiSelect($('#filterDepartment'),(d.departments||[]).map(x=>({value:String(x),label:String(x)})),state.filters.department,()=>handleMultiChange('filterDepartment'));
+  refreshRcaOptions();
+}
+
+function queryPage(){
+  if(!state.worker||!state.dimensions)return;
+  destroyCharts();
+  updateHeader();
+  setStatus('Atualizando indicadores…',true);
+  const requestId=++state.requestId;
+  state.worker.postMessage({type:'query',requestId,page:state.page,filters:state.filters,selectedCity:state.selectedCity});
+}
+function updateHeader(){
+  const [title,sub]=PAGE_META[state.page]||PAGE_META.overview;
+  $('#pageTitle').textContent=title;$('#pageSubtitle').textContent=sub;
+  const m=state.filters.month==='Todos'?'Todos os meses':['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(state.filters.month)-1];
+  $('#periodChip').textContent=`${m} • ${state.filters.year}`;
+}
+function destroyCharts(){
+  for(const c of state.charts){try{c.destroy()}catch{}}
+  state.charts=[];
+}
+function chart(canvas,type,data,options={}){
+  const c=new Chart(canvas,{type,data,options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>money(v,true)}}},...options}});
+  state.charts.push(c);return c;
+}
+function kpi(label,value,note=''){
+  return `<div class="kpi-card"><div class="kpi-label">${esc(label)}</div><div class="kpi-value">${value}</div><div class="kpi-note">${esc(note)}</div></div>`;
+}
+function insight(i){
+  let val=i.value;
+  if(i.kind==='money')val=money(val,true);
+  else if(i.kind==='percent'||typeof val==='number')val=pct(val);
+  return `<div class="insight ${esc(i.level||'attention')}"><div class="insight-badge">${i.level==='critical'?'● Crítico':i.level==='opportunity'?'● Oportunidade':'● Atenção'}</div><div class="insight-value">${esc(val)}</div><div class="insight-title">${esc(i.title)}</div><div class="insight-text">${esc(i.text||'')}</div></div>`;
+}
+function sectionHeading(title,sub=''){return `<div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div>`}
+
+function renderPage(page,payload){
+  if(page==='overview')renderOverview(payload);
+  else if(page==='carteira')renderCarteira(payload);
+  else if(page==='produtos')renderProdutos(payload);
+  else if(page==='cidades')renderCidades(payload);
+  else if(page==='metas')renderMetas(payload);
+}
+
+function renderOverview(p){
+  const k=p.kpis||{};
+  const attainment=Math.max(0,Math.min(100,Number(k.attainment)||0));
+  $('#content').innerHTML=`
+    <div class="grid hero-grid">
+      <div class="hero-kpi"><div class="hero-label">Faturamento</div><div class="hero-value">${money(k.revenue,true)}</div><div class="hero-note">Realizado no recorte selecionado</div></div>
+      ${kpi('Meta',money(k.meta,true),'Meta do recorte')}
+      ${kpi('Atingimento',pct(k.attainment),'Realizado ÷ meta')}
+      ${kpi('Clientes positivados',integer(k.clients),'Clientes únicos')}
+      ${kpi('Ticket médio',money(k.ticket,true),'Faturamento ÷ pedidos')}
+      ${kpi('Mix médio',dec(k.mix),'Produtos por cliente')}
+    </div>
+    ${sectionHeading('Pontos de atenção do período','Leitura automática que acompanha os filtros selecionados.')}
+    <div class="grid insights">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Recorte estável',value:'—',text:'Nenhum alerta forte identificado.'}]).map(insight).join('')}</div>
+    ${sectionHeading('Desempenho do período','Evolução mensal e acompanhamento da meta no recorte selecionado.')}
+    <div class="grid main-grid">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Faturamento mês a mês</div><div class="panel-sub">Ano selecionado • o filtro de mês não reduz esta série.</div></div><span class="panel-chip">${esc(state.filters.year||'Ano')}</span></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
+      <div class="panel goal-card">
+        <div class="panel-head"><div><div class="panel-title">Meta do período</div><div class="panel-sub">Realizado em relação à meta cadastrada.</div></div></div>
+        <div class="goal-ring-wrap"><div class="goal-ring" style="background:conic-gradient(var(--navy) 0 ${attainment}%,#E9EDF5 ${attainment}% 100%)"></div><div class="goal-center"><strong>${pct(k.attainment)}</strong><span>atingido</span></div></div>
+        <div class="goal-line"><span>Realizado</span><strong>${money(k.revenue,true)}</strong></div>
+        <div class="goal-line"><span>Meta</span><strong>${money(k.meta,true)}</strong></div>
+        <div class="goal-line"><span>Diferença</span><strong>${money(Number(k.meta||0)-Number(k.revenue||0),true)}</strong></div>
+      </div>
+    </div>
+    ${sectionHeading('Resultado por equipe e departamento','Faturamento no recorte atual.')}
+    <div class="grid secondary-grid">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Ranking por RCA</div><div class="panel-sub">Maiores faturamentos no recorte.</div></div></div><div class="chart-wrap short"><canvas id="overviewRca"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Departamentos</div><div class="panel-sub">Participação do faturamento no período.</div></div></div><div id="depList" class="metric-list"></div></div>
+    </div>
+  `;
+  const monthly=p.monthly||[];
+  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1D285F',backgroundColor:'rgba(29,40,95,.08)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]});
+  const top=(p.rca||[]).slice(0,10).reverse();
+  chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[{data:top.map(x=>x.revenue),backgroundColor:'#42548D',borderRadius:7,barThickness:16}]},{indexAxis:'y'});
+  const total=(p.departments||[]).reduce((a,x)=>a+x.revenue,0)||1;
+  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<div class="metric-row"><div><div class="metric-name">${esc(x.key||'Sem departamento')}</div><div class="progress"><i style="width:${Math.min(100,x.revenue/total*100)}%"></i></div></div><div class="metric-value">${money(x.revenue,true)} · ${pct(x.revenue/total*100)}</div></div>`).join('');
+}
+function renderCarteira(p){
+  const k=p.kpis||{};
+  const inactiveTotal=Number(k.short||0)+Number(k.long||0);
+  const ratio=k.newClients ? (Number(k.short||0)/Number(k.newClients||1)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x' : '—';
+  $('#content').innerHTML=`
+    <div class="grid kpi-grid">
+      ${kpi('Positivados',integer(k.clients),'Compraram no período')}
+      ${kpi('Novos',integer(k.newClients),'Primeira compra no período')}
+      ${kpi('Inativos • curto',integer(k.short),'3 a 6 meses sem comprar')}
+      ${kpi('Inativos • longo',integer(k.long),'6 a 12 meses sem comprar')}
+      ${kpi('Mix por cliente',dec(k.mix),'Produtos distintos por cliente')}
+      ${kpi('Produtos ativos no recorte',integer(k.products),'Itens faturados')}
+    </div>
+
+    <div class="panel carteira-movement-panel">
+      <div class="panel-title-row"><div><h2>Movimento da carteira</h2><div class="panel-sub">Positivados, novos e inativados no mesmo recorte. A barra de inativados é composta por curto + longo prazo.</div></div></div>
+      <div class="chart-wrap short"><canvas id="portfolioMovementChart"></canvas></div>
+    </div>
+
+    <div class="grid two-col carteira-secondary">
+      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Faixas exclusivas: curto de 3 a 6 meses e longo de 6 a 12 meses.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>Leitura da carteira</h2><div class="panel-sub">Data de corte: ${fmtDate(k.cutoff)}</div></div></div>
+        <div class="metric-list">
+          <div class="metric-line"><div class="name">Relação curto / novos</div><div class="value">${ratio}</div></div>
+          <div class="metric-line"><div class="name">Inativos totais</div><div class="value">${integer(inactiveTotal)}</div></div>
+          <div class="metric-line"><div class="name">Clientes ativos no período</div><div class="value">${integer(k.clients)}</div></div>
+        </div>
+        <div class="small-note" style="margin-top:18px">As faixas não se sobrepõem: curto prazo considera de 3 a 6 meses sem compra e longo prazo de 6 a 12 meses. A relação curto / novos é mostrada em vezes (x), não em percentual.</div>
+      </div>
+    </div>
+    ${sectionHeading('Clientes inativos para ação','Ordenados pelo maior faturamento dos 12 meses anteriores à data de corte.')}
+    <div class="table-wrap"><table><thead><tr><th>Cliente</th><th>RCA</th><th>Última compra</th><th class="align-right">Dias</th><th class="align-right">Fat. 12m</th><th>Faixa</th></tr></thead><tbody id="inactiveTable"></tbody></table></div>
+  `;
+
+  chart($('#portfolioMovementChart'),'bar',{
+    labels:['Positivados','Novos','Inativados'],
+    datasets:[
+      {label:'Positivados',data:[k.clients,null,null],backgroundColor:'#6176B5',borderRadius:8,stack:'carteira'},
+      {label:'Novos',data:[null,k.newClients,null],backgroundColor:'#2D8B62',borderRadius:8,stack:'carteira'},
+      {label:'Inativos • curto',data:[null,null,k.short],backgroundColor:'#CC4D5B',borderRadius:8,stack:'carteira'},
+      {label:'Inativos • longo',data:[null,null,k.long],backgroundColor:'#D89B35',borderRadius:8,stack:'carteira'}
+    ]
+  },{
+    plugins:{
+      legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},
+      tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:true,callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}
+    },
+    scales:{
+      x:{stacked:true,grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},
+      y:{stacked:true,beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>integer(v)}}
+    }
+  });
+
+  const rows=(p.byRca||[]).slice(0,18).reverse();
+  chart($('#inactiveChart'),'bar',{labels:rows.map(x=>x.name),datasets:[
+    {label:'Longo prazo',data:rows.map(x=>x.long),backgroundColor:'#D89B35',borderRadius:6},
+    {label:'Curto prazo',data:rows.map(x=>x.short),backgroundColor:'#C94A55',borderRadius:6}
+  ]},{indexAxis:'y',plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}},scales:{x:{grid:{color:'#EEF0F5'},ticks:{callback:v=>integer(v)}}}});
+  $('#inactiveTable').innerHTML=(p.inactive||[]).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.rcaName)}</td><td>${fmtDate(x.last)}</td><td class="align-right">${integer(x.days)}</td><td class="align-right">${money(x.revenue12)}</td><td><span class="badge ${x.isShort?'red':'amber'}">${x.isShort?'Curto':'Longo'}</span></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Nenhum cliente nesta faixa.</td></tr>';
+}
+
+function renderProdutos(p){
+  $('#content').innerHTML=`
+    <div class="grid kpi-grid four">
+      ${kpi('Produtos faturados',integer(p.kpis?.products),'SKUs com venda no recorte')}
+      ${kpi('Clientes',integer(p.kpis?.clients),'Clientes que compraram produtos')}
+      ${kpi('Produto líder',p.top?.[0]?money(p.top[0].revenue,true):'—',p.top?.[0]?.name||'Sem dados')}
+      ${kpi('Menor faturamento',p.bottom?.[0]?money(p.bottom[0].revenue,true):'—',p.bottom?.[0]?.name||'Sem dados')}
+    </div>
+    <div class="grid equal-col">
+      <div class="panel"><div class="panel-title-row"><div><h2>Produtos com maior faturamento</h2><div class="panel-sub">Top 10 do recorte.</div></div></div><div class="chart-wrap tall"><canvas id="prodTop"></canvas></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>Menores faturamentos</h2><div class="panel-sub">Produtos vendidos com menor resultado no período.</div></div></div><div class="chart-wrap tall"><canvas id="prodBottom"></canvas></div></div>
+    </div>
+    ${sectionHeading('Dois principais produtos por RCA','Ajuda a identificar dependência e concentração do faturamento.')}
+    <div class="table-wrap"><table><thead><tr><th>RCA</th><th>1º produto</th><th class="align-right">Fat. 1º</th><th>2º produto</th><th class="align-right">Fat. 2º</th><th class="align-right">Concentração Top 2</th></tr></thead><tbody id="top2Table"></tbody></table></div>
+  `;
+  const top=[...(p.top||[])].reverse();
+  chart($('#prodTop'),'bar',{labels:top.map(x=>x.name),datasets:[{data:top.map(x=>x.revenue),backgroundColor:'#1E2655',borderRadius:6,barThickness:15}]},{indexAxis:'y'});
+  const bottom=[...(p.bottom||[])].reverse();
+  chart($('#prodBottom'),'bar',{labels:bottom.map(x=>x.name),datasets:[{data:bottom.map(x=>x.revenue),backgroundColor:'#8991B7',borderRadius:6,barThickness:15}]},{indexAxis:'y'});
+  $('#top2Table').innerHTML=(p.top2||[]).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.first?.name||'—')}</td><td class="align-right">${money(x.first?.revenue||0)}</td><td>${esc(x.second?.name||'—')}</td><td class="align-right">${x.second?money(x.second.revenue):'—'}</td><td class="align-right">${pct(x.share)}</td></tr>`).join('');
+}
+
+function renderCidades(p){
+  const cities=p.cities||[];
+  const selected=p.selected;
+  const revenue=(selected?.revenue ?? cities.reduce((a,x)=>a+x.revenue,0));
+  $('#content').innerHTML=`
+    <div class="grid kpi-grid five">
+      ${kpi(selected?'Cidade selecionada':'Cidades atendidas',selected?esc(selected.city):integer(cities.filter(x=>x.revenue>0).length),selected?selected.uf:'Com faturamento no recorte')}
+      ${kpi('Faturamento',money(revenue,true),selected?selected.city:'Área filtrada')}
+      ${kpi('Maior cidade',cities[0]?esc(cities[0].city):'—',cities[0]?money(cities[0].revenue,true):'Sem dados')}
+      ${kpi('Menor cidade',cities.length?esc([...cities].filter(x=>x.revenue>0).sort((a,b)=>a.revenue-b.revenue)[0]?.city||'—'):'—','Entre cidades com venda')}
+      ${kpi('Produtos no foco',integer(p.products?.length),'Top itens analisados')}
+    </div>
+    ${sectionHeading('Pontos críticos do recorte','Mudam conforme período, RCA, departamento e cidade selecionada.')}
+    <div class="grid insight-grid">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Sem alerta crítico forte',value:'—',text:'O recorte não apresentou uma queda relevante automática.'}]).map(insight).join('')}</div>
+    <div class="grid city-layout">
+      <div class="panel"><div class="panel-title-row"><div><h2>Mapa da área</h2><div class="panel-sub">Clique em um município para abrir o detalhamento.</div></div><button id="allCitiesBtn" class="btn secondary small">Ver todos</button></div><div id="cityMap"></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>${selected?esc(selected.city+' - '+selected.uf):'Cidades da área'}</h2><div class="panel-sub">Ranking por faturamento.</div></div></div><div id="cityList" class="city-list"></div></div>
+    </div>
+    ${sectionHeading('Evolução mensal do faturamento',selected?`Histórico de ${selected.city} no ano selecionado.`:'Histórico da área no ano selecionado.')}
+    <div class="panel"><div class="chart-wrap"><canvas id="cityMonthly"></canvas></div></div>
+    <div class="grid equal-col" style="margin-top:12px">
+      <div class="panel"><div class="panel-title-row"><div><h2>Principais produtos</h2><div class="panel-sub">${selected?'Na cidade selecionada.':'Na área filtrada.'}</div></div></div><div id="cityProducts" class="metric-list"></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>Principais clientes</h2><div class="panel-sub">${selected?'Na cidade selecionada.':'Na área filtrada.'}</div></div></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="align-right">Faturamento</th><th class="align-right">Produtos</th></tr></thead><tbody id="cityClients"></tbody></table></div></div>
+    </div>
+  `;
+  const max=cities[0]?.revenue||1;
+  $('#cityList').innerHTML=cities.slice(0,100).map(c=>`<div class="city-row ${selected?.key===c.key?'active':''}" data-city="${esc(c.key)}"><div><strong>${esc(c.city)} - ${esc(c.uf)}</strong><div class="progress" style="margin-top:5px;width:150px"><i style="width:${Math.max(2,c.revenue/max*100)}%"></i></div></div><span>${money(c.revenue,true)}</span></div>`).join('');
+  $$('.city-row').forEach(row=>row.addEventListener('click',()=>{state.selectedCity=row.dataset.city;queryPage()}));
+  $('#allCitiesBtn').addEventListener('click',()=>{state.selectedCity='Todos';queryPage()});
+  const monthly=p.monthly||[];
+  chart($('#cityMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1E2655',backgroundColor:'rgba(30,38,85,.08)',fill:true,tension:.32,pointRadius:4,borderWidth:2.5}]});
+  const pmax=p.products?.[0]?.revenue||1;
+  $('#cityProducts').innerHTML=(p.products||[]).slice(0,10).map(x=>`<div class="metric-line"><div><div class="name">${esc(x.name)}</div><div class="progress"><i style="width:${x.revenue/pmax*100}%"></i></div></div><div class="value">${money(x.revenue,true)}</div></div>`).join('');
+  $('#cityClients').innerHTML=(p.clients||[]).slice(0,20).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td class="align-right">${money(x.revenue)}</td><td class="align-right">${integer(x.products)}</td></tr>`).join('');
+  renderCityMap(cities,selected?.key);
+}
+async function renderCityMap(cities,selectedKey){
+  if(state.map){try{state.map.remove()}catch{}state.map=null}
+  const el=$('#cityMap'); if(!el)return;
+  state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10}).setView([-8.5,-40.5],5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,opacity:.18}).addTo(state.map);
+  const codes={MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29'};
+  const cityMap=new Map(cities.map(c=>[`${aliasCity(c.city)}|${c.uf}`,c]));
+  const max=Math.max(1,...cities.map(c=>c.revenue));
+  const states=[...new Set(cities.map(c=>c.uf).filter(uf=>codes[uf]))];
+  const bounds=[];
+  for(const uf of states){
+    try{
+      const res=await fetch(`https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-${codes[uf]}-mun.json`);
+      if(!res.ok)continue; const geo=await res.json();
+      const layer=L.geoJSON(geo,{
+        style:f=>{
+          const name=f.properties?.name||f.properties?.NOME||'';
+          const c=cityMap.get(`${aliasCity(name)}|${uf}`);
+          const ratio=c?c.revenue/max:0;
+          const selected=c&&c.key===selectedKey;
+          return {color:selected?'#1E2655':'#AAB3C9',weight:selected?3.5:.65,fillColor:selected?'#E5A43A':ratio>.65?'#1E2655':ratio>.35?'#596CA7':ratio>0?'#BBC5DE':'#E8EBF1',fillOpacity:selected ? .95 : (c ? .82 : .20)};
+        },
+        onEachFeature:(f,l)=>{
+          const name=f.properties?.name||f.properties?.NOME||'';
+          const c=cityMap.get(`${aliasCity(name)}|${uf}`);
+          if(c){
+            l.bindTooltip(`<b>${esc(c.city)} - ${uf}</b><br>${money(c.revenue)}`,{sticky:true});
+            l.on('click',()=>{state.selectedCity=c.key;queryPage()});
+          }
+        }
+      }).addTo(state.map);
+      try{bounds.push(layer.getBounds())}catch{}
+    }catch{}
+  }
+  if(bounds.length){
+    let b=bounds[0]; for(let i=1;i<bounds.length;i++)b.extend(bounds[i]); state.map.fitBounds(b,{padding:[12,12]});
+  }
+}
+
+function renderMetas(p){
+  const attainment=p.totalMeta?p.totalRevenue/p.totalMeta*100:null;
+  $('#content').innerHTML=`
+    <div class="readonly-banner"><strong>Nova Gestão de Metas em migração.</strong> Esta versão web já traz a leitura histórica e a distribuição cadastrada. A edição, versionamento e aprovação serão conectados ao novo backend antes da retirada definitiva do Streamlit.</div>
+    <div class="grid kpi-grid four">
+      ${kpi('Meta do ano',money(p.totalMeta,true),'Ano selecionado')}
+      ${kpi('Faturamento',money(p.totalRevenue,true),'Acumulado no ano')}
+      ${kpi('Atingimento',pct(attainment),'Realizado ÷ meta')}
+      ${kpi('Supervisões com meta',integer(p.supervisors?.length),'Distribuição cadastrada')}
+    </div>
+    <div class="grid two-col">
+      <div class="panel"><div class="panel-title-row"><div><h2>Faturamento x meta mês a mês</h2><div class="panel-sub">Leitura anual do período selecionado.</div></div></div><div class="chart-wrap tall"><canvas id="metaMonthly"></canvas></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>Meta por supervisão</h2><div class="panel-sub">Distribuição cadastrada na base.</div></div></div><div id="metaSup" class="metric-list"></div></div>
+    </div>
+  `;
+  const monthly=p.monthly||[];
+  const c=new Chart($('#metaMonthly'),{type:'bar',data:{labels:monthly.map(x=>x.label),datasets:[
+    {label:'Meta',data:monthly.map(x=>x.meta),backgroundColor:'#DDE2EF',borderRadius:6},
+    {label:'Faturamento',data:monthly.map(x=>x.revenue),backgroundColor:'#1E2655',borderRadius:6}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(ctx.raw)}`}}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{callback:v=>money(v,true)}}}}});
+  state.charts.push(c);
+  const max=p.supervisors?.[0]?.meta||1;
+  $('#metaSup').innerHTML=(p.supervisors||[]).map(x=>`<div class="metric-line"><div><div class="name">${esc(x.name)}</div><div class="progress"><i style="width:${x.meta/max*100}%"></i></div></div><div class="value">${money(x.meta,true)}</div></div>`).join('');
+}
+
+bootstrap();
+</script>
+</body>
+</html>
