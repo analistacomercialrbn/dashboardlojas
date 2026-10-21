@@ -120,7 +120,8 @@ function refreshDataset_() {
     const chunkSize = 2000;
     for (let i = 0; i < snapshot.records.length; i += chunkSize) { const rows = snapshot.records.slice(i, i + chunkSize).map(value => [value]); sheet.getRange(i + 2, 1, rows.length, 1).setValues(rows); }
     const updatedAt = new Date().toISOString(), props = PropertiesService.getScriptProperties();
-    props.setProperties({ SNAPSHOT_UPDATED_AT: updatedAt, SNAPSHOT_LATEST_DATE: snapshot.latest, SNAPSHOT_SALES_COUNT: String(snapshot.validCount), SNAPSHOT_RECORD_COUNT: String(snapshot.records.length) }, true);
+    // Keep source spreadsheet IDs, the cache ID, and any API credentials intact.
+    props.setProperties({ SNAPSHOT_UPDATED_AT: updatedAt, SNAPSHOT_LATEST_DATE: snapshot.latest, SNAPSHOT_SALES_COUNT: String(snapshot.validCount), SNAPSHOT_RECORD_COUNT: String(snapshot.records.length) }, false);
     return { ok: true, latest: snapshot.latest, salesCount: snapshot.validCount, recordCount: snapshot.records.length, updatedAt: updatedAt, durationMs: Date.now() - started };
   } finally { lock.releaseLock(); }
 }
