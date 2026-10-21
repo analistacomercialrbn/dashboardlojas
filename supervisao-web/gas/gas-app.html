@@ -938,10 +938,10 @@ function bindLogin(){
   });
 }
 function bindShell(){
-  $('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
+  $$('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
     state.page=btn.dataset.page;
     state.selectedCity='Todos';
-    $('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
+    $$('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
     queryPage();
   }));
   ['filterYear','filterMonth'].forEach(id=>{
@@ -952,7 +952,7 @@ function bindShell(){
     });
   });
   document.addEventListener('click',e=>{
-    if(!e.target.closest('.multi-select')) $('.multi-select.open').forEach(x=>x.classList.remove('open'));
+    if(!e.target.closest('.multi-select')) $$('.multi-select.open').forEach(x=>x.classList.remove('open'));
   });
   $('#clearFilters').addEventListener('click',()=>{
     const latest=state.dimensions?.latest?new Date(state.dimensions.latest):new Date();
