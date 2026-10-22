@@ -271,39 +271,58 @@ async function fetchServerDataset(force){
   SERVER_UPDATED_AT=SERVER_INFO.updatedAt||null;
   SALES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
   let received=0,expected=Number(SERVER_INFO.recordCount)||0;
-  const pageSize=5000;
+const pageSize=10000;
+const concurrency=4;
   const consume=records=>{
-    for(const line of records||[]){
-      if(!line)continue;
-      const item=typeof line==='string'?JSON.parse(line):line,v=item.value;
-      if(item.type==='meta'){LATEST_DATE=v.latest?new Date(v.latest):null;}
-      else if(item.type==='rca')RCAS.push(v);
-      else if(item.type==='goal')METAS.push(v);
-      else if(item.type==='client')CLIENTS.set(v[0],v[1]);
-      else if(item.type==='sale'){v.date=new Date(v.date);SALES.push(v);}
+    for(const row of records||[]){
+      if(!row)continue;
+      if(typeof row==='string'){
+        const item=JSON.parse(row),v=item.value;
+        if(item.type==='meta')LATEST_DATE=v.latest?new Date(v.latest):null;
+        else if(item.type==='rca')RCAS.push(v);
+        else if(item.type==='goal')METAS.push(v);
+        else if(item.type==='client')CLIENTS.set(v[0],v[1]);
+        else if(item.type==='sale'){v.date=new Date(v.date);SALES.push(v);}
+      }else switch(row[0]){
+        case 0:{
+          const date=new Date(row[1]),year=date.getUTCFullYear(),month=date.getUTCMonth()+1,rca=RCA_BY_CODE.get(row[2])||{};
+          SALES.push({date,year,month,monthKey:year+'-'+String(month).padStart(2,'0'),rca:row[2],rcaName:rca.name||String(row[2]??''),supervisor:rca.supervisor||'',department:row[3],client:row[4],product:row[5],productName:row[6],order:row[7],city:row[8],uf:row[9],region:row[10],value:row[11],marginPct:null});
+          break;
+        }
+        case 1:RCAS.push({code:row[1],name:row[2],supervisor:row[3],active:row[4]});break;
+        case 2:METAS.push({monthKey:row[1],year:row[2],month:row[3],rca:row[4],rcaName:row[5],supervisor:row[6],department:row[7],value:row[8]});break;
+        case 3:CLIENTS.set(row[1],{code:row[1],name:row[2],rca:row[3]});break;
+        case 4:LATEST_DATE=row[1]?new Date(row[1]):null;break;
+      }
       received++;
     }
   };
-  for(let offset=0;offset<expected;offset+=pageSize){
-    let page=null,lastError=null;
-    for(let attempt=0;attempt<3;attempt++){
-      try{
-        page=await serverRequest('page',{offset,limit:pageSize});
-        if(!page?.ok)throw new Error(page?.message||'Falha ao ler uma página do cache.');
-        break;
-      }catch(error){
-        lastError=error;
-        if(attempt===2)throw lastError;
-        postStage('Falha temporária ao ler o cache. Tentando novamente…',35+Math.min(55,received/Math.max(expected,1)*55));
-        await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+  const offsets=Array.from({length:Math.ceil(expected/pageSize)},(_,i)=>i*pageSize);
+  for(let start=0;start<offsets.length;start+=concurrency){
+    const batch=offsets.slice(start,start+concurrency);
+    postStage('Recebendo dados em lote '+(start+1)+'–'+Math.min(start+batch.length,offsets.length)+' de '+offsets.length+'…',30+Math.min(60,received/Math.max(expected,1)*60));
+    const pages=await Promise.all(batch.map(async offset=>{
+      let lastError=null;
+      for(let attempt=0;attempt<3;attempt++){
+        try{
+          const page=await serverRequest('page',{offset,limit:pageSize});
+          if(!page?.ok)throw new Error(page?.message||'Falha ao ler uma página do cache.');
+          return page;
+        }catch(error){
+          lastError=error;
+          if(attempt===2)throw lastError;
+          postStage('Instabilidade temporária na página '+Math.floor(offset/pageSize+1)+'. Tentando novamente…',30+Math.min(60,received/Math.max(expected,1)*60));
+          await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+        }
       }
-    }
-    consume(page.records);
-    postStage('Carregando cache preparado… '+Math.min(received,expected).toLocaleString('pt-BR')+' de '+expected.toLocaleString('pt-BR')+' registros',35+Math.min(55,received/Math.max(expected,1)*55));
+    }));
+    pages.sort((a,b)=>a.offset-b.offset).forEach(page=>consume(page.records));
+    postStage('Dados recebidos: '+Math.min(received,expected).toLocaleString('pt-BR')+' de '+expected.toLocaleString('pt-BR')+' registros',30+Math.min(60,received/Math.max(expected,1)*60));
   }
   if(!SALES.length)throw new Error('A base preparada não contém vendas fechadas.');
   if(SALES.length!==Number(SERVER_INFO.salesCount))throw new Error('O cache chegou incompleto ('+SALES.length.toLocaleString('pt-BR')+' vendas). Clique em “Atualizar bases” e tente novamente.');
   RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+  for(const sale of SALES){const r=RCA_BY_CODE.get(sale.rca)||{};sale.rcaName=r.name||String(sale.rca??'');sale.supervisor=r.supervisor||'';}
 }
 async function init(){
   try{
