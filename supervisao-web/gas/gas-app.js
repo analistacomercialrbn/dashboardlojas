@@ -187,7 +187,7 @@ function initData(force=false){
       const timeout=setTimeout(()=>{
         if(settled)return;settled=true;
         activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:'O Apps Script não respondeu à solicitação em 30 segundos.'});
-      },30000);
+      },90000);
       api('/api/'+m.action,{method:'POST',body:JSON.stringify(m.payload||{})})
         .then(data=>{if(settled)return;settled=true;clearTimeout(timeout);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,data});})
         .catch(error=>{if(settled)return;settled=true;clearTimeout(timeout);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:error?.message||String(error)});});
