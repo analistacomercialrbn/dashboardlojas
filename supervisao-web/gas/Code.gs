@@ -5,7 +5,7 @@ const CFG = {
   cacheSpreadsheetId: SCRIPT_PROPS.getProperty('CACHE_SPREADSHEET_ID'),
   years: ['2024', '2025', '2026'],
   cacheSheetName: 'DATASET',
-  maxPageSize: 5000
+  maxPageSize: 10000
 };
 
 function doPost(e) {
@@ -136,12 +136,23 @@ function datasetInfo_() {
   const p = PropertiesService.getScriptProperties(), updatedAt = p.getProperty('SNAPSHOT_UPDATED_AT'), recordCount = Number(p.getProperty('SNAPSHOT_RECORD_COUNT') || 0);
   return { ok: true, exists: !!updatedAt && recordCount > 0, updatedAt: updatedAt, latest: p.getProperty('SNAPSHOT_LATEST_DATE'), salesCount: Number(p.getProperty('SNAPSHOT_SALES_COUNT') || 0), recordCount: recordCount };
 }
+function compactSnapshotRecord_(raw) {
+  const item = JSON.parse(String(raw || '{}')), v = item.value || {};
+  switch (item.type) {
+    case 'sale': return [0, v.date, v.rca, v.department, v.client, v.product, v.productName, v.order, v.city, v.uf, v.region, v.value];
+    case 'rca': return [1, v.code, v.name, v.supervisor, v.active];
+    case 'goal': return [2, v.monthKey, v.year, v.month, v.rca, v.rcaName, v.supervisor, v.department, v.value];
+    case 'client': return [3, v[0], v[1] && v[1].name, v[1] && v[1].rca];
+    case 'meta': return [4, v.latest];
+    default: return null;
+  }
+}
 function datasetPage_(offset, limit) {
   const info = datasetInfo_(); if (!info.exists) throw new Error('A base processada ainda não foi criada.');
   const start = Math.max(0, Math.floor(Number(offset) || 0)), size = Math.max(1, Math.min(CFG.maxPageSize, Math.floor(Number(limit) || CFG.maxPageSize)));
   if (start >= info.recordCount) return { ok: true, offset: start, nextOffset: start, done: true, records: [] };
   const count = Math.min(size, info.recordCount - start), sheet = SpreadsheetApp.openById(CFG.cacheSpreadsheetId).getSheetByName(CFG.cacheSheetName);
-  const records = sheet.getRange(start + 2, 1, count, 1).getValues().map(row => String(row[0] || '')), nextOffset = start + count;
+  const records = sheet.getRange(start + 2, 1, count, 1).getValues().map(row => compactSnapshotRecord_(row[0])).filter(Boolean), nextOffset = start + count;
   return { ok: true, offset: start, nextOffset: nextOffset, done: nextOffset >= info.recordCount, records: records };
 }
 function validateSources_() {
