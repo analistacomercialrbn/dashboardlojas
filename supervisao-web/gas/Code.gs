@@ -157,11 +157,11 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/d04dbd2a9d4a50f16a5c6518f06dca1c5bce1957/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/f79c848c06dabfeaf3bb2d86b9966c800c4f1da4/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'DASHBOARD_GAS_UI_V11';
+  const cacheKey = 'DASHBOARD_GAS_UI_V12';
   const partCount = Number(cache.get(cacheKey + '_PARTS') || 0);
   let html = partCount ? Array.from({ length: partCount }, (_, i) => cache.get(cacheKey + '_' + i) || '').join('') : '';
   if (!html) {
