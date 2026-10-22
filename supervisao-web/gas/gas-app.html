@@ -187,7 +187,7 @@ const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','
 
 function postStage(text, progress=0){ postMessage({type:'stage', text, progress}); }
 function norm(v){
-  return String(v ?? '').norm('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+  return String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
 }
 function num(v){
   if(v === null || v === undefined || v === '') return 0;
