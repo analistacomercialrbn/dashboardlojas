@@ -124,7 +124,7 @@ function refreshDataset_() {
     const started = Date.now(), snapshot = buildSnapshotRecords_(), cache = SpreadsheetApp.openById(CFG.cacheSpreadsheetId);
     let sheet = cache.getSheetByName(CFG.cacheSheetName); if (!sheet) sheet = cache.insertSheet(CFG.cacheSheetName);
     sheet.clearContents(); sheet.getRange(1, 1).setValue('NDJSON');
-    const chunkSize = 2000;
+    const chunkSize = 10000;
     for (let i = 0; i < snapshot.records.length; i += chunkSize) { const rows = snapshot.records.slice(i, i + chunkSize).map(value => [value]); sheet.getRange(i + 2, 1, rows.length, 1).setValues(rows); }
     const updatedAt = new Date().toISOString(), props = PropertiesService.getScriptProperties();
     // Keep source spreadsheet IDs, the cache ID, and any API credentials intact.
@@ -168,7 +168,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/bf843d6b805dbccd418a5651371a2bbfbaa1cdb8/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/9fa93e99a48a493a2c88de857a6d74c1d4d22138/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
