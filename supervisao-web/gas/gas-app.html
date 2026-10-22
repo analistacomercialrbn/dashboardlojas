@@ -178,7 +178,7 @@ function emitReady(){
   const departments=[...new Set(SALES.map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const supervisors=[...new Set(RCAS.filter(r=>r.active).map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const activeRcas=RCAS.filter(r=>r.active).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
-  const geography=[...new Map(SALES.filter(s=>s.uf&&s.region&&s.city).map(s=>{const uf=String(s.uf).trim().toUpperCase(),region=String(s.region).trim(),city=String(s.city).trim();return [uf+'|'+normalize(region)+'|'+normalize(city),{uf,region,city}]})).values()];
+  const geography=[...new Map(SALES.filter(s=>s.uf&&s.region&&s.city).map(s=>{const uf=String(s.uf).trim().toUpperCase(),region=String(s.region).trim(),city=String(s.city).trim();return [uf+'|'+norm(region)+'|'+norm(city),{uf,region,city}]})).values()];
   postStage('Base pronta.',100);
   postMessage({type:'ready',dimensions:{years,departments,supervisors,rcas:activeRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
 }
@@ -187,7 +187,7 @@ const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','
 
 function postStage(text, progress=0){ postMessage({type:'stage', text, progress}); }
 function norm(v){
-  return String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+  return String(v ?? '').norm('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
 }
 function num(v){
   if(v === null || v === undefined || v === '') return 0;
@@ -376,7 +376,7 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
   const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
   const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
   const targetUf=filters.uf&&filters.uf!=='Todos'?String(filters.uf).toUpperCase():null;
-  const targetRegion=filters.region&&filters.region!=='Todos'?normalize(filters.region):null;
+  const targetRegion=filters.region&&filters.region!=='Todos'?norm(filters.region):null;
   const targetCity=city?norm(city):(filters.city&&filters.city!=='Todos'?norm(filters.city):null);
   return SALES.filter(s=>{
     if(!allowed.has(s.rca)) return false;
@@ -384,7 +384,7 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
     if(targetMonth!==null && s.month!==targetMonth) return false;
     if(departments.length && !departments.includes(String(s.department))) return false;
     if(targetUf && String(s.uf||'').toUpperCase()!==targetUf) return false;
-    if(targetRegion && normalize(s.region||'')!==targetRegion) return false;
+    if(targetRegion && norm(s.region||'')!==targetRegion) return false;
     if(targetCity && norm(s.city)!==targetCity) return false;
     return true;
   });
