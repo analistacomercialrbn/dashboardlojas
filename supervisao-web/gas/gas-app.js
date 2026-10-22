@@ -184,13 +184,19 @@ function initData(force=false){
     if(m.type==='serverRequest'){
       const activeWorker=state.worker;
       let settled=false;
+      const warningTimer=setTimeout(()=>{
+        if(settled)return;
+        setStatus(m.action==='refresh'
+          ?'A atualização ainda está em andamento. Pode levar alguns minutos; mantenha esta tela aberta e evite clicar novamente.'
+          :'O Apps Script ainda está processando a solicitação. Mantenha esta tela aberta.',true);
+      },30000);
       const timeout=setTimeout(()=>{
-        if(settled)return;settled=true;
-        activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:'O Apps Script não respondeu à solicitação em 30 segundos.'});
-      },90000);
+        if(settled)return;settled=true;clearTimeout(warningTimer);
+        activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:'O Apps Script não concluiu a solicitação em 5 minutos e 30 segundos. A atualização pode ainda estar em execução; aguarde antes de tentar novamente.'});
+      },330000);
       api('/api/'+m.action,{method:'POST',body:JSON.stringify(m.payload||{})})
-        .then(data=>{if(settled)return;settled=true;clearTimeout(timeout);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,data});})
-        .catch(error=>{if(settled)return;settled=true;clearTimeout(timeout);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:error?.message||String(error)});});
+        .then(data=>{if(settled)return;settled=true;clearTimeout(timeout);clearTimeout(warningTimer);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,data});})
+        .catch(error=>{if(settled)return;settled=true;clearTimeout(timeout);clearTimeout(warningTimer);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:error?.message||String(error)});});
       return;
     }
     if(m.type==='stage'){setStatus(m.text,true);}
