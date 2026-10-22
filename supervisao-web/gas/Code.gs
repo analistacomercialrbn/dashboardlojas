@@ -157,16 +157,16 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/ee18fa717c46ee8b013f59b404419899af70c28e/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/e2530a8649e000cd5178baf58adad683e9898476/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const cache = CacheService.getScriptCache();
-  let html = cache.get('DASHBOARD_GAS_UI_V9');
+  let html = cache.get('DASHBOARD_GAS_UI_V10');
   if (!html) {
     const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
     if (response.getResponseCode() !== 200) throw new Error('Não foi possível carregar a interface do dashboard.');
     html = response.getContentText();
-    cache.put('DASHBOARD_GAS_UI_V9', html, 3600);
+    cache.put('DASHBOARD_GAS_UI_V10', html, 3600);
   }
   return HtmlService.createHtmlOutput(html).setTitle('Dashboard de Supervisão • Rebanho');
 }
