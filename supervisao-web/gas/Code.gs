@@ -157,23 +157,12 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/f79c848c06dabfeaf3bb2d86b9966c800c4f1da4/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/bf843d6b805dbccd418a5651371a2bbfbaa1cdb8/supervisao-web/gas/gas-app.html';
 
 function doGet() {
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'DASHBOARD_GAS_UI_V12';
-  const partCount = Number(cache.get(cacheKey + '_PARTS') || 0);
-  let html = partCount ? Array.from({ length: partCount }, (_, i) => cache.get(cacheKey + '_' + i) || '').join('') : '';
-  if (!html) {
-    const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
-    if (response.getResponseCode() !== 200) throw new Error('Não foi possível carregar a interface do dashboard.');
-    html = response.getContentText();
-    const chunkSize = 70000, count = Math.ceil(html.length / chunkSize), entries = {};
-    entries[cacheKey + '_PARTS'] = String(count);
-    for (let i = 0; i < count; i++) entries[cacheKey + '_' + i] = html.slice(i * chunkSize, (i + 1) * chunkSize);
-    cache.putAll(entries, 3600);
-  }
-  return HtmlService.createHtmlOutput(html).setTitle('Dashboard de Supervisão • Rebanho');
+  const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
+  if (response.getResponseCode() !== 200) throw new Error('Não foi possível carregar a interface do dashboard.');
+  return HtmlService.createHtmlOutput(response.getContentText()).setTitle('Dashboard de Supervisão • Rebanho');
 }
 function authorizeDashboard() {
   const response = UrlFetchApp.fetch(AUTH.usersUrl, { muteHttpExceptions: true });
