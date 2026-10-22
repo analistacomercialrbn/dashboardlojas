@@ -161,12 +161,17 @@ const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/da
 
 function doGet() {
   const cache = CacheService.getScriptCache();
-  let html = cache.get('DASHBOARD_GAS_UI_V10');
+  const cacheKey = 'DASHBOARD_GAS_UI_V10';
+  const partCount = Number(cache.get(cacheKey + '_PARTS') || 0);
+  let html = partCount ? Array.from({ length: partCount }, (_, i) => cache.get(cacheKey + '_' + i) || '').join('') : '';
   if (!html) {
     const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
     if (response.getResponseCode() !== 200) throw new Error('Não foi possível carregar a interface do dashboard.');
     html = response.getContentText();
-    cache.put('DASHBOARD_GAS_UI_V10', html, 3600);
+    const chunkSize = 70000, count = Math.ceil(html.length / chunkSize), entries = {};
+    entries[cacheKey + '_PARTS'] = String(count);
+    for (let i = 0; i < count; i++) entries[cacheKey + '_' + i] = html.slice(i * chunkSize, (i + 1) * chunkSize);
+    cache.putAll(entries, 3600);
   }
   return HtmlService.createHtmlOutput(html).setTitle('Dashboard de Supervisão • Rebanho');
 }
