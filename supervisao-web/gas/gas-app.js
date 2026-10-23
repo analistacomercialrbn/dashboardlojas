@@ -824,6 +824,7 @@ async function loadCoverageMap(rows,palette,definition){
   const byCity=coverageRowMap(rows,definition.value),allByCity=coverageRowMap(state.coverage?.cities||[],definition.value),featureUfs=new Map(features.map(item=>[item.feature,item.uf]));
   state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10}).setView([-7.3,-39.5],5);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,opacity:.12}).addTo(state.map);
+  const cityLabels=L.layerGroup();
   const layer=L.geoJSON({type:'FeatureCollection',features:features.map(x=>x.feature)},{
     style:feature=>{
       const name=feature.properties?.name||feature.properties?.NOME||'';
@@ -842,10 +843,22 @@ async function loadCoverageMap(rows,palette,definition){
       const person=row?coverageAssignment(row,definition.value):'';
       const text='<b>'+esc(row?.city||name)+' - '+esc(uf)+'</b><br>'+esc(definition.value)+': '+esc(person||'Não definido')+'<br>Situação: '+esc(row?.status||'Sem registro na matriz');
       leafletLayer.bindTooltip(text,{sticky:true});
+      if(visible&&row){
+        const labelIcon=L.divIcon({className:'coverage-city-label-icon',html:'<span style="display:block;transform:translate(-50%,-50%);white-space:nowrap;background:rgba(255,255,255,.86);border:1px solid rgba(30,38,85,.28);border-radius:3px;padding:1px 3px;color:#1E2655;font:700 9px/1.1 Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none">'+esc(row.city||name)+'</span>',iconAnchor:[0,0]});
+        L.marker(leafletLayer.getBounds().getCenter(),{icon:labelIcon,interactive:false,keyboard:false}).addTo(cityLabels);
+      }
       if(row)leafletLayer.on('click',()=>{state.coverageSelection=row;renderCoverageDetail()});
     }
   }).addTo(state.map);
+  const syncCityLabels=()=>{
+    if(!state.map)return;
+    const show=state.map.getZoom()>=7;
+    if(show&&!state.map.hasLayer(cityLabels))cityLabels.addTo(state.map);
+    else if(!show&&state.map.hasLayer(cityLabels))state.map.removeLayer(cityLabels);
+  };
+  state.map.on('zoomend',syncCityLabels);
   try{state.map.fitBounds(layer.getBounds(),{padding:[12,12]})}catch{}
+  syncCityLabels();
 }
 function coveragePath(geometry,project){
   const paths=[];
