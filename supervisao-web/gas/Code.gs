@@ -2,6 +2,7 @@ const SCRIPT_PROPS = PropertiesService.getScriptProperties();
 const CFG = {
   salesSpreadsheetId: SCRIPT_PROPS.getProperty('SALES_SPREADSHEET_ID'),
   auxiliarySpreadsheetId: SCRIPT_PROPS.getProperty('AUXILIARY_SPREADSHEET_ID'),
+  coverageSpreadsheetId: '1EtA9ET6gAzII96N6Iya34jvMU3CusTlNSbAZ5tCk1f8',
   cacheSpreadsheetId: SCRIPT_PROPS.getProperty('CACHE_SPREADSHEET_ID'),
   years: ['2024', '2025', '2026'],
   cacheSheetName: 'DATASET',
@@ -182,6 +183,37 @@ function authorizeDashboard() {
   return { ok: true, usersSource: 'ready', dataset: info.exists, salesCount: info.salesCount || 0 };
 }
 
+
+function coverageData_() {
+  const cache = CacheService.getScriptCache(), key = 'DASH_COVERAGE_MATRIX_V1';
+  const cached = cache.get(key);
+  if (cached) { try { return JSON.parse(cached); } catch (err) { cache.remove(key); } }
+  if (!CFG.coverageSpreadsheetId) throw new Error('A planilha de cobertura não foi configurada.');
+  const ss = SpreadsheetApp.openById(CFG.coverageSpreadsheetId), sheet = ss.getSheetByName('MATRIZ_CIDADES');
+  if (!sheet) throw new Error('A aba MATRIZ_CIDADES não foi encontrada na planilha de cobertura.');
+  const values = sheet.getDataRange().getDisplayValues(), index = headerIndex_(values.shift() || []);
+  const pick = (row, name) => String(cell_(row, index, name) || '').trim();
+  const cities = values.map(row => ({
+    uf: pick(row, 'ESTADO (UF)').toUpperCase(),
+    city: pick(row, 'CIDADE'),
+    nutrition: pick(row, 'NUTRIÇÃO'),
+    animalHealth: pick(row, 'SAÚDE ANIMAL'),
+    poultry: pick(row, 'AVES'),
+    swine: pick(row, 'SUÍNOS'),
+    nutritionRoute: pick(row, 'ROTA COMERCIAL - NUTRIÇÃO'),
+    animalHealthRoute: pick(row, 'ROTA COMERCIAL - SAÚDE ANIMAL'),
+    deliveryRoute: pick(row, 'ROTA DE ENTREGA'),
+    status: pick(row, 'STATUS'),
+    notes: pick(row, 'OBSERVAÇÕES'),
+    region: pick(row, 'REGIONAL COMERCIAL (MAPA)')
+  })).filter(row => row.uf && row.city);
+  let updatedAt = null;
+  try { updatedAt = DriveApp.getFileById(CFG.coverageSpreadsheetId).getLastUpdated().toISOString(); } catch (err) {}
+  const result = { ok: true, cities: cities, updatedAt: updatedAt, count: cities.length };
+  cache.put(key, JSON.stringify(result), 300);
+  return result;
+}
+
 function dashboardApi(action, payload, token) {
   try {
     action = String(action || ''); payload = payload || {};
@@ -198,6 +230,10 @@ function dashboardApi(action, payload, token) {
     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
     if (action === 'info') return Object.assign({ ok: true }, datasetInfo_());
     if (action === 'page') return datasetPage_(payload.offset, payload.limit);
+    if (action === 'coverage') {
+      if (payload.force === true) CacheService.getScriptCache().remove('DASH_COVERAGE_MATRIX_V1');
+      return coverageData_();
+    }
     if (action === 'refresh') {
       if (['ADMIN', 'GERENTE'].indexOf(user.perfil) < 0) throw new Error('Seu perfil não pode atualizar as bases.');
       return refreshDataset_();
