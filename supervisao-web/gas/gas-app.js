@@ -20,7 +20,12 @@ const state = {
   charts:[],
   map:null,
   mapLayers:[],
-  lastPayload:null
+  lastPayload:null,
+  cityView:'sales',
+  coverage:null,
+  coverageGeo:{},
+  coverageSelection:null,
+  coverageFilters:{department:'Nutrição',uf:'Todos',rca:'Todos',status:'Todas'}
 };
 
 function money(v, compact=false){
@@ -543,6 +548,10 @@ function renderProdutos(p){
 }
 
 function renderCidades(p){
+  if(state.cityView==='coverage'){renderCoverageView(p);return;}
+  renderCidadesSales(p);
+}
+function renderCidadesSales(p){
   const cities=p.cities||[];
   const selected=p.selected;
   const revenue=(selected?.revenue ?? cities.reduce((a,x)=>a+x.revenue,0));
@@ -567,6 +576,8 @@ function renderCidades(p){
       <div class="panel"><div class="panel-title-row"><div><h2>Principais clientes</h2><div class="panel-sub">${selected?'Na cidade selecionada.':'Na área filtrada.'}</div></div></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="align-right">Faturamento</th><th class="align-right">Produtos</th></tr></thead><tbody id="cityClients"></tbody></table></div></div>
     </div>
   `;
+  $('#content').insertAdjacentHTML('afterbegin','<div class="city-view-switch" role="group" aria-label="Visualização de cidades"><button type="button" class="active" data-city-view="sales">Faturamento</button><button type="button" data-city-view="coverage">Cobertura territorial</button></div>');
+  $('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;renderCidades(state.lastPayload||p)}));
   const max=cities[0]?.revenue||1;
   $('#cityList').innerHTML=cities.slice(0,100).map(c=>`<div class="city-row ${selected?.key===c.key?'active':''}" data-city="${esc(c.key)}"><div><strong>${esc(c.city)} - ${esc(c.uf)}</strong><div class="progress" style="margin-top:5px;width:150px"><i style="width:${Math.max(2,c.revenue/max*100)}%"></i></div></div><span>${money(c.revenue,true)}</span></div>`).join('');
   $$('.city-row').forEach(row=>row.addEventListener('click',()=>{state.selectedCity=row.dataset.city;queryPage()}));
@@ -643,3 +654,220 @@ function renderMetas(p){
 }
 
 bootstrap();
+
+
+const COVERAGE_DEPARTMENTS=[
+  {value:'Nutrição',field:'nutrition',route:'nutritionRoute'},
+  {value:'Saúde Animal',field:'animalHealth',route:'animalHealthRoute'},
+  {value:'Aves',field:'poultry',route:''},
+  {value:'Suínos',field:'swine',route:''}
+];
+const COVERAGE_COLORS=['#3157B7','#159A88','#CE6B34','#7652B7','#C54868','#3F82B8','#8A7A26','#437B55','#BD4B2C','#5D6FBA','#A5418B','#327C91','#8B5C3B','#526A39','#8463A8','#A34E5B','#2F8F70','#586179'];
+function xmlEscape(value){return String(value||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]});}
+function normCoverage(value){return normalize(value).replace(/\s+/g,' ');}
+function coverageRcaKey(name){return normalize(String(name||'')).replace(/\s*\/\s*/g,' / ').replace(/\s+/g,' ')}
+function coverageRcaOptions(rows,department){
+  const groups=new Map();
+  rows.forEach(row=>{const name=coverageAssignment(row,department);if(!name)return;const key=coverageRcaKey(name);if(!groups.has(key))groups.set(key,new Map());const variants=groups.get(key);variants.set(name,(variants.get(name)||0)+1)});
+  return [...groups.entries()].map(([key,variants])=>({key,label:[...variants.entries()].sort((a,b)=>b[1]-a[1])[0][0]})).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
+}
+function coverageAssignment(row,department){
+  const def=COVERAGE_DEPARTMENTS.find(x=>x.value===department)||COVERAGE_DEPARTMENTS[0];
+  return String(row?.[def.field]||'').trim();
+}
+function coveragePending(row,department){
+  const status=String(row?.status||'').trim().toUpperCase();
+  const person=coverageAssignment(row,department);
+  return !person||status!=='CONFERIDO'||person.indexOf('/')>=0;
+}
+function coverageFilteredRows(){
+  const rows=state.coverage?.cities||[],f=state.coverageFilters;
+  return rows.filter(row=>{
+    if(f.uf!=='Todos'&&row.uf!==f.uf)return false;
+    if(f.rca!=='Todos'&&coverageRcaKey(coverageAssignment(row,f.department))!==f.rca)return false;
+    const pending=coveragePending(row,f.department);
+    if(f.status==='Conferidas'&&pending)return false;
+    if(f.status==='Pendentes'&&!pending)return false;
+    return true;
+  });
+}
+function coverageRowMap(rows,department){
+  const map=new Map();
+  rows.forEach(row=>map.set(aliasCity(row.city)+'|'+row.uf,row));
+  return map;
+}
+async function renderCoverageView(){
+  const cities=state.coverage?.cities||[],f=state.coverageFilters;
+  $('#content').innerHTML=
+    '<div class="city-view-switch" role="group" aria-label="Visualização de cidades"><button type="button" data-city-view="sales">Faturamento</button><button type="button" class="active" data-city-view="coverage">Cobertura territorial</button></div>'+
+    '<div class="coverage-heading"><div><h2>Distribuição de cobertura comercial</h2><p>As cores representam o RCA responsável pela linha selecionada. Áreas em revisão ficam destacadas.</p></div><div class="coverage-downloads"><button id="coveragePng" class="btn primary small">Baixar PNG</button><button id="coverageSvg" class="btn secondary small">Baixar SVG</button></div></div>'+
+    '<div class="coverage-controls panel">'+
+      '<label>Linha comercial<select id="coverageDepartment">'+COVERAGE_DEPARTMENTS.map(x=>'<option value="'+esc(x.value)+'" '+(f.department===x.value?'selected':'')+'>'+esc(x.value)+'</option>').join('')+'</select></label>'+
+      '<label>Estado<select id="coverageUf"><option value="Todos">Todos os estados</option>'+[...new Set(cities.map(x=>x.uf))].sort().map(x=>'<option value="'+esc(x)+'" '+(f.uf===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select></label>'+
+      '<label>RCA<select id="coverageRca"><option value="Todos">Todos os RCAs</option></select></label>'+
+      '<label>Situação<select id="coverageStatus"><option value="Todas" '+(f.status==='Todas'?'selected':'')+'>Todas</option><option value="Conferidas" '+(f.status==='Conferidas'?'selected':'')+'>Conferidas</option><option value="Pendentes" '+(f.status==='Pendentes'?'selected':'')+'>Pendentes</option></select></label>'+
+    '</div>'+
+    '<div id="coverageLoad" class="coverage-load '+(state.coverage?'hidden':'')+'">Carregando matriz de cobertura…</div>'+
+    '<div id="coverageError" class="coverage-error hidden"></div>'+
+    '<div id="coverageStats" class="coverage-stats"></div>'+
+    '<div class="grid coverage-layout"><div class="panel coverage-map-panel"><div class="panel-title-row"><div><h2>Mapa por município</h2><div class="panel-sub">Clique em um município para conferir responsável e rota.</div></div><span id="coverageBaseDate" class="badge"></span></div><div id="coverageMap"></div></div>'+
+    '<div class="panel coverage-side"><div class="panel-title-row"><div><h2>Legenda da cobertura</h2><div class="panel-sub">Cada cor identifica um RCA nesta linha.</div></div></div><div id="coverageLegend" class="coverage-legend"></div><div class="coverage-detail" id="coverageDetail"></div></div></div>'+
+    '<div class="coverage-footnote">Fonte: matriz de cobertura comercial no Google Drive. Cidades sem responsável ou com situação diferente de “Conferido” são exibidas como pendentes.</div>';
+  $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;renderCidades(state.lastPayload||{})}));
+  $('#coverageDepartment').addEventListener('change',e=>{f.department=e.target.value;f.rca='Todos';state.coverageSelection=null;renderCoverageView()});
+  $('#coverageUf').addEventListener('change',e=>{f.uf=e.target.value;state.coverageSelection=null;renderCoverageView()});
+  $('#coverageRca').addEventListener('change',e=>{f.rca=e.target.value;state.coverageSelection=null;renderCoverageView()});
+  $('#coverageStatus').addEventListener('change',e=>{f.status=e.target.value;state.coverageSelection=null;renderCoverageView()});
+  $('#coveragePng').addEventListener('click',()=>downloadCoverageMap('png'));
+  $('#coverageSvg').addEventListener('click',()=>downloadCoverageMap('svg'));
+  if(!state.coverage){
+    api('/api/coverage').then(data=>{
+      state.coverage=data;
+      $('#coverageLoad')?.classList.add('hidden');
+      renderCoverageView();
+    }).catch(error=>{
+      const box=$('#coverageError');
+      if(box){box.textContent='Não foi possível ler a matriz de cobertura: '+(error?.message||String(error));box.classList.remove('hidden')}
+      $('#coverageLoad')?.classList.add('hidden');
+    });
+    return;
+  }
+  const allowed=coverageFilteredRows(),def=COVERAGE_DEPARTMENTS.find(x=>x.value===f.department)||COVERAGE_DEPARTMENTS[0];
+  const rcas=coverageRcaOptions(cities,f.department);
+  const rcaEl=$('#coverageRca');
+  rcaEl.innerHTML='<option value="Todos">Todos os RCAs</option>'+rcas.map(x=>'<option value="'+esc(x.key)+'" '+(f.rca===x.key?'selected':'')+'>'+esc(x.label)+'</option>').join('');
+  const pendingCount=allowed.filter(x=>coveragePending(x,f.department)).length;
+  const coveredCount=allowed.length-pendingCount;
+  const uniqueRcas=new Set(allowed.map(x=>coverageRcaKey(coverageAssignment(x,f.department))).filter(Boolean));
+  $('#coverageStats').innerHTML=
+    '<div class="coverage-stat"><span>Municípios no recorte</span><strong>'+integer(allowed.length)+'</strong></div>'+
+    '<div class="coverage-stat"><span>Conferidos</span><strong>'+integer(coveredCount)+'</strong></div>'+
+    '<div class="coverage-stat pending"><span>Em revisão / sem responsável</span><strong>'+integer(pendingCount)+'</strong></div>'+
+    '<div class="coverage-stat"><span>RCAs na linha</span><strong>'+integer(uniqueRcas.size)+'</strong></div>';
+  $('#coverageBaseDate').textContent=state.coverage.updatedAt?'Base '+fmtDate(state.coverage.updatedAt):'Matriz comercial';
+  const palette=new Map(rcas.map((item,index)=>[item.key,COVERAGE_COLORS[index%COVERAGE_COLORS.length]]));
+  const counts=new Map();
+  allowed.forEach(row=>{
+    const name=coveragePending(row,f.department)?'Em revisão / sem responsável':coverageAssignment(row,f.department);
+    const key=name.startsWith('Em revisão')?'__pending__':coverageRcaKey(name),entry=counts.get(key)||{name:name,count:0};entry.count++;counts.set(key,entry);
+  });
+  const legend=[...counts.entries()].sort((a,b)=>a[1].name.startsWith('Em revisão')?1:b[1].name.startsWith('Em revisão')?-1:a[1].name.localeCompare(b[1].name,'pt-BR'));
+  $('#coverageLegend').innerHTML=legend.map(([key,item])=>'<div class="coverage-legend-row"><span class="coverage-swatch" style="background:'+ (key==='__pending__'?'#E4A33A':palette.get(key)||'#9AA3B5')+'"></span><strong>'+esc(item.name)+'</strong><span>'+integer(item.count)+'</span></div>').join('')||'<div class="empty">Nenhuma cidade neste recorte.</div>';
+  renderCoverageDetail();
+  loadCoverageMap(allowed,palette,def);
+}
+function renderCoverageDetail(){
+  const box=$('#coverageDetail'),row=state.coverageSelection;
+  if(!box)return;
+  if(!row){box.innerHTML='<div class="coverage-detail-empty"><span>⌖</span><strong>Selecione um município</strong><p>Confira os responsáveis e as rotas comerciais da cidade.</p></div>';return}
+  box.innerHTML='<div class="coverage-detail-title"><span>'+esc(row.uf)+'</span><h3>'+esc(row.city)+'</h3></div>'+
+    '<div class="coverage-detail-row"><span>Nutrição</span><strong>'+esc(row.nutrition||'Não definido')+'</strong></div>'+
+    '<div class="coverage-detail-row"><span>Saúde Animal</span><strong>'+esc(row.animalHealth||'Não definido')+'</strong></div>'+
+    '<div class="coverage-detail-row"><span>Aves</span><strong>'+esc(row.poultry||'—')+'</strong></div>'+
+    '<div class="coverage-detail-row"><span>Suínos</span><strong>'+esc(row.swine||'—')+'</strong></div>'+
+    '<div class="coverage-detail-row"><span>Rota comercial · Nutrição</span><strong>'+esc(row.nutritionRoute||'—')+'</strong></div>'+
+    '<div class="coverage-detail-row"><span>Rota comercial · Saúde Animal</span><strong>'+esc(row.animalHealthRoute||'—')+'</strong></div>'+
+    '<div class="coverage-detail-row"><span>Rota de entrega</span><strong>'+esc(row.deliveryRoute||'—')+'</strong></div>'+
+    '<div class="coverage-detail-status '+(coveragePending(row,state.coverageFilters.department)?'pending':'')+'">'+esc(row.status||'Sem situação cadastrada')+'</div>'+
+    (row.notes?'<p class="coverage-notes">'+esc(row.notes)+'</p>':'');
+}
+function coverageGeoFor(uf){
+  if(state.coverageGeo[uf])return Promise.resolve(state.coverageGeo[uf]);
+  const codes={MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29'};
+  if(!codes[uf])return Promise.reject(new Error('Estado sem geometria cadastrada: '+uf));
+  return fetch('https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-'+codes[uf]+'-mun.json')
+    .then(res=>{if(!res.ok)throw new Error('Falha ao carregar o mapa de '+uf);return res.json()})
+    .then(json=>{state.coverageGeo[uf]=json;return json});
+}
+async function loadCoverageMap(rows,palette,definition){
+  const el=$('#coverageMap');if(!el)return;
+  if(state.map){try{state.map.remove()}catch{}state.map=null}
+  const ufs=state.coverageFilters.uf==='Todos'?[...new Set((state.coverage?.cities||[]).map(x=>x.uf))]:[state.coverageFilters.uf];
+  $('#coverageMap').innerHTML='';
+  const features=[];
+  try{
+    const geos=await Promise.all(ufs.map(uf=>coverageGeoFor(uf)));
+    geos.forEach((geo,index)=>geo.features?.forEach(feature=>features.push({uf:ufs[index],feature})));
+  }catch(error){
+    const box=$('#coverageError');if(box){box.textContent=error?.message||String(error);box.classList.remove('hidden')}
+    return;
+  }
+  if(!document.body.contains(el))return;
+  const byCity=coverageRowMap(rows,definition.value),allByCity=coverageRowMap(state.coverage?.cities||[],definition.value);
+  state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10}).setView([-7.3,-39.5],5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,opacity:.12}).addTo(state.map);
+  const layer=L.geoJSON({type:'FeatureCollection',features:features.map(x=>x.feature)},{
+    style:feature=>{
+      const name=feature.properties?.name||feature.properties?.NOME||'';
+      const uf=feature.properties?.uf||feature.properties?.UF||'';
+      const pair=features.find(x=>x.feature===feature),stateUf=pair?.uf||uf;
+      const key=aliasCity(name)+'|'+stateUf,row=allByCity.get(key),visible=byCity.get(key);
+      const pending=row&&coveragePending(row,definition.value);
+      const person=row?coverageAssignment(row,definition.value):'';
+      const outside=!visible;
+      return {color:pending?'#C08422':outside?'#D8DDE7':'#FFFFFF',weight:pending?1.1:.75,dashArray:pending?'3 3':null,fillColor:pending?'#E8E1D1':person?(palette.get(coverageRcaKey(person))||'#8993A8'):'#E7EAF0',fillOpacity:outside?.2:pending?.78:.88};
+    },
+    onEachFeature:(feature,leafletLayer)=>{
+      const name=feature.properties?.name||feature.properties?.NOME||'';
+      const pair=features.find(x=>x.feature===feature),uf=pair?.uf||feature.properties?.uf||'';
+      const key=aliasCity(name)+'|'+uf,row=allByCity.get(key),visible=byCity.get(key);
+      const person=row?coverageAssignment(row,definition.value):'';
+      const text='<b>'+esc(row?.city||name)+' - '+esc(uf)+'</b><br>'+esc(definition.value)+': '+esc(person||'Não definido')+'<br>Situação: '+esc(row?.status||'Sem registro na matriz');
+      leafletLayer.bindTooltip(text,{sticky:true});
+      if(row)leafletLayer.on('click',()=>{state.coverageSelection=row;renderCoverageDetail()});
+    }
+  }).addTo(state.map);
+  try{state.map.fitBounds(layer.getBounds(),{padding:[12,12]})}catch{}
+}
+function coveragePath(geometry,project){
+  const paths=[];
+  const polygons=geometry?.type==='Polygon'?[geometry.coordinates]:geometry?.type==='MultiPolygon'?geometry.coordinates:[];
+  polygons.forEach(poly=>poly.forEach(ring=>{
+    let d='';
+    ring.forEach((point,i)=>{const p=project(point[0],point[1]);d+=(i?'L':'M')+p[0].toFixed(2)+' '+p[1].toFixed(2)});
+    paths.push(d+'Z');
+  }));
+  return paths.join(' ');
+}
+function buildCoverageSvg(){
+  const f=state.coverageFilters,definition=COVERAGE_DEPARTMENTS.find(x=>x.value===f.department)||COVERAGE_DEPARTMENTS[0];
+  const rows=coverageFilteredRows(),map=coverageRowMap(rows,definition.value),all=coverageRowMap(state.coverage?.cities||[],definition.value);
+  const ufs=f.uf==='Todos'?[...new Set((state.coverage?.cities||[]).map(x=>x.uf))]:[f.uf];
+  const features=[];
+  ufs.forEach(uf=>state.coverageGeo[uf]?.features?.forEach(feature=>features.push({uf,feature})));
+  const points=[];
+  features.forEach(item=>{const g=item.feature.geometry;const polygons=g?.type==='Polygon'?[g.coordinates]:g?.type==='MultiPolygon'?g.coordinates:[];polygons.forEach(poly=>poly.forEach(ring=>ring.forEach(pt=>points.push([pt[0]*Math.cos(-7*Math.PI/180),pt[1]]))))});
+  if(!points.length)throw new Error('O mapa ainda não está pronto para exportação.');
+  const minX=Math.min(...points.map(p=>p[0])),maxX=Math.max(...points.map(p=>p[0])),minY=Math.min(...points.map(p=>p[1])),maxY=Math.max(...points.map(p=>p[1]));
+  const W=1600,H=1120,mapBox={x:48,y:152,w:1050,h:910},legendX=1150,scale=Math.min(mapBox.w/(maxX-minX),mapBox.h/(maxY-minY));
+  const project=(lon,lat)=>{const x=lon*Math.cos(-7*Math.PI/180),y=lat;return [mapBox.x+(x-minX)*scale,mapBox.y+(maxY-y)*scale]};
+  const rcas=coverageRcaOptions(state.coverage?.cities||[],definition.value);
+  const palette=new Map(rcas.map((item,index)=>[item.key,COVERAGE_COLORS[index%COVERAGE_COLORS.length]]));
+  let shapes='';
+  features.forEach(item=>{
+    const feature=item.feature,name=feature.properties?.name||feature.properties?.NOME||'',row=all.get(aliasCity(name)+'|'+item.uf),visible=map.get(aliasCity(name)+'|'+item.uf),pending=row&&coveragePending(row,definition.value),person=row?coverageAssignment(row,definition.value):'';
+    const fill=visible?(pending?'url(#pendingHatch)':(palette.get(coverageRcaKey(person))||'#8993A8')):'#EDF0F5';
+    const stroke=pending?'#C08422':'#FFFFFF';
+    shapes+='<path d="'+coveragePath(feature.geometry,project)+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+(pending?'1.2':'0.75')+'"><title>'+xmlEscape((row?.city||name)+' - '+item.uf+' · '+(person||'Sem responsável')+' · '+(row?.status||'Sem registro'))+'</title></path>';
+  });
+  const visibleCounts=new Map();
+  rows.forEach(row=>{const name=coveragePending(row,definition.value)?'Em revisão / sem responsável':coverageAssignment(row,definition.value),key=name.startsWith('Em revisão')?'__pending__':coverageRcaKey(name),entry=visibleCounts.get(key)||{name:name,count:0};entry.count++;visibleCounts.set(key,entry)});
+  let legend='',y=185;
+  [...visibleCounts.entries()].sort((a,b)=>a[1].name.startsWith('Em revisão')?1:b[1].name.startsWith('Em revisão')?-1:a[1].name.localeCompare(b[1].name,'pt-BR')).forEach(([key,item])=>{
+    const color=key==='__pending__'?'url(#pendingHatch)':palette.get(key)||'#8993A8';
+    legend+='<rect x="'+legendX+'" y="'+y+'" width="22" height="22" rx="5" fill="'+color+'" stroke="#D6DCE7"/><text x="'+(legendX+34)+'" y="'+(y+15)+'" class="legendText">'+xmlEscape(item.name)+'</text><text x="1530" y="'+(y+15)+'" class="legendCount">'+item.count+'</text>';y+=34;
+  });
+  if(!legend)legend='<text x="'+legendX+'" y="'+y+'" class="legendText">Nenhuma cidade neste recorte.</text>';
+  const subtitle='Linha: '+f.department+'  ·  UF: '+(f.uf==='Todos'?'Todos':f.uf)+'  ·  Situação: '+f.status;
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><defs><pattern id="pendingHatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#F3E9D6"/><line x1="0" y1="0" x2="0" y2="8" stroke="#C08422" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#FFFFFF"/><text x="48" y="58" class="title">Cobertura comercial por município</text><text x="48" y="94" class="subtitle">'+xmlEscape(subtitle)+'</text><text x="48" y="126" class="source">Dashboard de Supervisão Rebanho · Matriz de cobertura comercial</text>'+shapes+'<line x1="1130" y1="145" x2="1130" y2="1075" stroke="#E4E8F0"/><text x="'+legendX+'" y="150" class="legendTitle">Legenda · '+xmlEscape(f.department)+'</text>'+legend+'<rect x="'+legendX+'" y="980" width="22" height="22" rx="5" fill="url(#pendingHatch)" stroke="#C08422"/><text x="'+(legendX+34)+'" y="995" class="legendText">Área em revisão / sem responsável</text><text x="'+legendX+'" y="1048" class="source">Municípios no recorte: '+rows.length+'</text><style>.title{font:700 34px Arial,sans-serif;fill:#1E2655}.subtitle{font:600 18px Arial,sans-serif;fill:#39425E}.source{font:13px Arial,sans-serif;fill:#747D90}.legendTitle{font:700 20px Arial,sans-serif;fill:#1E2655}.legendText{font:14px Arial,sans-serif;fill:#252C3E}.legendCount{font:700 13px Arial,sans-serif;fill:#606A80;text-anchor:end}</style></svg>';
+}
+function downloadCoverageMap(type){
+  try{
+    const svg=buildCoverageSvg(),blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+    if(type==='svg'){a.href=url;a.download='cobertura-comercial-'+state.coverageFilters.department.toLowerCase().replace(/\s+/g,'-')+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return}
+    const image=new Image();
+    image.onload=()=>{const canvas=document.createElement('canvas');canvas.width=1600;canvas.height=1120;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0);canvas.toBlob(png=>{if(!png)return;const link=document.createElement('a');link.href=URL.createObjectURL(png);link.download='cobertura-comercial-'+state.coverageFilters.department.toLowerCase().replace(/\s+/g,'-')+'.png';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);URL.revokeObjectURL(url)},'image/png')};
+    image.onerror=()=>{URL.revokeObjectURL(url);throw new Error('Não foi possível gerar a imagem PNG.')};image.src=url;
+  }catch(error){alert(error?.message||String(error))}
+}
+
