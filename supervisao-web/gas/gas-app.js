@@ -689,7 +689,13 @@ function coverageAssignment(row,department){
 function coveragePending(row,department){
   const status=String(row?.status||'').trim().toUpperCase();
   const person=coverageAssignment(row,department);
-  return !person||status!=='CONFERIDO'||person.indexOf('/')>=0;
+  if(!person||person.indexOf('/')>=0)return true;
+  if(status==='CONFERIDO')return false;
+  const note=String(row?.notes||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+  const departmentLabels=['NUTRIÇÃO','SAÚDE ANIMAL','AVES','SUÍNOS'];
+  const scopedDepartments=departmentLabels.filter(label=>note.includes(normalize(label)+' —'));
+  if(scopedDepartments.length)return scopedDepartments.some(label=>normalize(label)===normalize(department));
+  return true;
 }
 function coverageFilteredRows(){
   const rows=state.coverage?.cities||[],f=state.coverageFilters;
