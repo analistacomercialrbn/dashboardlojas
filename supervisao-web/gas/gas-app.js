@@ -14,7 +14,7 @@ const state = {
   dimensions:null,
   worker:null,
   page:'overview',
-  filters:{uf:'Todos',region:'Todos',city:'Todos',year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
+  filters:{uf:[],region:'Todos',city:'Todos',year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
   selectedCity:'Todos',
   requestId:0,
   charts:[],
@@ -26,7 +26,7 @@ const state = {
   coverage:null,
   coverageGeo:{},
   coverageSelection:null,
-  coverageFilters:{department:'Nutrição',uf:'Todos',rca:'Todos',status:'Todas'}
+  coverageFilters:{department:'Nutrição',uf:[],rca:'Todos',status:'Todas'}
 };
 
 function money(v, compact=false){
@@ -112,10 +112,9 @@ function bindShell(){
     $$('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
     queryPage();
   }));
-  ['filterUf','filterRegion','filterCity'].forEach(id=>{
+  ['filterRegion','filterCity'].forEach(id=>{
     $('#'+id).addEventListener('change',()=>{
       syncFiltersFromUi();
-      if(id==='filterUf'){state.filters.region='Todos';state.filters.city='Todos';}
       if(id==='filterRegion')state.filters.city='Todos';
       updateGeoFilterUi();
       state.selectedCity='Todos';
@@ -134,7 +133,7 @@ function bindShell(){
   });
   $('#clearFilters').addEventListener('click',()=>{
     const latest=state.dimensions?.latest?new Date(state.dimensions.latest):new Date();
-    state.filters={uf:'Todos',region:'Todos',city:'Todos',year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:[],rca:[],department:[]};
+    state.filters={uf:[],region:'Todos',city:'Todos',year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:[],rca:[],department:[]};
     syncUiFromFilters(); queryPage();
   });
   $('#toggleAdvancedFilters').addEventListener('click',e=>{
@@ -318,7 +317,7 @@ function setupFilters(){
   state.filters.supervisor=normalizeMulti(state.filters.supervisor);
   state.filters.rca=normalizeMulti(state.filters.rca);
   state.filters.department=normalizeMulti(state.filters.department);
-  state.filters.uf=state.filters.uf||'Todos';state.filters.region=state.filters.region||'Todos';state.filters.city=state.filters.city||'Todos';
+  state.filters.uf=normalizeMulti(state.filters.uf);state.filters.region=state.filters.region||'Todos';state.filters.city=state.filters.city||'Todos';
   updateGeoFilterUi();
   fillSelect($('#filterYear'),['Todos',...(d.years||[]).map(String)],state.filters.year,x=>x==='Todos'?'Todos':x);
   fillSelect($('#filterMonth'),['Todos',...Array.from({length:12},(_,i)=>String(i+1))],state.filters.month,x=>x==='Todos'?'Todos':['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(x)-1]);
@@ -330,18 +329,26 @@ function setupFilters(){
 function fillSelect(el,values,selected,labeller=x=>x){
   el.innerHTML=values.map(v=>`<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(labeller(v))}</option>`).join('');
 }
-function updateGeoFilterUi(){
+function updateGeoFilterUi(preserveUf=false){
   const rows=state.dimensions?.geography||[];
-  const uf=state.filters.uf||'Todos',region=state.filters.region||'Todos';
-  const ufs=[...new Set(rows.map(x=>x.uf))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const regionRows=rows.filter(x=>uf==='Todos'||x.uf===uf);
+  const ufs=normalizeMulti(state.filters.uf),region=state.filters.region||'Todos';
+  const allUfs=[...new Set(rows.map(x=>x.uf))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const regionRows=rows.filter(x=>!ufs.length||ufs.includes(x.uf));
   const regions=[...new Set(regionRows.map(x=>x.region))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(region!=='Todos'&&!regions.includes(region))state.filters.region='Todos';
   const activeRegion=state.filters.region||'Todos';
-  const cityRows=rows.filter(x=>(uf==='Todos'||x.uf===uf)&&(activeRegion==='Todos'||x.region===activeRegion));
+  const cityRows=rows.filter(x=>(!ufs.length||ufs.includes(x.uf))&&(activeRegion==='Todos'||x.region===activeRegion));
   const cities=[...new Set(cityRows.map(x=>x.city))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(state.filters.city!=='Todos'&&!cities.includes(state.filters.city))state.filters.city='Todos';
-  fillSelect($('#filterUf'),['Todos',...ufs],state.filters.uf,x=>x==='Todos'?'Todos':x);
+  if(!preserveUf){
+    fillMultiSelect($('#filterUf'),allUfs.map(x=>({value:x,label:x})),ufs,()=>{
+      state.filters.uf=selectedMulti('filterUf');
+      state.filters.region='Todos';state.filters.city='Todos';
+      updateGeoFilterUi(true);
+      state.selectedCity='Todos';
+      queryPage();
+    });
+  }
   fillSelect($('#filterRegion'),['Todos',...regions],state.filters.region,x=>x==='Todos'?'Todas':x);
   fillSelect($('#filterCity'),['Todos',...cities],state.filters.city,x=>x==='Todos'?'Todas':x);
 }
@@ -359,7 +366,7 @@ function refreshRcaOptions(){
 }
 function syncFiltersFromUi(){
   state.filters={
-    uf:$('#filterUf').value,
+    uf:selectedMulti('filterUf'),
     region:$('#filterRegion').value,
     city:$('#filterCity').value,
     year:$('#filterYear').value,
@@ -687,7 +694,7 @@ function coveragePending(row,department){
 function coverageFilteredRows(){
   const rows=state.coverage?.cities||[],f=state.coverageFilters;
   return rows.filter(row=>{
-    if(f.uf!=='Todos'&&row.uf!==f.uf)return false;
+    const selectedUfs=normalizeMulti(f.uf);if(selectedUfs.length&&!selectedUfs.includes(row.uf))return false;
     if(f.rca!=='Todos'&&coverageRcaKey(coverageAssignment(row,f.department))!==f.rca)return false;
     const pending=coveragePending(row,f.department);
     if(f.status==='Conferidas'&&pending)return false;
@@ -707,7 +714,7 @@ async function renderCoverageView(){
     '<div class="coverage-heading"><div><h2>Distribuição de cobertura comercial</h2><p>As cores representam o RCA responsável pela linha selecionada. Áreas em revisão ficam destacadas.</p></div><div class="coverage-downloads"><button id="coverageRefresh" class="btn secondary small">Atualizar matriz</button><button id="coveragePng" class="btn primary small">Baixar PNG</button><button id="coverageSvg" class="btn secondary small">Baixar SVG</button></div></div>'+
     '<div class="coverage-controls panel">'+
       '<label>Linha comercial<select id="coverageDepartment">'+COVERAGE_DEPARTMENTS.map(x=>'<option value="'+esc(x.value)+'" '+(f.department===x.value?'selected':'')+'>'+esc(x.value)+'</option>').join('')+'</select></label>'+
-      '<label>Estado<select id="coverageUf"><option value="Todos">Todos os estados</option>'+[...new Set(cities.map(x=>x.uf))].sort().map(x=>'<option value="'+esc(x)+'" '+(f.uf===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select></label>'+
+      '<label>Estado<div id="coverageUf" class="multi-select"></div></label>'+
       '<label>RCA<select id="coverageRca"><option value="Todos">Todos os RCAs</option></select></label>'+
       '<label>Situação<select id="coverageStatus"><option value="Todas" '+(f.status==='Todas'?'selected':'')+'>Todas</option><option value="Conferidas" '+(f.status==='Conferidas'?'selected':'')+'>Conferidas</option><option value="Pendentes" '+(f.status==='Pendentes'?'selected':'')+'>Pendentes</option></select></label>'+
     '</div>'+
@@ -718,8 +725,12 @@ async function renderCoverageView(){
     '<div class="panel coverage-side"><div class="panel-title-row"><div><h2>Legenda da cobertura</h2><div class="panel-sub">Cada cor identifica um RCA nesta linha.</div></div></div><div id="coverageLegend" class="coverage-legend"></div><div class="coverage-detail" id="coverageDetail"></div></div></div>'+
     '<div class="coverage-footnote">Fonte: matriz de cobertura comercial no Google Drive. Cidades sem responsável ou com situação diferente de “Conferido” são exibidas como pendentes.</div>';
   $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;renderCidades(state.lastPayload||{})}));
+  fillMultiSelect($('#coverageUf'),[...new Set(cities.map(x=>x.uf))].sort().map(x=>({value:x,label:x})),f.uf,()=>{
+    f.uf=selectedMulti('coverageUf');
+    state.coverageSelection=null;
+    renderCoverageResults();
+  });
   $('#coverageDepartment').addEventListener('change',e=>{f.department=e.target.value;f.rca='Todos';state.coverageSelection=null;renderCoverageView()});
-  $('#coverageUf').addEventListener('change',e=>{f.uf=e.target.value;state.coverageSelection=null;renderCoverageView()});
   $('#coverageRca').addEventListener('change',e=>{f.rca=e.target.value;state.coverageSelection=null;renderCoverageView()});
   $('#coverageStatus').addEventListener('change',e=>{f.status=e.target.value;state.coverageSelection=null;renderCoverageView()});
   $('#coverageRefresh').addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Atualizando…';try{state.coverage=await api('/api/coverage',{method:'POST',body:JSON.stringify({force:true})});state.coverageSelection=null;renderCoverageView()}catch(error){const box=$('#coverageError');if(box){box.textContent='Não foi possível atualizar a matriz: '+(error?.message||String(error));box.classList.remove('hidden')}}finally{if(button.isConnected){button.disabled=false;button.textContent='Atualizar matriz'}}});
@@ -737,6 +748,10 @@ async function renderCoverageView(){
     });
     return;
   }
+  renderCoverageResults();
+}
+function renderCoverageResults(){
+  const cities=state.coverage?.cities||[],f=state.coverageFilters;
   const allowed=coverageFilteredRows(),def=COVERAGE_DEPARTMENTS.find(x=>x.value===f.department)||COVERAGE_DEPARTMENTS[0];
   const rcas=coverageRcaOptions(cities,f.department);
   const rcaEl=$('#coverageRca');
@@ -786,9 +801,10 @@ function coverageGeoFor(uf){
 }
 async function loadCoverageMap(rows,palette,definition){
   const drawId=++state.coverageDrawId;
+  $('#coverageError')?.classList.add('hidden');
   const el=$('#coverageMap');if(!el)return;
   if(state.map){try{state.map.remove()}catch{}state.map=null}
-  const ufs=state.coverageFilters.uf==='Todos'?[...new Set((state.coverage?.cities||[]).map(x=>x.uf))]:[state.coverageFilters.uf];
+  const selectedUfs=normalizeMulti(state.coverageFilters.uf),ufs=selectedUfs.length?selectedUfs:[...new Set((state.coverage?.cities||[]).map(x=>x.uf))];
   $('#coverageMap').innerHTML='';
   const features=[];
   try{
@@ -838,7 +854,7 @@ function coveragePath(geometry,project){
 function buildCoverageSvg(){
   const f=state.coverageFilters,definition=COVERAGE_DEPARTMENTS.find(x=>x.value===f.department)||COVERAGE_DEPARTMENTS[0];
   const rows=coverageFilteredRows(),map=coverageRowMap(rows,definition.value),all=coverageRowMap(state.coverage?.cities||[],definition.value);
-  const ufs=f.uf==='Todos'?[...new Set((state.coverage?.cities||[]).map(x=>x.uf))]:[f.uf];
+  const selectedUfs=normalizeMulti(f.uf),ufs=selectedUfs.length?selectedUfs:[...new Set((state.coverage?.cities||[]).map(x=>x.uf))];
   const features=[];
   ufs.forEach(uf=>state.coverageGeo[uf]?.features?.forEach(feature=>features.push({uf,feature})));
   const points=[];
@@ -864,7 +880,7 @@ function buildCoverageSvg(){
     legend+='<rect x="'+legendX+'" y="'+y+'" width="22" height="22" rx="5" fill="'+color+'" stroke="#D6DCE7"/><text x="'+(legendX+34)+'" y="'+(y+15)+'" class="legendText">'+xmlEscape(item.name)+'</text><text x="1530" y="'+(y+15)+'" class="legendCount">'+item.count+'</text>';y+=34;
   });
   if(!legend)legend='<text x="'+legendX+'" y="'+y+'" class="legendText">Nenhuma cidade neste recorte.</text>';
-  const subtitle='Linha: '+f.department+'  ·  UF: '+(f.uf==='Todos'?'Todos':f.uf)+'  ·  Situação: '+f.status;
+  const subtitle='Linha: '+f.department+'  ·  UF: '+(selectedUfs.length?selectedUfs.join(', '):'Todos')+'  ·  Situação: '+f.status;
   return '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><defs><pattern id="pendingHatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#F3E9D6"/><line x1="0" y1="0" x2="0" y2="8" stroke="#C08422" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#FFFFFF"/><text x="48" y="58" class="title">Cobertura comercial por município</text><text x="48" y="94" class="subtitle">'+xmlEscape(subtitle)+'</text><text x="48" y="126" class="source">Dashboard de Supervisão Rebanho · Matriz de cobertura comercial</text>'+shapes+'<line x1="1130" y1="145" x2="1130" y2="1075" stroke="#E4E8F0"/><text x="'+legendX+'" y="150" class="legendTitle">Legenda · '+xmlEscape(f.department)+'</text>'+legend+'<rect x="'+legendX+'" y="980" width="22" height="22" rx="5" fill="url(#pendingHatch)" stroke="#C08422"/><text x="'+(legendX+34)+'" y="995" class="legendText">Área em revisão / sem responsável</text><text x="'+legendX+'" y="1048" class="source">Municípios no recorte: '+rows.length+'</text><style>.title{font:700 34px Arial,sans-serif;fill:#1E2655}.subtitle{font:600 18px Arial,sans-serif;fill:#39425E}.source{font:13px Arial,sans-serif;fill:#747D90}.legendTitle{font:700 20px Arial,sans-serif;fill:#1E2655}.legendText{font:14px Arial,sans-serif;fill:#252C3E}.legendCount{font:700 13px Arial,sans-serif;fill:#606A80;text-anchor:end}</style></svg>';
 }
 function downloadCoverageMap(type){
