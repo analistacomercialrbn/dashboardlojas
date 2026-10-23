@@ -581,7 +581,7 @@ function renderCidadesSales(p){
     </div>
   `;
   $('#content').insertAdjacentHTML('afterbegin','<div class="city-view-switch" role="group" aria-label="Visualização de cidades"><button type="button" class="active" data-city-view="sales">Faturamento</button><button type="button" data-city-view="coverage">Cobertura territorial</button></div>');
-  $('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;renderCidades(state.lastPayload||p)}));
+  $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;renderCidades(state.lastPayload||p)}));
   const max=cities[0]?.revenue||1;
   $('#cityList').innerHTML=cities.slice(0,100).map(c=>`<div class="city-row ${selected?.key===c.key?'active':''}" data-city="${esc(c.key)}"><div><strong>${esc(c.city)} - ${esc(c.uf)}</strong><div class="progress" style="margin-top:5px;width:150px"><i style="width:${Math.max(2,c.revenue/max*100)}%"></i></div></div><span>${money(c.revenue,true)}</span></div>`).join('');
   $$('.city-row').forEach(row=>row.addEventListener('click',()=>{state.selectedCity=row.dataset.city;queryPage()}));
