@@ -375,7 +375,7 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
   const departments=multi(filters.department);
   const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
   const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
-  const targetUf=filters.uf&&filters.uf!=='Todos'?String(filters.uf).toUpperCase():null;
+  const targetUfs=multi(filters.uf).map(value=>value.toUpperCase());
   const targetRegion=filters.region&&filters.region!=='Todos'?norm(filters.region):null;
   const targetCity=city?norm(city):(filters.city&&filters.city!=='Todos'?norm(filters.city):null);
   return SALES.filter(s=>{
@@ -383,7 +383,7 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
     if(targetYear!==null && s.year!==targetYear) return false;
     if(targetMonth!==null && s.month!==targetMonth) return false;
     if(departments.length && !departments.includes(String(s.department))) return false;
-    if(targetUf && String(s.uf||'').toUpperCase()!==targetUf) return false;
+    if(targetUfs.length && !targetUfs.includes(String(s.uf||'').toUpperCase())) return false;
     if(targetRegion && norm(s.region||'')!==targetRegion) return false;
     if(targetCity && norm(s.city)!==targetCity) return false;
     return true;
@@ -391,7 +391,7 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
 }
 function filterMetas(filters,{ignoreMonth=false}={}){
   const allowed=allowedRca(filters);
-  const hasGeo=!!((filters.uf&&filters.uf!=='Todos')||(filters.region&&filters.region!=='Todos')||(filters.city&&filters.city!=='Todos'));
+  const hasGeo=!!(multi(filters.uf).length||(filters.region&&filters.region!=='Todos')||(filters.city&&filters.city!=='Todos'));
   const allowedByGeo=hasGeo?new Set(filterSales(filters,{ignoreMonth}).map(s=>s.rca)):null;
   const departments=multi(filters.department);
   const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
@@ -662,6 +662,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c00fba1e23af70b7005490b880cf91d6d8a48dc3/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@567fdcbae5d4d3596c71dc4384d83487a0dbc661/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
