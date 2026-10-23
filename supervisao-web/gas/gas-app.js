@@ -215,7 +215,10 @@ function initData(force=false){
       if(m.requestId!==state.requestId)return;
       setStatus('',false);
       state.lastPayload=m.payload;
-      renderPage(m.page,m.payload);
+      try{renderPage(m.page,m.payload)}catch(error){
+        console.error('Falha ao renderizar a tela do dashboard:',error);
+        $('#content').innerHTML=`<div class="empty"><strong>Não foi possível exibir esta tela.</strong><br><br>${esc(error?.message||'Ocorreu uma falha ao montar os gráficos e informações.')}</div>`;
+      }
     }else if(m.type==='error'||m.type==='queryError'){
       setStatus('',false);
       $('#content').innerHTML=`<div class="empty"><strong>Não foi possível carregar os dados.</strong><br><br>${esc(m.message||'Erro desconhecido')}</div>`;
