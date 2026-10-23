@@ -20,6 +20,7 @@ const state = {
   charts:[],
   map:null,
   mapLayers:[],
+  coverageDrawId:0,
   lastPayload:null,
   cityView:'sales',
   coverage:null,
@@ -700,7 +701,7 @@ async function renderCoverageView(){
   const cities=state.coverage?.cities||[],f=state.coverageFilters;
   $('#content').innerHTML=
     '<div class="city-view-switch" role="group" aria-label="Visualização de cidades"><button type="button" data-city-view="sales">Faturamento</button><button type="button" class="active" data-city-view="coverage">Cobertura territorial</button></div>'+
-    '<div class="coverage-heading"><div><h2>Distribuição de cobertura comercial</h2><p>As cores representam o RCA responsável pela linha selecionada. Áreas em revisão ficam destacadas.</p></div><div class="coverage-downloads"><button id="coveragePng" class="btn primary small">Baixar PNG</button><button id="coverageSvg" class="btn secondary small">Baixar SVG</button></div></div>'+
+    '<div class="coverage-heading"><div><h2>Distribuição de cobertura comercial</h2><p>As cores representam o RCA responsável pela linha selecionada. Áreas em revisão ficam destacadas.</p></div><div class="coverage-downloads"><button id="coverageRefresh" class="btn secondary small">Atualizar matriz</button><button id="coveragePng" class="btn primary small">Baixar PNG</button><button id="coverageSvg" class="btn secondary small">Baixar SVG</button></div></div>'+
     '<div class="coverage-controls panel">'+
       '<label>Linha comercial<select id="coverageDepartment">'+COVERAGE_DEPARTMENTS.map(x=>'<option value="'+esc(x.value)+'" '+(f.department===x.value?'selected':'')+'>'+esc(x.value)+'</option>').join('')+'</select></label>'+
       '<label>Estado<select id="coverageUf"><option value="Todos">Todos os estados</option>'+[...new Set(cities.map(x=>x.uf))].sort().map(x=>'<option value="'+esc(x)+'" '+(f.uf===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select></label>'+
@@ -718,6 +719,7 @@ async function renderCoverageView(){
   $('#coverageUf').addEventListener('change',e=>{f.uf=e.target.value;state.coverageSelection=null;renderCoverageView()});
   $('#coverageRca').addEventListener('change',e=>{f.rca=e.target.value;state.coverageSelection=null;renderCoverageView()});
   $('#coverageStatus').addEventListener('change',e=>{f.status=e.target.value;state.coverageSelection=null;renderCoverageView()});
+  $('#coverageRefresh').addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Atualizando…';try{state.coverage=await api('/api/coverage',{method:'POST',body:JSON.stringify({force:true})});state.coverageSelection=null;renderCoverageView()}catch(error){const box=$('#coverageError');if(box){box.textContent='Não foi possível atualizar a matriz: '+(error?.message||String(error));box.classList.remove('hidden')}}finally{if(button.isConnected){button.disabled=false;button.textContent='Atualizar matriz'}}});
   $('#coveragePng').addEventListener('click',()=>downloadCoverageMap('png'));
   $('#coverageSvg').addEventListener('click',()=>downloadCoverageMap('svg'));
   if(!state.coverage){
@@ -780,6 +782,7 @@ function coverageGeoFor(uf){
     .then(json=>{state.coverageGeo[uf]=json;return json});
 }
 async function loadCoverageMap(rows,palette,definition){
+  const drawId=++state.coverageDrawId;
   const el=$('#coverageMap');if(!el)return;
   if(state.map){try{state.map.remove()}catch{}state.map=null}
   const ufs=state.coverageFilters.uf==='Todos'?[...new Set((state.coverage?.cities||[]).map(x=>x.uf))]:[state.coverageFilters.uf];
@@ -792,24 +795,24 @@ async function loadCoverageMap(rows,palette,definition){
     const box=$('#coverageError');if(box){box.textContent=error?.message||String(error);box.classList.remove('hidden')}
     return;
   }
-  if(!document.body.contains(el))return;
-  const byCity=coverageRowMap(rows,definition.value),allByCity=coverageRowMap(state.coverage?.cities||[],definition.value);
+  if(drawId!==state.coverageDrawId||!document.body.contains(el))return;
+  const byCity=coverageRowMap(rows,definition.value),allByCity=coverageRowMap(state.coverage?.cities||[],definition.value),featureUfs=new Map(features.map(item=>[item.feature,item.uf]));
   state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10}).setView([-7.3,-39.5],5);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,opacity:.12}).addTo(state.map);
   const layer=L.geoJSON({type:'FeatureCollection',features:features.map(x=>x.feature)},{
     style:feature=>{
       const name=feature.properties?.name||feature.properties?.NOME||'';
       const uf=feature.properties?.uf||feature.properties?.UF||'';
-      const pair=features.find(x=>x.feature===feature),stateUf=pair?.uf||uf;
+      const stateUf=featureUfs.get(feature)||uf;
       const key=aliasCity(name)+'|'+stateUf,row=allByCity.get(key),visible=byCity.get(key);
       const pending=row&&coveragePending(row,definition.value);
       const person=row?coverageAssignment(row,definition.value):'';
       const outside=!visible;
-      return {color:pending?'#C08422':outside?'#D8DDE7':'#FFFFFF',weight:pending?1.1:.75,dashArray:pending?'3 3':null,fillColor:pending?'#E8E1D1':person?(palette.get(coverageRcaKey(person))||'#8993A8'):'#E7EAF0',fillOpacity:outside?.2:pending?.78:.88};
+      return {color:pending?'#C08422':outside?'#D8DDE7':'#FFFFFF',weight:pending?1.1:.75,dashArray:pending?'3 3':null,fillColor:pending?'#E8E1D1':person?(palette.get(coverageRcaKey(person))||'#8993A8'):'#E7EAF0',fillOpacity:outside ? .2 : pending ? .78 : .88};
     },
     onEachFeature:(feature,leafletLayer)=>{
       const name=feature.properties?.name||feature.properties?.NOME||'';
-      const pair=features.find(x=>x.feature===feature),uf=pair?.uf||feature.properties?.uf||'';
+      const uf=featureUfs.get(feature)||feature.properties?.uf||'';
       const key=aliasCity(name)+'|'+uf,row=allByCity.get(key),visible=byCity.get(key);
       const person=row?coverageAssignment(row,definition.value):'';
       const text='<b>'+esc(row?.city||name)+' - '+esc(uf)+'</b><br>'+esc(definition.value)+': '+esc(person||'Não definido')+'<br>Situação: '+esc(row?.status||'Sem registro na matriz');
