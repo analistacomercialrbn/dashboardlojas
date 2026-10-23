@@ -208,7 +208,9 @@ function coverageData_() {
     region: pick(row, 'REGIONAL COMERCIAL (MAPA)')
   })).filter(row => row.uf && row.city);
   const result = { ok: true, cities: cities, updatedAt: null, count: cities.length };
-  cache.put(key, JSON.stringify(result), 300);
+  const serialized = JSON.stringify(result);
+  try { if (Utilities.newBlob(serialized).getBytes().length < 95000) cache.put(key, serialized, 300); }
+  catch (err) { console.warn('A matriz foi lida, mas não coube no cache temporário.', err); }
   return result;
 }
 
