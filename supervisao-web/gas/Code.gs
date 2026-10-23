@@ -207,9 +207,7 @@ function coverageData_() {
     notes: pick(row, 'OBSERVAÇÕES'),
     region: pick(row, 'REGIONAL COMERCIAL (MAPA)')
   })).filter(row => row.uf && row.city);
-  let updatedAt = null;
-  try { updatedAt = DriveApp.getFileById(CFG.coverageSpreadsheetId).getLastUpdated().toISOString(); } catch (err) {}
-  const result = { ok: true, cities: cities, updatedAt: updatedAt, count: cities.length };
+  const result = { ok: true, cities: cities, updatedAt: null, count: cities.length };
   cache.put(key, JSON.stringify(result), 300);
   return result;
 }
