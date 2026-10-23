@@ -852,7 +852,7 @@ async function loadCoverageMap(rows,palette,definition){
   }).addTo(state.map);
   const syncCityLabels=()=>{
     if(!state.map)return;
-    const show=state.map.getZoom()>=7;
+    const show=state.map.getZoom()>=9;
     if(show&&!state.map.hasLayer(cityLabels))cityLabels.addTo(state.map);
     else if(!show&&state.map.hasLayer(cityLabels))state.map.removeLayer(cityLabels);
   };
