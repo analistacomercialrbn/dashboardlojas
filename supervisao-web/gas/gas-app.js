@@ -870,6 +870,107 @@ function coveragePath(geometry,project){
   }));
   return paths.join(' ');
 }
+function coverageTextWidth(text,size){
+  let width=0;
+  for(const ch of Array.from(String(text||''))){
+    if(/\s/.test(ch))width+=size*.3;
+    else if(/[ilíIÍjJtf.,:;'’!|]/.test(ch))width+=size*.31;
+    else if(/[MWÁÊÔQO@%]/.test(ch))width+=size*.82;
+    else width+=size*.56;
+  }
+  return width;
+}
+function coverageWrapLabel(text,size,maxWidth){
+  const words=String(text||'').trim().split(/\s+/).filter(Boolean),lines=[];
+  let line='';
+  const pushLongWord=word=>{
+    let part='';
+    for(const ch of Array.from(word)){
+      if(part&&coverageTextWidth(part+ch,size)>maxWidth){lines.push(part);part=ch}
+      else part+=ch;
+    }
+    return part;
+  };
+  words.forEach(word=>{
+    if(coverageTextWidth(word,size)>maxWidth){
+      if(line){lines.push(line);line=''}
+      line=pushLongWord(word);
+      return;
+    }
+    const candidate=line?line+' '+word:word;
+    if(coverageTextWidth(candidate,size)<=maxWidth)line=candidate;
+    else{if(line)lines.push(line);line=word}
+  });
+  if(line)lines.push(line);
+  return lines;
+}
+function coverageFitLabel(text,radius){
+  if(!(radius>0))return null;
+  const maxWidth=radius*1.34;
+  for(let size=Math.min(22,radius*.9);size>=.65;size-=.25){
+    const lines=coverageWrapLabel(text,size,maxWidth);
+    if(!lines.length||lines.length>5)continue;
+    const widths=lines.map(line=>coverageTextWidth(line,size));
+    const height=lines.length*size*1.08;
+    const diagonal=Math.hypot(Math.max(...widths)/2,height/2);
+    if(diagonal<=radius*.92)return{lines,size,lineHeight:size*1.08,widths};
+  }
+  return null;
+}
+function coverageRingContains(point,ring){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const a=ring[i],b=ring[j];
+    if(((a[1]>point[1])!==(b[1]>point[1]))&&(point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0]))inside=!inside;
+  }
+  return inside;
+}
+function coveragePointSegmentDistance(point,a,b){
+  const dx=b[0]-a[0],dy=b[1]-a[1],length=dx*dx+dy*dy;
+  const t=length?Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/length)):0;
+  return Math.hypot(point[0]-(a[0]+t*dx),point[1]-(a[1]+t*dy));
+}
+function coveragePolygonInteriorPoint(coordinates){
+  const rings=(coordinates||[]).map(ring=>ring.map(point=>[point[0],point[1]]).filter(point=>Number.isFinite(point[0])&&Number.isFinite(point[1])));
+  const outer=rings[0];if(!outer||outer.length<4)return null;
+  const xs=outer.map(p=>p[0]),ys=outer.map(p=>p[1]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),width=maxX-minX,height=maxY-minY;
+  if(!(width>0&&height>0))return null;
+  const inside=point=>coverageRingContains(point,outer)&&!rings.slice(1).some(ring=>coverageRingContains(point,ring));
+  const distance=point=>{
+    if(!inside(point))return -1;
+    let best=Infinity;
+    rings.forEach(ring=>{for(let i=1;i<ring.length;i++)best=Math.min(best,coveragePointSegmentDistance(point,ring[i-1],ring[i]))});
+    return best;
+  };
+  let best=null,bestDistance=-1;
+  const divisions=14;
+  for(let iy=0;iy<=divisions;iy++)for(let ix=0;ix<=divisions;ix++){
+    const point=[minX+width*ix/divisions,minY+height*iy/divisions],d=distance(point);
+    if(d>bestDistance){best=point;bestDistance=d}
+  }
+  if(!best||bestDistance<=0)return null;
+  let step=Math.min(width,height)/divisions;
+  for(let round=0;round<8;round++){
+    step/=2;
+    for(let iy=-1;iy<=1;iy++)for(let ix=-1;ix<=1;ix++){
+      const point=[best[0]+ix*step,best[1]+iy*step];
+      if(point[0]<minX||point[0]>maxX||point[1]<minY||point[1]>maxY)continue;
+      const d=distance(point);
+      if(d>bestDistance){best=point;bestDistance=d}
+    }
+  }
+  return{point:best,radius:bestDistance};
+}
+function coverageGeometryInteriorPoint(geometry,project){
+  const polygons=geometry?.type==='Polygon'?[geometry.coordinates]:geometry?.type==='MultiPolygon'?geometry.coordinates:[];
+  let best=null;
+  polygons.forEach(polygon=>{
+    const projected=(polygon||[]).map(ring=>ring.map(point=>project(point[0],point[1])));
+    const result=coveragePolygonInteriorPoint(projected);
+    if(result&&(!best||result.radius>best.radius))best=result;
+  });
+  return best;
+}
 function buildCoverageSvg(){
   const f=state.coverageFilters,definition=COVERAGE_DEPARTMENTS.find(x=>x.value===f.department)||COVERAGE_DEPARTMENTS[0];
   const rows=coverageFilteredRows(),map=coverageRowMap(rows,definition.value),all=coverageRowMap(state.coverage?.cities||[],definition.value);
@@ -884,12 +985,19 @@ function buildCoverageSvg(){
   const project=(lon,lat)=>{const x=lon*Math.cos(-7*Math.PI/180),y=lat;return [mapBox.x+(x-minX)*scale,mapBox.y+(maxY-y)*scale]};
   const rcas=coverageRcaOptions(state.coverage?.cities||[],definition.value);
   const palette=new Map(rcas.map((item,index)=>[item.key,COVERAGE_COLORS[index%COVERAGE_COLORS.length]]));
-  let shapes='';
+  let shapes='',labels='';
   features.forEach(item=>{
     const feature=item.feature,name=feature.properties?.name||feature.properties?.NOME||'',row=all.get(aliasCity(name)+'|'+item.uf),visible=map.get(aliasCity(name)+'|'+item.uf),pending=row&&coveragePending(row,definition.value),person=row?coverageAssignment(row,definition.value):'';
     const fill=visible?(pending?'url(#pendingHatch)':(palette.get(coverageRcaKey(person))||'#8993A8')):'#EDF0F5';
     const stroke=pending?'#C08422':'#FFFFFF';
     shapes+='<path d="'+coveragePath(feature.geometry,project)+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+(pending?'1.2':'0.75')+'"><title>'+xmlEscape((row?.city||name)+' - '+item.uf+' · '+(person||'Sem responsável')+' · '+(row?.status||'Sem registro'))+'</title></path>';
+    if(visible&&row){
+      const label=String(row.city||name).trim(),anchor=coverageGeometryInteriorPoint(feature.geometry,project),layout=anchor&&coverageFitLabel(label,anchor.radius);
+      if(layout){
+        const firstY=anchor.point[1]-(layout.lines.length-1)*layout.lineHeight/2;
+        labels+='<text x="'+anchor.point[0].toFixed(2)+'" y="'+firstY.toFixed(2)+'" text-anchor="middle" dominant-baseline="central" fill="#172536" font-family="Arial,sans-serif" font-size="'+layout.size.toFixed(2)+'" font-weight="700">'+layout.lines.map((line,index)=>'<tspan x="'+anchor.point[0].toFixed(2)+'" y="'+(firstY+index*layout.lineHeight).toFixed(2)+'" textLength="'+Math.max(.5,layout.widths[index]).toFixed(2)+'" lengthAdjust="spacingAndGlyphs">'+xmlEscape(line)+'</tspan>').join('')+'</text>';
+      }
+    }
   });
   const visibleCounts=new Map();
   rows.forEach(row=>{const name=coveragePending(row,definition.value)?'Em revisão / sem responsável':coverageAssignment(row,definition.value),key=name.startsWith('Em revisão')?'__pending__':coverageRcaKey(name),entry=visibleCounts.get(key)||{name:name,count:0};entry.count++;visibleCounts.set(key,entry)});
@@ -900,14 +1008,25 @@ function buildCoverageSvg(){
   });
   if(!legend)legend='<text x="'+legendX+'" y="'+y+'" class="legendText">Nenhuma cidade neste recorte.</text>';
   const subtitle='Linha: '+f.department+'  ·  UF: '+(selectedUfs.length?selectedUfs.join(', '):'Todos')+'  ·  Situação: '+f.status;
-  return '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><defs><pattern id="pendingHatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#F3E9D6"/><line x1="0" y1="0" x2="0" y2="8" stroke="#C08422" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#FFFFFF"/><text x="48" y="58" class="title">Cobertura comercial por município</text><text x="48" y="94" class="subtitle">'+xmlEscape(subtitle)+'</text><text x="48" y="126" class="source">Dashboard de Supervisão Rebanho · Matriz de cobertura comercial</text>'+shapes+'<line x1="1130" y1="145" x2="1130" y2="1075" stroke="#E4E8F0"/><text x="'+legendX+'" y="150" class="legendTitle">Legenda · '+xmlEscape(f.department)+'</text>'+legend+'<rect x="'+legendX+'" y="980" width="22" height="22" rx="5" fill="url(#pendingHatch)" stroke="#C08422"/><text x="'+(legendX+34)+'" y="995" class="legendText">Área em revisão / sem responsável</text><text x="'+legendX+'" y="1048" class="source">Municípios no recorte: '+rows.length+'</text><style>.title{font:700 34px Arial,sans-serif;fill:#1E2655}.subtitle{font:600 18px Arial,sans-serif;fill:#39425E}.source{font:13px Arial,sans-serif;fill:#747D90}.legendTitle{font:700 20px Arial,sans-serif;fill:#1E2655}.legendText{font:14px Arial,sans-serif;fill:#252C3E}.legendCount{font:700 13px Arial,sans-serif;fill:#606A80;text-anchor:end}</style></svg>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><defs><pattern id="pendingHatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#F3E9D6"/><line x1="0" y1="0" x2="0" y2="8" stroke="#C08422" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#FFFFFF"/><text x="48" y="58" class="title">Cobertura comercial por município</text><text x="48" y="94" class="subtitle">'+xmlEscape(subtitle)+'</text><text x="48" y="126" class="source">Dashboard de Supervisão Rebanho · Matriz de cobertura comercial</text>'+shapes+labels+'<line x1="1130" y1="145" x2="1130" y2="1075" stroke="#E4E8F0"/><text x="'+legendX+'" y="150" class="legendTitle">Legenda · '+xmlEscape(f.department)+'</text>'+legend+'<rect x="'+legendX+'" y="980" width="22" height="22" rx="5" fill="url(#pendingHatch)" stroke="#C08422"/><text x="'+(legendX+34)+'" y="995" class="legendText">Área em revisão / sem responsável</text><text x="'+legendX+'" y="1048" class="source">Municípios no recorte: '+rows.length+'</text><text x="48" y="1090" class="source">Rótulos ajustados para permanecer dentro dos limites municipais.</text><style>.title{font:700 34px Arial,sans-serif;fill:#1E2655}.subtitle{font:600 18px Arial,sans-serif;fill:#39425E}.source{font:13px Arial,sans-serif;fill:#747D90}.legendTitle{font:700 20px Arial,sans-serif;fill:#1E2655}.legendText{font:14px Arial,sans-serif;fill:#252C3E}.legendCount{font:700 13px Arial,sans-serif;fill:#606A80;text-anchor:end}</style></svg>';
 }
 function downloadCoverageMap(type){
   try{
     const svg=buildCoverageSvg(),blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-    if(type==='svg'){a.href=url;a.download='cobertura-comercial-'+state.coverageFilters.department.toLowerCase().replace(/\s+/g,'-')+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return}
+    const suffix=state.coverageFilters.department.toLowerCase().replace(/\s+/g,'-');
+    if(type==='svg'){a.href=url;a.download='cobertura-comercial-'+suffix+'-alta-resolucao.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return}
     const image=new Image();
-    image.onload=()=>{const canvas=document.createElement('canvas');canvas.width=1600;canvas.height=1120;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0);canvas.toBlob(png=>{if(!png)return;const link=document.createElement('a');link.href=URL.createObjectURL(png);link.download='cobertura-comercial-'+state.coverageFilters.department.toLowerCase().replace(/\s+/g,'-')+'.png';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);URL.revokeObjectURL(url)},'image/png')};
+    image.onload=()=>{
+      const canvas=document.createElement('canvas');canvas.width=6400;canvas.height=4480;
+      const ctx=canvas.getContext('2d',{alpha:false});
+      if(!ctx){URL.revokeObjectURL(url);throw new Error('Não foi possível preparar a imagem em alta resolução.')}
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);
+      canvas.toBlob(png=>{
+        if(!png){URL.revokeObjectURL(url);throw new Error('Não foi possível gerar o PNG em alta resolução.')}
+        const link=document.createElement('a');link.href=URL.createObjectURL(png);link.download='cobertura-comercial-'+suffix+'-6400x4480.png';link.click();
+        setTimeout(()=>URL.revokeObjectURL(link.href),1000);URL.revokeObjectURL(url)
+      },'image/png')
+    };
     image.onerror=()=>{URL.revokeObjectURL(url);throw new Error('Não foi possível gerar a imagem PNG.')};image.src=url;
   }catch(error){alert(error?.message||String(error))}
 }
