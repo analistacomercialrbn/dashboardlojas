@@ -907,9 +907,9 @@ function coverageWrapLabel(text,size,maxWidth){
 function coverageFitLabel(text,radius){
   if(!(radius>0))return null;
   const maxWidth=radius*1.34;
-  for(let size=Math.min(22,radius*.9);size>=.65;size-=.25){
+  for(let size=Math.min(22,radius*.9);size>.05;size=Math.max(.05,size-.1)){
     const lines=coverageWrapLabel(text,size,maxWidth);
-    if(!lines.length||lines.length>5)continue;
+    if(!lines.length||lines.length>12)continue;
     const widths=lines.map(line=>coverageTextWidth(line,size));
     const height=lines.length*size*1.08;
     const diagonal=Math.hypot(Math.max(...widths)/2,height/2);
@@ -943,7 +943,16 @@ function coveragePolygonInteriorPoint(coordinates){
     return best;
   };
   let best=null,bestDistance=-1;
-  const divisions=14;
+  const centroidCandidate=(()=>{
+    let area=0,cx=0,cy=0;
+    for(let i=0,j=outer.length-1;i<outer.length;j=i++){
+      const cross=outer[j][0]*outer[i][1]-outer[i][0]*outer[j][1];area+=cross;cx+=(outer[j][0]+outer[i][0])*cross;cy+=(outer[j][1]+outer[i][1])*cross;
+    }
+    if(Math.abs(area)<1e-12)return null;
+    return[cx/(3*area),cy/(3*area)];
+  })();
+  [centroidCandidate,[(minX+maxX)/2,(minY+maxY)/2]].forEach(point=>{if(!point)return;const d=distance(point);if(d>bestDistance){best=point;bestDistance=d}});
+  const divisions=20;
   for(let iy=0;iy<=divisions;iy++)for(let ix=0;ix<=divisions;ix++){
     const point=[minX+width*ix/divisions,minY+height*iy/divisions],d=distance(point);
     if(d>bestDistance){best=point;bestDistance=d}
