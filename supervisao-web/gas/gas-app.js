@@ -906,12 +906,12 @@ function coverageWrapLabel(text,size,maxWidth){
 }
 function coverageFitLabel(text,radius,frameWidth){
   if(!(radius>0))return null;
-  const label=String(text||'').replace(/\\s+/g,' ').trim();
+  const label=String(text||'').replace(/\s+/g,' ').trim().toLocaleUpperCase('pt-BR');
   if(!label)return null;
   const widthAtOne=coverageTextWidth(label,1);
-  const radiusSize=Math.max(1.05,Math.min(10,radius*.58));
+  const radiusSize=Math.max(.78,Math.min(5.4,radius*.34));
   const safeWidth=Math.max(1,Math.min(42,Number.isFinite(frameWidth)?frameWidth:42));
-  const size=Math.max(.85,Math.min(radiusSize,safeWidth/Math.max(1,widthAtOne)));
+  const size=Math.max(.7,Math.min(radiusSize,safeWidth/Math.max(1,widthAtOne)));
   return{text:label,size};
 }
 function coverageRingContains(point,ring){
@@ -1002,7 +1002,7 @@ function buildCoverageSvg(){
       const frameWidth=anchor?Math.max(1,Math.min(anchor.point[0]-8,W-8-anchor.point[0])):1;
       const layout=anchor&&coverageFitLabel(label,anchor.radius,frameWidth);
       if(layout){
-        labels+='<text x="'+anchor.point[0].toFixed(2)+'" y="'+anchor.point[1].toFixed(2)+'" text-anchor="middle" dominant-baseline="central" fill="#172536" font-family="Arial,sans-serif" font-size="'+layout.size.toFixed(2)+'" font-weight="700" paint-order="stroke" stroke="#fff" stroke-width=".65">'+xmlEscape(layout.text)+'</text>';
+        labels+='<text x="'+anchor.point[0].toFixed(2)+'" y="'+anchor.point[1].toFixed(2)+'" text-anchor="middle" dominant-baseline="central" fill="#244767" font-family="Arial,sans-serif" font-size="'+layout.size.toFixed(2)+'" font-weight="600" letter-spacing=".06" paint-order="stroke" stroke="#FFFFFF" stroke-width=".85" stroke-opacity=".92">'+xmlEscape(layout.text)+'</text>';
       }
     }
   });
@@ -1015,7 +1015,7 @@ function buildCoverageSvg(){
   });
   if(!legend)legend='<text x="'+legendX+'" y="'+y+'" class="legendText">Nenhuma cidade neste recorte.</text>';
   const subtitle='Linha: '+f.department+'  ·  UF: '+(selectedUfs.length?selectedUfs.join(', '):'Todos')+'  ·  Situação: '+f.status;
-  return '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><defs><pattern id="pendingHatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#F3E9D6"/><line x1="0" y1="0" x2="0" y2="8" stroke="#C08422" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#FFFFFF"/><text x="48" y="58" class="title">Cobertura comercial por município</text><text x="48" y="94" class="subtitle">'+xmlEscape(subtitle)+'</text><text x="48" y="126" class="source">Dashboard de Supervisão Rebanho · Matriz de cobertura comercial</text>'+shapes+labels+'<line x1="1130" y1="145" x2="1130" y2="1075" stroke="#E4E8F0"/><text x="'+legendX+'" y="150" class="legendTitle">Legenda · '+xmlEscape(f.department)+'</text>'+legend+'<rect x="'+legendX+'" y="980" width="22" height="22" rx="5" fill="url(#pendingHatch)" stroke="#C08422"/><text x="'+(legendX+34)+'" y="995" class="legendText">Área em revisão / sem responsável</text><text x="'+legendX+'" y="1048" class="source">Municípios no recorte: '+rows.length+'</text><text x="48" y="1090" class="source">Rótulos em linha única; podem ultrapassar os limites municipais.</text><style>.title{font:700 34px Arial,sans-serif;fill:#1E2655}.subtitle{font:600 18px Arial,sans-serif;fill:#39425E}.source{font:13px Arial,sans-serif;fill:#747D90}.legendTitle{font:700 20px Arial,sans-serif;fill:#1E2655}.legendText{font:14px Arial,sans-serif;fill:#252C3E}.legendCount{font:700 13px Arial,sans-serif;fill:#606A80;text-anchor:end}</style></svg>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><defs><pattern id="pendingHatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#F3E9D6"/><line x1="0" y1="0" x2="0" y2="8" stroke="#C08422" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#FFFFFF"/><text x="48" y="58" class="title">Cobertura comercial por município</text><text x="48" y="94" class="subtitle">'+xmlEscape(subtitle)+'</text><text x="48" y="126" class="source">Dashboard de Supervisão Rebanho · Matriz de cobertura comercial</text>'+shapes+labels+'<line x1="1130" y1="145" x2="1130" y2="1075" stroke="#E4E8F0"/><text x="'+legendX+'" y="150" class="legendTitle">Legenda · '+xmlEscape(f.department)+'</text>'+legend+'<rect x="'+legendX+'" y="980" width="22" height="22" rx="5" fill="url(#pendingHatch)" stroke="#C08422"/><text x="'+(legendX+34)+'" y="995" class="legendText">Área em revisão / sem responsável</text><text x="'+legendX+'" y="1048" class="source">Municípios no recorte: '+rows.length+'</text><text x="48" y="1090" class="source">Rótulos horizontais em caixa alta; podem ultrapassar os limites municipais.</text><style>.title{font:700 34px Arial,sans-serif;fill:#1E2655}.subtitle{font:600 18px Arial,sans-serif;fill:#39425E}.source{font:13px Arial,sans-serif;fill:#747D90}.legendTitle{font:700 20px Arial,sans-serif;fill:#1E2655}.legendText{font:14px Arial,sans-serif;fill:#252C3E}.legendCount{font:700 13px Arial,sans-serif;fill:#606A80;text-anchor:end}</style></svg>';
 }
 function downloadCoverageMap(type){
   try{
