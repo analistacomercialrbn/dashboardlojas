@@ -101,11 +101,7 @@ function buildSnapshotRecords_() {
     const ix = headerIndex_(values.shift());
     ['Posição', 'Data Pedido', 'Cod/Vend.', 'Cod/Cliente', 'Cod/Produto', 'Pedidos Enviados'].forEach(name => { if (ix[name] == null) throw new Error('A aba ' + year + ' não contém a coluna ' + name + '.'); });
     values.forEach(row => {
-      const status = norm_(cell_(row, ix, 'Posição'));
-      const isSale = status === 'FECHADO';
-      const isOpenOrder = ['PENDENTE', 'LIBERADO', 'BLOQUEADO'].indexOf(status) >= 0;
-      if (!isSale && !isOpenOrder) return;
-      if (isOpenOrder && (cell_(row, ix, 'Numero Nota Fiscal') || cell_(row, ix, 'Data Faturamento'))) return;
+      if (norm_(cell_(row, ix, 'Posição')) !== 'FECHADO') return;
       const iso = dateIso_(cell_(row, ix, 'Data Pedido'));
       if (!iso) return;
       const orderDate = new Date(iso), orderYear = orderDate.getUTCFullYear();
@@ -114,24 +110,83 @@ function buildSnapshotRecords_() {
       const rawProduct = String(cell_(row, ix, 'Cod/Produto') || '').trim(), productCode = code_(rawProduct);
       const productName = rawProduct.replace(/^\s*\d+\s*-\s*/, '').trim() || (productCode == null ? 'Sem descrição' : 'Produto ' + productCode);
       const city = String(cell_(row, ix, 'MUNICENT') || '').trim(), region = aux.routeMap.get(String(rcaCode) + '|' + norm_(city)) || '';
-      const base = { date: iso, year: orderYear, month: orderDate.getUTCMonth() + 1, monthKey: orderYear + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'), rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: clientCode, product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')) };
-      if (isSale) {
-        records.push(JSON.stringify({ type: 'sale', value: Object.assign({ marginPct: null }, base) }));
-        validCount++; if (!latest || iso > latest) latest = iso;
-      } else {
-        records.push(JSON.stringify({ type: 'openOrder', value: Object.assign({ status: status }, base) }));
-      }
+      const sale = { date: iso, year: orderYear, month: orderDate.getUTCMonth() + 1, monthKey: orderYear + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'), rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: clientCode, product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')), marginPct: null };
+      records.push(JSON.stringify({ type: 'sale', value: sale })); validCount++; if (!latest || iso > latest) latest = iso;
     });
   });
   if (!validCount || !latest) throw new Error('Não foram encontradas vendas fechadas com Data Pedido válida.');
   records.push(JSON.stringify({ type: 'meta', value: { latest: latest, validCount: validCount } }));
   return { records: records, latest: latest, validCount: validCount };
 }
+function refreshOpenOrdersCache_() {
+  const source = SpreadsheetApp.openById(CFG.salesSpreadsheetId);
+  const year = String(CFG.years[CFG.years.length - 1]);
+  const sourceSheet = source.getSheetByName(year);
+  if (!sourceSheet) throw new Error('A aba anual ' + year + ' não foi encontrada na base de vendas.');
+  const values = sourceSheet.getDataRange().getValues();
+  const cache = SpreadsheetApp.openById(CFG.cacheSpreadsheetId);
+  let cacheSheet = cache.getSheetByName('OPEN_ORDERS');
+  if (!cacheSheet) cacheSheet = cache.insertSheet('OPEN_ORDERS');
+  const records = [];
+  const aux = readAuxiliary_();
+  if (values.length) {
+    const ix = headerIndex_(values.shift());
+    ['Posição', 'Data Pedido', 'Cod/Vend.', 'Cod/Cliente', 'Cod/Produto', 'NUMPED', 'Pedidos Enviados'].forEach(name => {
+      if (ix[name] == null) throw new Error('A aba ' + year + ' não contém a coluna ' + name + '.');
+    });
+    values.forEach(row => {
+      const status = norm_(cell_(row, ix, 'Posição'));
+      if (['PENDENTE', 'LIBERADO', 'BLOQUEADO'].indexOf(status) < 0) return;
+      if (cell_(row, ix, 'Numero Nota Fiscal') || cell_(row, ix, 'Data Faturamento')) return;
+      const iso = dateIso_(cell_(row, ix, 'Data Pedido'));
+      if (!iso || String(new Date(iso).getUTCFullYear()) !== year) return;
+      const orderDate = new Date(iso), rcaCode = code_(cell_(row, ix, 'Cod/Vend.'));
+      const rca = aux.rcaMap.get(rcaCode) || {};
+      const rawProduct = String(cell_(row, ix, 'Cod/Produto') || '').trim();
+      const productCode = code_(rawProduct);
+      const productName = rawProduct.replace(/^\s*\d+\s*-\s*/, '').trim() || (productCode == null ? 'Sem descrição' : 'Produto ' + productCode);
+      const city = String(cell_(row, ix, 'MUNICENT') || '').trim();
+      const region = aux.routeMap.get(String(rcaCode) + '|' + norm_(city)) || '';
+      records.push(JSON.stringify({ type: 'openOrder', value: {
+        date: iso, year: Number(year), month: orderDate.getUTCMonth() + 1,
+        monthKey: year + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'),
+        status: status, rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode),
+        supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(),
+        client: code_(cell_(row, ix, 'Cod/Cliente')), product: productCode, productName: productName,
+        order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city,
+        uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados'))
+      }}));
+    });
+  }
+  cacheSheet.clearContents();
+  cacheSheet.getRange(1, 1).setValue('NDJSON');
+  if (records.length) cacheSheet.getRange(2, 1, records.length, 1).setValues(records.map(value => [value]));
+  const updatedAt = new Date().toISOString();
+  PropertiesService.getScriptProperties().setProperty('OPEN_ORDERS_UPDATED_AT', updatedAt);
+  return { ok: true, count: records.length, updatedAt: updatedAt };
+}
+
+function openOrdersData_() {
+  const cache = SpreadsheetApp.openById(CFG.cacheSpreadsheetId);
+  let sheet = cache.getSheetByName('OPEN_ORDERS');
+  if (!sheet || sheet.getLastRow() < 1) {
+    refreshOpenOrdersCache_();
+    sheet = cache.getSheetByName('OPEN_ORDERS');
+  }
+  const lastRow = Math.max(0, sheet.getLastRow() - 1);
+  const orders = lastRow ? sheet.getRange(2, 1, lastRow, 1).getValues().map(row => {
+    try { return JSON.parse(String(row[0] || '{}')).value || null; } catch (err) { return null; }
+  }).filter(Boolean) : [];
+  return { ok: true, updatedAt: PropertiesService.getScriptProperties().getProperty('OPEN_ORDERS_UPDATED_AT') || null, orders: orders };
+}
+
 function refreshDataset_() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) throw new Error('Já existe uma atualização de bases em andamento.');
   try {
-    const started = Date.now(), snapshot = buildSnapshotRecords_(), cache = SpreadsheetApp.openById(CFG.cacheSpreadsheetId);
+    const started = Date.now();
+    try { refreshOpenOrdersCache_(); } catch (err) { console.warn('A carteira de pedidos não foi atualizada.', err); }
+    const snapshot = buildSnapshotRecords_(), cache = SpreadsheetApp.openById(CFG.cacheSpreadsheetId);
     let sheet = cache.getSheetByName(CFG.cacheSheetName); if (!sheet) sheet = cache.insertSheet(CFG.cacheSheetName);
     sheet.clearContents(); sheet.getRange(1, 1).setValue('NDJSON');
     const chunkSize = 10000;
@@ -154,7 +209,6 @@ function compactSnapshotRecord_(raw) {
     case 'goal': return [2, v.monthKey, v.year, v.month, v.rca, v.rcaName, v.supervisor, v.department, v.value];
     case 'client': return [3, v[0], v[1] && v[1].name, v[1] && v[1].rca];
     case 'meta': return [4, v.latest];
-    case 'openOrder': return [5, v.date, v.year, v.month, v.monthKey, v.rca, v.department, v.client, v.product, v.productName, v.order, v.city, v.uf, v.region, v.value, v.status];
     default: return null;
   }
 }
@@ -239,6 +293,7 @@ function dashboardApi(action, payload, token) {
     const user = sessionUser_(token);
     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
     if (action === 'info') return Object.assign({ ok: true }, datasetInfo_());
+    if (action === 'openOrders') return openOrdersData_();
     if (action === 'page') return datasetPage_(payload.offset, payload.limit);
     if (action === 'coverage') {
       if (payload.force === true) CacheService.getScriptCache().remove('DASH_COVERAGE_MATRIX_V1');
