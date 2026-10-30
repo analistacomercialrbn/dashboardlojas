@@ -24,7 +24,7 @@
 html,body{background:var(--bg);color:var(--ink)}
 .app-header{grid-template-columns:190px minmax(0,1fr) 230px;padding:0 clamp(16px,3vw,48px);gap:12px;border-bottom-color:#D9E2F1}
 .brand-lockup{min-width:0}.brand-logo{display:block;width:164px;height:52px;object-fit:contain;object-position:left center}
-.login-logo{display:block;width:min(270px,80%);height:auto;max-height:96px;object-fit:contain;margin:0 0 17px}
+.login-logo{display:block;width:min(270px,80%);height:auto;max-height:96px;object-fit:contain;margin:0 auto 17px}
 .nav{gap:3px}.nav-item{color:#65748E}.nav-item:hover{background:#EEF3FC;color:var(--navy)}.nav-item.active{background:#E7EEFB;color:var(--navy)}.nav-item.active span{color:#3159A4}
 .nav-item span{color:#6880A8}.header-account .avatar{background:#E7EEFB;color:#1D2A68}
 .topbar h1,.panel h2,.panel h3,.panel-title,.section-heading h2{color:#1D2A68}.eyebrow{color:#365FA8}.period-chip{background:#EAF0FB;border-color:#D9E3F4;color:#25478A}
@@ -133,3 +133,44 @@ html,body,#appView{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
   .overview-analysis .chart-wrap{height:320px}
   .panel h2,.panel h3,.panel-title{font-size:16px}
 }
+
+/* Pedidos: filtros de posição e consulta de todos os clientes. */
+.order-status-filter .order-status-breakdown{grid-template-columns:repeat(4,minmax(0,1fr))}
+.order-position-choice{width:100%;font:inherit;text-align:left;cursor:pointer;min-height:54px;transition:background .15s,border-color .15s,box-shadow .15s}
+.order-position-choice:hover{background:#F3F7FF;border-color:#B3C8EA}
+.order-position-choice.selected{background:#EAF0FC;border-color:#6F92CA;box-shadow:0 0 0 1px #6F92CA}
+.order-position-choice:focus-visible,.order-client-all:focus-visible,.order-open:focus-visible{outline:3px solid #9AB9ED;outline-offset:3px}
+.order-client-all{width:100%;min-height:38px;margin:0 0 8px;padding:9px 12px;border:1px solid #D9E3F3;border-radius:9px;background:#fff;color:#2B4778;text-align:left;font:inherit;font-size:11px;font-weight:750;cursor:pointer}
+.order-client-all:hover,.order-client-all.selected{background:#EAF0FC;border-color:#B5C9E8}
+.order-detail-panel .panel-title-row{align-items:flex-start;gap:12px;flex-wrap:wrap}
+.order-detail-panel .panel-chip{white-space:nowrap}
+.order-browser-table{min-width:850px}
+.order-browser-table .order-customer-cell{min-width:175px;max-width:280px;white-space:normal}
+.order-browser-table .order-customer-cell strong{display:block;line-height:1.4}
+.order-open{display:inline-flex;align-items:center;gap:6px;padding:5px 0;border:0;background:transparent;font:inherit;font-weight:800;color:#254D9A;cursor:pointer;white-space:nowrap}
+.order-open:hover{text-decoration:underline}
+.order-open span{font-size:13px}
+@media(max-width:950px){.order-status-filter .order-status-breakdown{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){
+  .order-status-filter .status-summary{grid-template-columns:minmax(0,1fr) auto;padding:11px 10px;gap:5px}
+  .order-status-filter .status-summary small{grid-column:1/-1}
+  .order-status-filter .status-summary b{font-size:11px}
+  .order-status-filter .status-summary strong{font-size:14px}
+  .order-client-all{min-height:44px;font-size:13px}
+  .order-client-choice{min-height:54px;padding:10px}
+  .order-client-choice strong{font-size:12px}
+  .order-client-choice small,.order-client-choice>b{font-size:11px}
+  .order-clients-panel .order-client-list{max-height:235px}
+  .order-table-wrap{max-height:480px;border:0;background:transparent}
+  .order-browser-table,.order-browser-table tbody{display:block;width:100%;min-width:0}
+  .order-browser-table thead{display:none}
+  .order-browser-table .order-select-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 14px;padding:13px;margin:0 0 10px;border:1px solid #DFE6F2;border-radius:12px;background:#fff}
+  .order-browser-table .order-select-row.selected{background:#EAF0FC;border-color:#B4C9EC}
+  .order-browser-table td{display:block;padding:0;border:0!important;text-align:left;font-size:12px;white-space:normal;min-width:0}
+  .order-browser-table td:before{content:attr(data-label);display:block;margin-bottom:4px;color:#7585A0;font-size:10px;font-weight:750}
+  .order-browser-table .order-customer-cell{grid-column:1/-1;grid-row:1;min-width:0;max-width:none}
+  .order-browser-table .item-code{font-size:10px}
+  .order-browser-table .order-status{font-size:11px;padding:5px 9px}
+  .order-open{font-size:13px;min-height:28px;padding:0}
+}
+
