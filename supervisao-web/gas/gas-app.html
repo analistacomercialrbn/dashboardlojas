@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@6acd66f2fd510c5230783b77efe6b861bba86e30/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@18613d4813ec9eb318228852305c5860ab8ad58a/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -35,6 +35,7 @@
       </a>
       <nav class="nav" aria-label="Seções do dashboard">
         <button data-page="overview" class="nav-item active"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7"/><path d="M5 9v12h14V9"/><path d="M9 21v-7h6v7"/></svg></span> Visão geral</button>
+        <button data-page="pedidos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M3 5h18v14H3z"/><path d="M7 9h10M7 13h7M7 17h4"/></svg></span> Pedidos &amp; Previsão</button>
         <button data-page="carteira" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Carteira</button>
         <button data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span> Produtos</button>
         <button data-page="cidades" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg></span> Cidades</button>
@@ -103,6 +104,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script id="workerSource" type="text/plain">/* Rebanho Supervisão Web — processamento das bases fora da thread principal. */
 let SALES = [];
+let OPEN_ORDERS = [];
 let METAS = [];
 let RCAS = [];
 let CLIENTS = new Map();
@@ -120,7 +122,7 @@ function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits
 function now(){return performance.now();}
 const CACHE_DB = 'rbn-supervisao-cache';
 const CACHE_STORE = 'snapshots';
-const CACHE_KEY = 'server-normalized-v1';
+const CACHE_KEY = 'server-normalized-v2';
 const LOCAL_CACHE_FALLBACK_MS = 12 * 60 * 60 * 1000;
 
 function openCacheDb(){
@@ -150,6 +152,7 @@ async function saveLocalCache(){
       savedAt:Date.now(),
       serverUpdatedAt:SERVER_UPDATED_AT,
       sales:SALES,
+      openOrders:OPEN_ORDERS,
       metas:METAS,
       rcas:RCAS,
       clients:[...CLIENTS.entries()],
@@ -166,6 +169,7 @@ async function saveLocalCache(){
 function restoreLocalCache(snapshot){
   SERVER_UPDATED_AT=snapshot?.serverUpdatedAt||null;
   SALES=Array.isArray(snapshot?.sales)?snapshot.sales:[];
+  OPEN_ORDERS=Array.isArray(snapshot?.openOrders)?snapshot.openOrders:[];
   METAS=Array.isArray(snapshot?.metas)?snapshot.metas:[];
   RCAS=Array.isArray(snapshot?.rcas)?snapshot.rcas:[];
   CLIENTS=new Map(Array.isArray(snapshot?.clients)?snapshot.clients:[]);
@@ -269,7 +273,7 @@ async function fetchServerDataset(force){
   }
   if(!SERVER_INFO?.exists)throw new Error('Não há snapshot preparado no cache do Apps Script.');
   SERVER_UPDATED_AT=SERVER_INFO.updatedAt||null;
-  SALES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
+  SALES=[];OPEN_ORDERS=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
   let received=0,expected=Number(SERVER_INFO.recordCount)||0;
 const pageSize=10000;
 const concurrency=4;
@@ -283,6 +287,7 @@ const concurrency=4;
         else if(item.type==='goal')METAS.push(v);
         else if(item.type==='client')CLIENTS.set(v[0],v[1]);
         else if(item.type==='sale'){v.date=new Date(v.date);SALES.push(v);}
+        else if(item.type==='openOrder'){v.date=new Date(v.date);OPEN_ORDERS.push(v);}
       }else switch(row[0]){
         case 0:{
           const date=new Date(row[1]),year=date.getUTCFullYear(),month=date.getUTCMonth()+1,rca=RCA_BY_CODE.get(row[2])||{};
@@ -293,6 +298,11 @@ const concurrency=4;
         case 2:METAS.push({monthKey:row[1],year:row[2],month:row[3],rca:row[4],rcaName:row[5],supervisor:row[6],department:row[7],value:row[8]});break;
         case 3:CLIENTS.set(row[1],{code:row[1],name:row[2],rca:row[3]});break;
         case 4:LATEST_DATE=row[1]?new Date(row[1]):null;break;
+        case 5:{
+          const date=new Date(row[1]),rca=RCA_BY_CODE.get(row[5])||{};
+          OPEN_ORDERS.push({date,year:row[2],month:row[3],monthKey:row[4],rca:row[5],rcaName:rca.name||String(row[5]??''),supervisor:rca.supervisor||'',department:row[6],client:row[7],product:row[8],productName:row[9],order:row[10],city:row[11],uf:row[12],region:row[13],value:Number(row[14])||0,status:row[15]});
+          break;
+        }
       }
       received++;
     }
@@ -323,6 +333,7 @@ const concurrency=4;
   if(SALES.length!==Number(SERVER_INFO.salesCount))throw new Error('O cache chegou incompleto ('+SALES.length.toLocaleString('pt-BR')+' vendas). Clique em “Atualizar bases” e tente novamente.');
   RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
   for(const sale of SALES){const r=RCA_BY_CODE.get(sale.rca)||{};sale.rcaName=r.name||String(sale.rca??'');sale.supervisor=r.supervisor||'';}
+  for(const order of OPEN_ORDERS){const r=RCA_BY_CODE.get(order.rca)||{};order.rcaName=r.name||String(order.rca??'');order.supervisor=r.supervisor||'';}
 }
 async function init(){
   try{
@@ -388,6 +399,51 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
     if(targetCity && norm(s.city)!==targetCity) return false;
     return true;
   });
+}
+function filterOpenOrders(filters,{ignoreMonth=false}={}){
+  const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const targetYear=filters.year&&filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth&&filters.month&&filters.month!=='Todos'?Number(filters.month):null;
+  const targetUfs=multi(filters.uf).map(value=>value.toUpperCase());
+  const targetRegion=filters.region&&filters.region!=='Todos'?norm(filters.region):null;
+  const targetCity=filters.city&&filters.city!=='Todos'?norm(filters.city):null;
+  return OPEN_ORDERS.filter(o=>{
+    if(!allowed.has(o.rca))return false;
+    if(targetYear!==null&&o.year!==targetYear)return false;
+    if(targetMonth!==null&&o.month!==targetMonth)return false;
+    if(departments.length&&!departments.includes(String(o.department)))return false;
+    if(targetUfs.length&&!targetUfs.includes(String(o.uf||'').toUpperCase()))return false;
+    if(targetRegion&&norm(o.region||'')!==targetRegion)return false;
+    if(targetCity&&norm(o.city||'')!==targetCity)return false;
+    return true;
+  });
+}
+function summarizeOrders(rows){
+  const groups=new Map();
+  for(const row of rows){
+    const key=[row.year,row.order,row.rca].join('|');
+    if(!groups.has(key))groups.set(key,{year:row.year,order:row.order,status:row.status,date:row.date,rca:row.rca,rcaName:row.rcaName,supervisor:row.supervisor,client:row.client,clientName:CLIENTS.get(row.client)?.name||String(row.client??''),city:row.city,uf:row.uf,value:0,lines:0,departments:new Set()});
+    const group=groups.get(key);group.value+=Number(row.value)||0;group.lines++;if(row.department)group.departments.add(row.department);
+    if(row.date&&(!group.date||row.date>group.date))group.date=row.date;
+  }
+  return [...groups.values()].map(g=>({...g,department:[...g.departments].join(', ')})).sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0));
+}
+function openOrderSummary(rows,revenue,meta){
+  const active=rows.filter(x=>x.status==='PENDENTE'||x.status==='LIBERADO');
+  const blocked=rows.filter(x=>x.status==='BLOQUEADO');
+  const activeOrders=summarizeOrders(active),blockedOrders=summarizeOrders(blocked);
+  const openValue=activeOrders.reduce((sum,x)=>sum+x.value,0);
+  const blockedValue=blockedOrders.reduce((sum,x)=>sum+x.value,0);
+  const projected=revenue+openValue;
+  return {openValue,openCount:activeOrders.length,blockedValue,blockedCount:blockedOrders.length,
+    shareRevenue:revenue?openValue/revenue*100:null,projected,projectedAttainment:meta?projected/meta*100:null,
+    orders:[...activeOrders,...blockedOrders].sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0)),
+    byStatus:['PENDENTE','LIBERADO','BLOQUEADO'].map(status=>{
+      const list=rows.filter(x=>x.status===status),orders=summarizeOrders(list);
+      return {status,count:orders.length,value:orders.reduce((sum,x)=>sum+x.value,0)};
+    })
+  };
 }
 function filterMetas(filters,{ignoreMonth=false}={}){
   const allowed=allowedRca(filters);
@@ -474,9 +530,16 @@ function overview(filters){
   const yearRows=filterSales(filters,{ignoreMonth:true});
   const k=metrics(rows);
   const meta=totalMeta(filterMetas(filters));
+  const pipeline=openOrderSummary(filterOpenOrders(filters),k.revenue,meta);
   const rca=groupRevenue(rows,s=>s.rca).map(x=>({...x,name:(RCA_BY_CODE.get(x.key)||{}).name||String(x.key)})).sort((a,b)=>b.revenue-a.revenue);
   const departments=groupRevenue(rows,s=>s.department).sort((a,b)=>b.revenue-a.revenue);
-  return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
+  return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},pipeline,monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
+}
+function ordersPage(filters){
+  const rows=filterOpenOrders(filters);
+  const revenue=metrics(filterSales(filters)).revenue;
+  const meta=totalMeta(filterMetas(filters));
+  return {...openOrderSummary(rows,revenue,meta),revenue,meta};
 }
 function carteira(filters){
   const rows=filterSales(filters);
@@ -656,12 +719,13 @@ onmessage=async(e)=>{
       else if(msg.page==='produtos')payload=produtos(f);
       else if(msg.page==='cidades')payload=cidades(f,msg.selectedCity);
       else if(msg.page==='metas')payload=metasPage(f);
+      else if(msg.page==='pedidos')payload=ordersPage(f);
       else payload={};
       postMessage({type:'result',requestId:msg.requestId,page:msg.page,payload});
     }catch(err){postMessage({type:'queryError',requestId:msg.requestId,message:err?.message||String(err)});}
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@41f7dc2b1b2948bc4f29a028c726b87895d92a80/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c58bae3e91ad90494725bc9f3b1036d0f395a930/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
