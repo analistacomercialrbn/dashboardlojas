@@ -124,7 +124,7 @@ function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits
 function now(){return performance.now();}
 const CACHE_DB = 'rbn-supervisao-cache';
 const CACHE_STORE = 'snapshots';
-const CACHE_KEY = 'server-normalized-v2';
+const CACHE_KEY = 'server-invoice-date-v1';
 const LOCAL_CACHE_FALLBACK_MS = 12 * 60 * 60 * 1000;
 
 function openCacheDb(){
@@ -778,7 +778,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@421bb0ad4df0a6f7ba486078544b583fbf1be30d/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c4414e6b3a8d254f5376beb7cf63fbcf4b6a9d55/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
