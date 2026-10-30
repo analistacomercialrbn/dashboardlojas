@@ -188,11 +188,11 @@ function createInlineDataEngine(source){
   }
   return engine;
 }
-function initData(force=false,{preserveFilters=false}={}){
+function initData(force=false,{preserveFilters=false,background=false,preferFresh=false}={}){
   state.loadingData=true;
-  destroyCharts();
+  if(!background)destroyCharts();
   if(state.worker)state.worker.terminate();
-  setStatus(force?'Atualizando bases no Apps Script…':'Carregando bases comerciais…',true);
+  if(!background)setStatus(force?'Atualizando bases no Apps Script…':'Carregando bases comerciais…',true);
   const workerSource=document.getElementById('workerSource')?.textContent||'';
   if(!workerSource.trim()) throw new Error('O processador local não foi carregado.');
   let workerUrl=null,usingFallback=false,firstWorkerMessage=false,fallbackTimer=null;
@@ -202,7 +202,7 @@ function initData(force=false,{preserveFilters=false}={}){
       const activeWorker=state.worker;
       let settled=false;
       const warningTimer=setTimeout(()=>{
-        if(settled)return;
+        if(settled||background)return;
         setStatus(m.action==='refresh'
           ?'A atualização ainda está em andamento. Pode levar alguns minutos; mantenha esta tela aberta e evite clicar novamente.'
           :'O Apps Script ainda está processando a solicitação. Mantenha esta tela aberta.',true);
@@ -216,7 +216,7 @@ function initData(force=false,{preserveFilters=false}={}){
         .catch(error=>{if(settled)return;settled=true;clearTimeout(timeout);clearTimeout(warningTimer);activeWorker?.postMessage({type:'serverResponse',requestId:m.requestId,error:error?.message||String(error)});});
       return;
     }
-    if(m.type==='stage'){setStatus(m.text,true);}
+    if(m.type==='stage'){if(!background)setStatus(m.text,true);}
     else if(m.type==='ready'){
       const retainedFilters=preserveFilters?{...state.filters}:null;
       state.dimensions=m.dimensions;
@@ -231,6 +231,7 @@ function initData(force=false,{preserveFilters=false}={}){
       beginAutomaticUpdates();
       setStatus('',false);
       queryPage();
+      if(m.fromLocal)setTimeout(checkAutomaticUpdate,0);
     }else if(m.type==='result'){
       if(m.requestId!==state.requestId)return;
       setStatus('',false);
@@ -253,8 +254,8 @@ function initData(force=false,{preserveFilters=false}={}){
     try{
       const fallback=createInlineDataEngine(workerSource);
       state.worker=fallback;fallback.onmessage=handleMessage;
-      setStatus('Iniciando processador compatível com o Apps Script…',true);
-      fallback.postMessage({type:'init',force});
+      if(!background)setStatus('Iniciando processador compatível com o Apps Script…',true);
+      fallback.postMessage({type:'init',force,preferFresh});
     }catch(fallbackError){
       setStatus('',false);
       $('#content').innerHTML=`<div class="empty"><strong>Falha ao iniciar o processamento das bases.</strong><br><br>${esc(fallbackError?.message||error?.message||'Erro no processador de dados.')}</div>`;
@@ -274,7 +275,7 @@ function initData(force=false,{preserveFilters=false}={}){
       handleMessage(e);
     };
     fallbackTimer=setTimeout(()=>{if(!firstWorkerMessage)startFallback(new Error('O processador em segundo plano não respondeu.'));},3000);
-    worker.postMessage({type:'init',force});
+    worker.postMessage({type:'init',force,preferFresh});
   }catch(error){startFallback(error);}
 }
 async function checkAutomaticUpdate(){
@@ -282,7 +283,7 @@ async function checkAutomaticUpdate(){
   state.checkingForUpdates=true;
   try{
     const info=await api('/api/info');
-    if(info.exists&&info.updatedAt&&info.updatedAt!==state.serverUpdatedAt)initData(false,{preserveFilters:true});
+    if(info.exists&&info.updatedAt&&info.updatedAt!==state.serverUpdatedAt)initData(false,{preserveFilters:true,background:true,preferFresh:true});
   }catch(error){console.warn('Não foi possível conferir a atualização automática:',error?.message||String(error));}
   finally{state.checkingForUpdates=false;}
 }
@@ -441,7 +442,7 @@ function updateAdvancedFilterCount(){
 }
 
 function queryPage(){
-  if(!state.worker||!state.dimensions)return;
+  if(!state.worker||!state.dimensions||state.loadingData)return;
   destroyCharts();
   updateHeader();
   setStatus('Atualizando indicadores…',true);
