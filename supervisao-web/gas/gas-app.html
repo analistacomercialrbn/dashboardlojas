@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#1E2655" />
+  <meta name="theme-color" content="#1D2A68" />
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@18613d4813ec9eb318228852305c5860ab8ad58a/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c420bbb25cb6f031785b0b12cc9808713737f0a4/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
     <div class="login-card">
-      <div class="login-brand">REBANHO</div>
+      <img class="login-logo" src="https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/c420bbb25cb6f031785b0b12cc9808713737f0a4/supervisao-web/assets/rebanho-horizontal-azul.png" alt="Rebanho" />
       <h1>Dashboard de Supervisão</h1>
       <p>Gestão comercial, carteira, produtos, cidades e metas em uma única aplicação.</p>
       <form id="loginForm">
@@ -30,8 +30,7 @@
   <div id="appView" class="app-shell hidden">
     <header class="app-header">
       <a class="brand-lockup" href="#" aria-label="Rebanho — Supervisão Comercial">
-        <span class="brand-symbol">R</span>
-        <span><strong>REBANHO</strong><small>INTELIGÊNCIA COMERCIAL</small></span>
+        <img class="brand-logo" src="https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/c420bbb25cb6f031785b0b12cc9808713737f0a4/supervisao-web/assets/rebanho-horizontal-azul.png" alt="Rebanho" />
       </a>
       <nav class="nav" aria-label="Seções do dashboard">
         <button data-page="overview" class="nav-item active"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7"/><path d="M5 9v12h14V9"/><path d="M9 21v-7h6v7"/></svg></span> Visão geral</button>
@@ -427,8 +426,9 @@ function summarizeOrders(rows){
   const groups=new Map();
   for(const row of rows){
     const key=[row.year,row.order,row.rca].join('|');
-    if(!groups.has(key))groups.set(key,{year:row.year,order:row.order,status:row.status,date:row.date,rca:row.rca,rcaName:row.rcaName,supervisor:row.supervisor,client:row.client,clientName:CLIENTS.get(row.client)?.name||String(row.client??''),city:row.city,uf:row.uf,value:0,lines:0,departments:new Set()});
+    if(!groups.has(key))groups.set(key,{key:key,year:row.year,order:row.order,status:row.status,date:row.date,rca:row.rca,rcaName:row.rcaName,supervisor:row.supervisor,client:row.client,clientName:CLIENTS.get(row.client)?.name||String(row.client??''),city:row.city,uf:row.uf,value:0,lines:0,departments:new Set(),items:[]});
     const group=groups.get(key);group.value+=Number(row.value)||0;group.lines++;if(row.department)group.departments.add(row.department);
+    group.items.push({product:row.product??null,productName:row.productName||'Produto sem descrição',quantity:Number(row.quantity)||0,stock:row.stock==null||row.stock===''?null:Number(row.stock),value:Number(row.value)||0});
     if(row.date&&(!group.date||row.date>group.date))group.date=row.date;
   }
   return [...groups.values()].map(g=>({...g,department:[...g.departments].join(', ')})).sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0));
@@ -440,7 +440,7 @@ function openOrderSummary(rows,revenue,meta){
   const openValue=activeOrders.reduce((sum,x)=>sum+x.value,0);
   const blockedValue=blockedOrders.reduce((sum,x)=>sum+x.value,0);
   const projected=revenue+openValue;
-  return {openValue,openCount:activeOrders.length,blockedValue,blockedCount:blockedOrders.length,
+  return {openValue,openCount:activeOrders.length,blockedValue,blockedCount:blockedOrders.length,totalOpenValue:openValue+blockedValue,totalOpenCount:activeOrders.length+blockedOrders.length,
     shareRevenue:revenue?openValue/revenue*100:null,projected,projectedAttainment:meta?projected/meta*100:null,
     orders:[...activeOrders,...blockedOrders].sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0)),
     byStatus:['PENDENTE','LIBERADO','BLOQUEADO'].map(status=>{
@@ -533,10 +533,10 @@ function overview(filters){
   const rows=filterSales(filters);
   const yearRows=filterSales(filters,{ignoreMonth:true});
   const k=metrics(rows);
-  const meta=totalMeta(filterMetas(filters));
+  const metaRows=filterMetas(filters),meta=totalMeta(metaRows);
   const pipeline=openOrderSummary(filterOpenOrders(filters),k.revenue,meta);
-  const rca=groupRevenue(rows,s=>s.rca).map(x=>({...x,name:(RCA_BY_CODE.get(x.key)||{}).name||String(x.key)})).sort((a,b)=>b.revenue-a.revenue);
-  const departments=groupRevenue(rows,s=>s.department).sort((a,b)=>b.revenue-a.revenue);
+  const rca=groupRevenue(rows,s=>s.rca).map(x=>({...x,name:(RCA_BY_CODE.get(x.key)||{}).name||String(x.key),meta:metaRows.filter(m=>String(m.rca)===String(x.key)).reduce((sum,m)=>sum+(Number(m.value)||0),0)})).sort((a,b)=>b.revenue-a.revenue);
+  const departments=groupRevenue(rows,s=>s.department).map(x=>({...x,meta:metaRows.filter(m=>String(m.department)===String(x.key)).reduce((sum,m)=>sum+(Number(m.value)||0),0)})).sort((a,b)=>b.revenue-a.revenue);
   return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},pipeline,monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
 }
 function ordersPage(filters){
@@ -730,6 +730,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c58bae3e91ad90494725bc9f3b1036d0f395a930/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c420bbb25cb6f031785b0b12cc9808713737f0a4/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
