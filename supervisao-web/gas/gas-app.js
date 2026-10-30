@@ -724,7 +724,7 @@ function renderOrders(p){
     ${sectionHeading('Pedidos em aberto e posição','Visão de carteira por cliente, pedido e item, inspirada na rotina 336 do Winthor.')}
     <div class="grid kpi-grid four">
       ${kpi('Carteira total',money(p.totalOpenValue??(Number(p.openValue||0)+Number(p.blockedValue||0)),true),`${integer(p.totalOpenCount??(Number(p.openCount||0)+Number(p.blockedCount||0)))} pedidos · todos os status`)}
-      ${kpi('Participação no faturamento',pct(p.shareRevenue),'Pedidos liberados e pendentes ÷ faturado')}
+      ${kpi('Participação no faturamento',pct(p.shareRevenue),'Carteira total, inclusive bloqueados ÷ faturado')}
       ${kpi('Projeção liberados + pendentes',money(p.projected,true),`${pct(p.projectedAttainment)} da meta do recorte`)}
       ${kpi('Bloqueados',money(p.blockedValue,true),`${integer(p.blockedCount)} pedidos fora da projeção`)}
     </div>
