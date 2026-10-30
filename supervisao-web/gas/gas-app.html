@@ -177,13 +177,16 @@ function restoreLocalCache(snapshot){
   buildHistory();
 }
 function emitReady(){
+  const catalog=rcaCatalog();
+  RCA_BY_CODE=new Map(catalog.map(r=>[r.code,r]));
+  for(const sale of SALES){const r=RCA_BY_CODE.get(sale.rca)||{};sale.rcaName=r.name||String(sale.rca??'');sale.supervisor=r.supervisor||'';}
   const years=[...new Set(SALES.map(s=>s.year))].sort((a,b)=>b-a);
   const departments=[...new Set(SALES.map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const supervisors=[...new Set(RCAS.filter(r=>r.active).map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const activeRcas=RCAS.filter(r=>r.active).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  const supervisors=[...new Set(catalog.map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const visibleRcas=catalog.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
   const geography=[...new Map(SALES.filter(s=>s.uf&&s.region&&s.city).map(s=>{const uf=String(s.uf).trim().toUpperCase(),region=String(s.region).trim(),city=String(s.city).trim();return [uf+'|'+norm(region)+'|'+norm(city),{uf,region,city}]})).values()];
   postStage('Base pronta.',100);
-  postMessage({type:'ready',dimensions:{years,departments,supervisors,rcas:activeRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
+  postMessage({type:'ready',serverUpdatedAt:SERVER_UPDATED_AT,dimensions:{years,departments,supervisors,rcas:visibleRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
 }
 
 const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -374,11 +377,20 @@ function multi(v){
   if(v===null||v===undefined||v===''||v==='Todos')return [];
   return [String(v)];
 }
+function rcaCatalog(){
+  const catalog=new Map(RCAS.map(r=>[String(r.code),{...r}]));
+  for(const rows of [SALES,OPEN_ORDERS,METAS])for(const row of rows){
+    const key=String(row.rca);
+    if(catalog.has(key))continue;
+    catalog.set(key,{code:row.rca,name:row.rcaName&&String(row.rcaName)!==key?row.rcaName:(row.rca==null?'Sem RCA':'RCA '+key),supervisor:row.supervisor||'Sem supervisor',active:false,fromTransactions:true});
+  }
+  return [...catalog.values()];
+}
 function allowedRca(filters){
-  const active=RCAS.filter(r=>r.active);
+  const catalog=RCA_BY_CODE.size?[...RCA_BY_CODE.values()]:rcaCatalog();
   const supervisors=multi(filters.supervisor);
   const rcas=multi(filters.rca);
-  return new Set(active.filter(r=>{
+  return new Set(catalog.filter(r=>{
     if(supervisors.length && !supervisors.includes(String(r.supervisor))) return false;
     if(rcas.length && !rcas.includes(String(r.code))) return false;
     return true;
@@ -730,6 +742,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@4b20f55800bd60ac6b44799c06f750b92b650eb8/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@bf2ae6193bcfc22478205ccce9dd3b1f6bc54e0b/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
+
