@@ -298,11 +298,7 @@ const concurrency=4;
         case 2:METAS.push({monthKey:row[1],year:row[2],month:row[3],rca:row[4],rcaName:row[5],supervisor:row[6],department:row[7],value:row[8]});break;
         case 3:CLIENTS.set(row[1],{code:row[1],name:row[2],rca:row[3]});break;
         case 4:LATEST_DATE=row[1]?new Date(row[1]):null;break;
-        case 5:{
-          const date=new Date(row[1]),rca=RCA_BY_CODE.get(row[5])||{};
-          OPEN_ORDERS.push({date,year:row[2],month:row[3],monthKey:row[4],rca:row[5],rcaName:rca.name||String(row[5]??''),supervisor:rca.supervisor||'',department:row[6],client:row[7],product:row[8],productName:row[9],order:row[10],city:row[11],uf:row[12],region:row[13],value:Number(row[14])||0,status:row[15]});
-          break;
-        }
+
       }
       received++;
     }
@@ -333,7 +329,15 @@ const concurrency=4;
   if(SALES.length!==Number(SERVER_INFO.salesCount))throw new Error('O cache chegou incompleto ('+SALES.length.toLocaleString('pt-BR')+' vendas). Clique em “Atualizar bases” e tente novamente.');
   RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
   for(const sale of SALES){const r=RCA_BY_CODE.get(sale.rca)||{};sale.rcaName=r.name||String(sale.rca??'');sale.supervisor=r.supervisor||'';}
-  for(const order of OPEN_ORDERS){const r=RCA_BY_CODE.get(order.rca)||{};order.rcaName=r.name||String(order.rca??'');order.supervisor=r.supervisor||'';}
+  try{await fetchOpenOrders();}catch(error){if(!OPEN_ORDERS.length)console.warn('Carteira de pedidos em aberto indisponível.',error);}
+}
+async function fetchOpenOrders(){
+  const result=await serverRequest('openOrders');
+  if(!result?.ok)throw new Error(result?.message||'Não foi possível carregar a carteira de pedidos.');
+  OPEN_ORDERS=(result.orders||[]).map(value=>{
+    const r=RCA_BY_CODE.get(Number(value.rca))||RCA_BY_CODE.get(value.rca)||{};
+    return {...value,date:value.date?new Date(value.date):null,rcaName:r.name||value.rcaName||String(value.rca??''),supervisor:r.supervisor||value.supervisor||''};
+  });
 }
 async function init(){
   try{
@@ -346,7 +350,7 @@ async function init(){
       catch(err){
         const cacheAge=Date.now()-Number(cached?.savedAt||0);
         if(cached?.sales?.length&&cacheAge<LOCAL_CACHE_FALLBACK_MS&&(!err.status||err.status>=500)){
-          restoreLocalCache(cached);emitReady();return;
+          restoreLocalCache(cached);try{await fetchOpenOrders();}catch{}emitReady();return;
         }
         throw err;
       }
@@ -354,7 +358,7 @@ async function init(){
         const cacheAge=Date.now()-Number(cached.savedAt||0);
         const matchesServer=!!info?.updatedAt&&cached.serverUpdatedAt===info.updatedAt;
         const recentFallback=!info&&cacheAge<LOCAL_CACHE_FALLBACK_MS;
-        if(matchesServer||recentFallback){restoreLocalCache(cached);emitReady();return;}
+        if(matchesServer||recentFallback){restoreLocalCache(cached);try{await fetchOpenOrders();}catch{}emitReady();return;}
       }
     }
     postStage('Conectando ao serviço de dados…',8);
