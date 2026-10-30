@@ -508,6 +508,8 @@ function renderPage(page,payload){
 
 function renderOverview(p){
   const k=p.kpis||{};
+  const daily=p.daily||{},dailyDate=daily.date?daily.date.split('-').reverse().join('/'):'Sem movimento no período';
+  const updateLabel=p.updatedAt?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(p.updatedAt)):'Não informado';
   const pipeline=p.pipeline||{},goal=Number(k.meta)||0,revenue=Number(k.revenue)||0;
   const attainment=Math.max(0,Math.min(100,goal?revenue/goal*100:0));
   const openWidth=goal?Math.min(100-attainment,Number(pipeline.openValue||0)/goal*100):0;
@@ -518,7 +520,7 @@ function renderOverview(p){
   $('#content').innerHTML=`
     <div class="overview-hero">
       <div class="overview-revenue">
-        <div class="revenue-kicker"><i></i> Faturamento no recorte</div>
+        <div class="revenue-kicker"><i></i> Vendas realizadas no recorte</div>
         <div class="revenue-value" title="${money(revenue)}">${money(k.revenue,true)}</div>
         <div class="revenue-caption"><strong>${money(revenue)}</strong> · Vendas pela data do pedido</div>
         <div class="revenue-divider"></div>
@@ -540,7 +542,7 @@ function renderOverview(p){
       <div class="grid kpi-grid four">
         ${kpi('Carteira total',money(Number(pipeline.totalOpenValue||0),true),`${integer(pipeline.totalOpenCount||0)} pedidos · inclui bloqueados`)}
         ${kpi('Carteira ÷ faturamento',pct(revenue?Number(pipeline.totalOpenValue||0)/revenue*100:null),'Peso total dos pedidos em aberto')}
-        ${kpi('Projeção liberados + pendentes',money(pipeline.projected,true),`${pct(pipeline.projectedAttainment)} da meta · bloqueados separados`)}
+        ${kpi('Projeção liberados + pendentes',money(pipeline.projected,true),`Potencial ${pct(pipeline.projectedAttainment)} da meta · não é garantia de faturamento`)}
         ${kpi('Valor bloqueado',money(pipeline.blockedValue,true),`${integer(pipeline.blockedCount)} pedidos aguardando solução`)}
       </div>
       <div class="order-status-breakdown" aria-label="Pedidos em aberto por posição"><strong>Posição dos pedidos</strong>
