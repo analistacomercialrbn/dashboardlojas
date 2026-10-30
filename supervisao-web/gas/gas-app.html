@@ -441,7 +441,7 @@ function openOrderSummary(rows,revenue,meta){
   const blockedValue=blockedOrders.reduce((sum,x)=>sum+x.value,0);
   const projected=revenue+openValue;
   return {openValue,openCount:activeOrders.length,blockedValue,blockedCount:blockedOrders.length,totalOpenValue:openValue+blockedValue,totalOpenCount:activeOrders.length+blockedOrders.length,
-    shareRevenue:revenue?openValue/revenue*100:null,projected,projectedAttainment:meta?projected/meta*100:null,
+    shareRevenue:revenue?(openValue+blockedValue)/revenue*100:null,projected,projectedAttainment:meta?projected/meta*100:null,
     orders:[...activeOrders,...blockedOrders].sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0)),
     byStatus:['PENDENTE','LIBERADO','BLOQUEADO'].map(status=>{
       const list=rows.filter(x=>x.status===status),orders=summarizeOrders(list);
@@ -730,6 +730,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c420bbb25cb6f031785b0b12cc9808713737f0a4/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@4b20f55800bd60ac6b44799c06f750b92b650eb8/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
