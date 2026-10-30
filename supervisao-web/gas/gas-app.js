@@ -520,6 +520,16 @@ function renderOverview(p){
   const goalGapLabel=departmentSelected?'Falta para meta do departamento':'Falta para a meta';
   const statusLabels={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'};
   $('#content').innerHTML=`
+    
+    <section class="executive-day" aria-label="Resumo comercial diário">
+      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)} · Valores pela data do pedido</p></div></div>
+      <div class="executive-day-grid">
+        ${kpi('Vendas realizadas do dia',money(daily.soldValue),`${integer(daily.soldOrders)} pedidos realizados`)}
+        ${kpi('Pedidos abertos do dia',money(daily.openValue),`${integer(daily.openOrders)} pedidos · inclui bloqueados`)}
+        ${kpi('Clientes no dia',integer(daily.clients),'Com venda realizada ou pedido em aberto')}
+      </div>
+    </section>
+    <div class="section-heading executive-period-heading"><div><h2>Resultado do período</h2><p>Meta, carteira e potencial de fechamento no recorte selecionado.</p></div></div>
     <div class="overview-hero">
       <div class="overview-revenue">
         <div class="revenue-kicker"><i></i> Vendas realizadas no recorte</div>
