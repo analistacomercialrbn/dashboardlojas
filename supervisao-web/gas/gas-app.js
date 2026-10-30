@@ -6,7 +6,8 @@ const PAGE_META = {
   carteira: ['Carteira','Saúde da carteira • novos, inativos, recuperação e oportunidades'],
   produtos: ['Mix e Produtos','Produtos • mix, concentração, desempenho e venda cruzada'],
   cidades: ['Cidades','Cobertura comercial • evolução, pontos críticos, produtos e clientes'],
-  metas: ['Gestão de Metas','Planejamento • histórico, distribuição e acompanhamento']
+  metas: ['Gestão de Metas','Planejamento • histórico, distribuição e acompanhamento'],
+  pedidos: ['Pedidos & Previsão','Pedidos em carteira • situação, valor e relação com o faturamento']
 };
 
 const state = {
@@ -436,6 +437,7 @@ function renderPage(page,payload){
   else if(page==='produtos')renderProdutos(payload);
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
+  else if(page==='pedidos')renderOrders(payload);
 }
 
 function renderOverview(p){
@@ -474,6 +476,13 @@ function renderOverview(p){
   chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[{data:top.map(x=>x.revenue),backgroundColor:'#42548D',borderRadius:7,barThickness:16}]},{indexAxis:'y'});
   const total=(p.departments||[]).reduce((a,x)=>a+x.revenue,0)||1;
   $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<div class="metric-row"><div><div class="metric-name">${esc(x.key||'Sem departamento')}</div><div class="progress"><i style="width:${Math.min(100,x.revenue/total*100)}%"></i></div></div><div class="metric-value">${money(x.revenue,true)} · ${pct(x.revenue/total*100)}</div></div>`).join('');
+  const pipe=p.pipeline||{};
+  const pipelineCards=`<div class="grid kpi-grid three overview-pipeline">
+    ${kpi('Pedidos em aberto',money(pipe.openValue,true),`${integer(pipe.openCount)} pedidos · ${pct(pipe.shareRevenue)} do faturamento realizado`)}
+    ${kpi('Projeção com pedidos',money(pipe.projected,true),`${pct(pipe.projectedAttainment)} da meta incluindo pedidos pendentes/liberados`)}
+    ${kpi('Pedidos bloqueados',money(pipe.blockedValue,true),`${integer(pipe.blockedCount)} pedidos fora da projeção`)}
+  </div>`;
+  $('#overviewMonthly').closest('.overview-analysis')?.insertAdjacentHTML('beforebegin',pipelineCards);
 }
 function renderCarteira(p){
   const k=p.kpis||{};
@@ -639,6 +648,29 @@ async function renderCityMap(cities,selectedKey){
   }
 }
 
+function renderOrders(p){
+  const byStatus=p.byStatus||[];
+  const rows=p.orders||[];
+  const statusLabel={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'};
+  const statusClass={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
+  $('#content').innerHTML=`
+    ${sectionHeading('Pedidos em aberto e posição','Acompanhe o valor em carteira, o status de cada pedido e a participação sobre o faturamento realizado.')}
+    <div class="grid kpi-grid four">
+      ${kpi('Pedidos pendentes e liberados',money(p.openValue,true),`${integer(p.openCount)} pedidos`)}
+      ${kpi('Participação no faturamento',pct(p.shareRevenue),'Pedidos em aberto ÷ faturamento realizado no recorte')}
+      ${kpi('Projeção com pedidos',money(p.projected,true),`${pct(p.projectedAttainment)} da meta do recorte`)}
+      ${kpi('Bloqueados',money(p.blockedValue,true),`${integer(p.blockedCount)} pedidos fora da projeção`)}
+    </div>
+    <div class="grid kpi-grid three order-status-cards">
+      ${byStatus.map(x=>kpi(statusLabel[x.status]||x.status,money(x.value,true),`${integer(x.count)} pedidos`)).join('')}
+    </div>
+    <div class="panel order-panel">
+      <div class="panel-title-row"><div><h2>Detalhe da carteira de pedidos</h2><div class="panel-sub">A projeção soma pedidos pendentes e liberados. Bloqueados ficam separados.</div></div><span class="panel-chip">${integer(rows.length)} pedidos</span></div>
+      <div class="table-wrap"><table class="order-table"><thead><tr><th>Pedido</th><th>Posição</th><th>Data</th><th>Cliente</th><th>RCA</th><th>Supervisor</th><th>Departamento</th><th class="align-right">Valor</th></tr></thead><tbody>
+        ${rows.length?rows.map(x=>`<tr><td><strong>${esc(x.order||'—')}</strong></td><td><span class="order-status ${statusClass[x.status]||''}">${esc(statusLabel[x.status]||x.status)}</span></td><td>${fmtDate(x.date)}</td><td>${esc(x.clientName||x.client||'—')}</td><td>${esc(x.rcaName||x.rca||'—')}</td><td>${esc(x.supervisor||'—')}</td><td>${esc(x.department||'—')}</td><td class="align-right"><strong>${money(x.value,true)}</strong></td></tr>`).join(''):`<tr><td colspan="8" class="muted">Nenhum pedido em aberto para os filtros selecionados.</td></tr>`}
+      </tbody></table></div>
+    </div>`;
+}
 function renderMetas(p){
   const attainment=p.totalMeta?p.totalRevenue/p.totalMeta*100:null;
   $('#content').innerHTML=`
