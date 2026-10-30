@@ -1,0 +1,1 @@
+Força recarga da base mestre após inclusão dos dados de 2026 em 10/09/2026.

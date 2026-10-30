@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1E2655" />
+  <title>Dashboard de Supervisão • Rebanho</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="stylesheet" href="/styles.css?v=20261019-3" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+</head>
+<body>
+  <div id="loginView" class="login-shell hidden">
+    <div class="login-card">
+      <div class="login-brand">REBANHO</div>
+      <h1>Dashboard de Supervisão</h1>
+      <p>Gestão comercial, carteira, produtos, cidades e metas em uma única aplicação.</p>
+      <form id="loginForm">
+        <label>Usuário</label>
+        <input id="loginUser" autocomplete="username" required />
+        <label>Senha</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required />
+        <button class="btn primary" type="submit">Entrar</button>
+        <div id="loginError" class="form-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="side-brand">
+        <div class="brand-word">REBANHO</div>
+        <div class="brand-product">Supervisão Comercial</div>
+      </div>
+      <div id="userCard" class="user-card"></div>
+      <nav class="nav">
+        <button data-page="overview" class="nav-item active"><span>⌂</span> Visão Geral</button>
+        <button data-page="carteira" class="nav-item"><span>◫</span> Carteira</button>
+        <button data-page="produtos" class="nav-item"><span>◇</span> Mix e Produtos</button>
+        <button data-page="cidades" class="nav-item"><span>⌖</span> Cidades</button>
+        <button data-page="metas" class="nav-item"><span>◎</span> Gestão de Metas</button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-note"><span class="sidebar-note-dot"></span><div><strong>Bases comerciais</strong><span>Indicadores do período selecionado</span></div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Dashboard de Supervisão</div>
+          <h1 id="pageTitle">Visão Geral</h1>
+          <div id="pageSubtitle" class="page-subtitle"></div>
+        </div>
+        <div class="topbar-right">
+          <div id="periodChip" class="period-chip"></div>
+          <button id="refreshData" class="icon-btn" type="button" title="Atualizar bases" aria-label="Atualizar bases">↻</button>
+          <button id="logoutBtn" class="btn ghost small" type="button">Sair</button>
+        </div>
+      </header>
+
+      <div class="filterbar">
+        <div class="filterbar-title">Filtros</div>
+        <div class="filter-group"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
+        <div class="filter-group"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
+        <div class="filter-group grow"><label>Supervisor</label><div id="filterSupervisor" class="multi-select"></div></div>
+        <div class="filter-group grow"><label>RCA</label><div id="filterRca" class="multi-select"></div></div>
+        <div class="filter-group grow"><label>Departamento</label><div id="filterDepartment" class="multi-select"></div></div>
+        <button id="clearFilters" class="filter-clear" type="button">Limpar filtros</button>
+      </div>
+
+      <div id="dataStatus" class="status-card">
+        <div class="spinner"></div>
+        <div>
+          <strong>Carregando bases comerciais</strong>
+          <div id="dataStatusText">Conectando ao Drive…</div>
+        </div>
+      </div>
+
+      <section id="content"></section>
+    </main>
+  </div>
+
+  <template id="kpiTemplate">
+    <div class="kpi-card">
+      <div class="kpi-label"></div>
+      <div class="kpi-value"></div>
+      <div class="kpi-note"></div>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/app.js?v=20261020-1"></script>
+</body>
+</html>

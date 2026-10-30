@@ -1,0 +1,1780 @@
+from io import BytesIO
+import unicodedata
+import time
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import requests
+import streamlit as st
+
+from ui_academy import apply_academy_theme, nav_format, render_app_header
+
+st.set_page_config(page_title='Dashboard de Supervisão', page_icon='📊', layout='wide')
+
+VENDAS_ID = '1ioeKNG2P5HLZpmCTxUa3FaCfI1pfHuyC'
+AUX_ID = '1h3XtB-2aMSMGhr5Ws7P-6nijKZc3zeqI'
+BASE_VENDAS_VERSAO = 'Produto (16)'
+
+NAVY = '#1E2655'
+NAVY_2 = '#2D396F'
+BG = '#F6F7FB'
+TEXT = '#20263A'
+MUTED = '#737A8C'
+GREEN = '#2E8B57'
+RED = '#C94A55'
+
+NE_CODES = {
+    'AL':'27','BA':'29','CE':'23','MA':'21','PB':'25','PE':'26','PI':'22','RN':'24','SE':'28'
+}
+
+st.markdown(f"""
+<style>
+[data-testid="stAppViewContainer"] {{ background:{BG}; }}
+[data-testid="stHeader"] {{ background:rgba(0,0,0,0); }}
+[data-testid="stSidebar"] {{ background:#fff; border-right:1px solid #E6E8EF; }}
+[data-testid="stSidebarNav"] {{ display:none !important; }}
+[data-testid="stSidebar"] [role="radiogroup"] label {{
+  width:100%;
+  border:none !important;
+  border-radius:9px;
+  padding:8px 10px !important;
+  background:transparent;
+  color:{TEXT};
+  transition:background .15s ease,color .15s ease;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover {{
+  background:#F3F5FA;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {{
+  background:#E9ECF6 !important;
+  color:{NAVY} !important;
+  font-weight:750;
+}}
+[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {{
+  display:none !important;
+}}
+[data-testid="stMain"] {{ width:100%; }}
+[data-testid="stMainBlockContainer"],
+.block-container {{
+  width:100% !important;
+  max-width:none !important;
+  padding-top:1.35rem !important;
+  padding-bottom:2rem !important;
+  padding-left:clamp(1rem,2vw,2.75rem) !important;
+  padding-right:clamp(1rem,2vw,2.75rem) !important;
+}}
+h1,h2,h3 {{ color:{NAVY}; letter-spacing:-.02em; }}
+.brandbar {{ display:flex; align-items:center; justify-content:space-between; gap:18px; background:{NAVY}; padding:18px 24px; border-radius:18px; margin-bottom:18px; box-shadow:0 8px 24px rgba(30,38,85,.14); }}
+.brand-title {{ color:white; font-size:30px; font-weight:750; margin:0; }}
+.brand-sub {{ color:#DDE2F4; font-size:13px; margin-top:5px; }}
+.brand-word {{ color:white; font-size:24px; font-weight:900; letter-spacing:.08em; }}
+.kpi {{ background:#fff; border:1px solid #E6E8EF; border-radius:14px; padding:12px 14px; min-height:78px; box-shadow:0 3px 10px rgba(30,38,85,.045); }}
+.kpi-label {{ color:{MUTED}; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.065em; }}
+.kpi-value {{ color:{NAVY}; font-size:22px; font-weight:780; margin-top:4px; white-space:nowrap; line-height:1.08; }}
+.kpi-note {{ color:{MUTED}; font-size:10px; margin-top:4px; line-height:1.25; }}
+.section-note {{ color:{MUTED}; font-size:12px; margin-top:-8px; margin-bottom:14px; }}
+.filter-chip {{ display:inline-block; background:#EEF1F8; color:{NAVY}; border:1px solid #DCE1EE; border-radius:999px; padding:5px 10px; margin:0 6px 6px 0; font-size:11px; font-weight:650; }}
+[data-baseweb="tab-list"] {{ gap:22px; }}
+[data-baseweb="tab-highlight"] {{ background-color:{NAVY}; }}
+div[data-testid="stDataFrame"] {{ border:1px solid #E5E7EF; border-radius:14px; overflow:hidden; width:100% !important; }}
+.exec-section {{ margin-top:18px; }}
+.exec-note {{ color:{MUTED}; font-size:12px; margin-top:-5px; margin-bottom:12px; }}
+
+[data-testid="stVerticalBlockBorderWrapper"] {{
+  border-radius:16px !important;
+  border:1px solid #E5E8F0 !important;
+  box-shadow:0 3px 12px rgba(30,38,85,.04);
+  background:#fff;
+}}
+div[data-testid="stMetric"] {{
+  background:#fff;
+  border:1px solid #E5E8F0;
+  border-radius:14px;
+  padding:12px 14px;
+  box-shadow:0 3px 10px rgba(30,38,85,.035);
+}}
+div[data-testid="stMetricLabel"] p {{ color:{MUTED}; font-size:12px; font-weight:650; }}
+div[data-testid="stMetricValue"] {{ color:{NAVY}; font-weight:800; }}
+div[data-testid="stButton"] > button {{
+  border-radius:10px;
+  border:1px solid #D9DDEA;
+  font-weight:650;
+}}
+div[data-testid="stRadio"] [role="radiogroup"] {{
+  gap:.35rem;
+  flex-wrap:wrap;
+}}
+div[data-testid="stRadio"] label {{
+  background:#fff;
+  border:1px solid #DFE3ED;
+  border-radius:999px;
+  padding:.25rem .65rem;
+  margin:0 !important;
+}}
+div[data-testid="stRadio"] label:has(input:checked) {{
+  background:#EEF1F8;
+  border-color:{NAVY_2};
+  color:{NAVY};
+  font-weight:700;
+}}
+
+.insight-card {{
+  --accent:{NAVY};
+  --tint:#F4F6FB;
+  --badge:#E8ECF7;
+  position:relative;
+  overflow:hidden;
+  min-height:220px;
+  padding:20px 21px 18px 23px;
+  border:1px solid #E2E6EF;
+  border-radius:18px;
+  background:linear-gradient(145deg,#FFFFFF 0%,var(--tint) 135%);
+  box-shadow:0 6px 22px rgba(30,38,85,.055);
+}}
+.insight-card::before {{
+  content:'';
+  position:absolute;
+  left:0; top:0; bottom:0;
+  width:5px;
+  background:var(--accent);
+}}
+.insight-card.critical {{ --accent:#C94A55; --tint:#FFF4F5; --badge:#FCE9EB; }}
+.insight-card.attention {{ --accent:#C48728; --tint:#FFF9EE; --badge:#FFF0D6; }}
+.insight-card.opportunity {{ --accent:#2E8B57; --tint:#F1FAF5; --badge:#E2F4E9; }}
+.insight-badge {{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 9px;
+  border-radius:999px;
+  background:var(--badge);
+  color:var(--accent);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}}
+.insight-kicker {{
+  margin-top:15px;
+  color:{MUTED};
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}}
+.insight-title {{
+  margin-top:3px;
+  color:{NAVY};
+  font-size:16px;
+  font-weight:800;
+  line-height:1.25;
+}}
+.insight-value-label {{
+  margin-top:16px;
+  color:{MUTED};
+  font-size:11px;
+  font-weight:650;
+}}
+.insight-value {{
+  margin-top:1px;
+  color:{NAVY};
+  font-size:29px;
+  font-weight:850;
+  line-height:1.05;
+  letter-spacing:-.025em;
+}}
+.insight-secondary {{
+  margin-top:8px;
+  color:{TEXT};
+  font-size:12px;
+  line-height:1.45;
+}}
+.insight-secondary strong {{ color:{NAVY}; }}
+.insight-foot {{
+  margin-top:11px;
+  color:{MUTED};
+  font-size:11px;
+  line-height:1.35;
+}}
+div[data-testid="stButton"] > button[kind="primary"] {{
+  background:{NAVY} !important;
+  color:#fff !important;
+  border-color:{NAVY} !important;
+  min-height:40px;
+}}
+div[data-testid="stButton"] > button[kind="primary"]:hover {{
+  background:{NAVY_2} !important;
+  border-color:{NAVY_2} !important;
+}}
+div[data-testid="stPlotlyChart"] {{ width:100% !important; }}
+div[data-testid="stPlotlyChart"] > div {{ width:100% !important; }}
+
+@media (min-width: 1800px) {{
+  [data-testid="stMainBlockContainer"],
+  .block-container {{
+    padding-left:clamp(1.5rem,2.4vw,4rem) !important;
+    padding-right:clamp(1.5rem,2.4vw,4rem) !important;
+  }}
+  .brandbar {{ padding:20px 28px; }}
+  .brand-title {{ font-size:32px; }}
+  .brand-sub {{ font-size:14px; }}
+  .brand-word {{ font-size:25px; }}
+  .kpi {{ min-height:82px; padding:13px 15px; }}
+  .kpi-value {{ font-size:23px; }}
+}}
+
+@media (min-width: 2400px) {{
+  [data-testid="stMainBlockContainer"],
+  .block-container {{
+    padding-left:clamp(2rem,2.8vw,5rem) !important;
+    padding-right:clamp(2rem,2.8vw,5rem) !important;
+  }}
+  .brand-title {{ font-size:34px; }}
+  .kpi-value {{ font-size:29px; }}
+}}
+</style>
+""", unsafe_allow_html=True)
+
+# Camada visual compartilhada com Políticas e Rebanho Academy.
+apply_academy_theme()
+
+
+def drive_bytes(fid):
+    # Evita receber uma versão antiga do arquivo pelo cache/CDN do Google Drive.
+    # O cache principal continua sendo controlado por load() no Streamlit.
+    r = requests.get(
+        'https://drive.google.com/uc',
+        params={'export':'download','id':fid,'_cb':str(time.time_ns())},
+        headers={'Cache-Control':'no-cache','Pragma':'no-cache'},
+        timeout=180,
+    )
+    r.raise_for_status()
+    if 'text/html' in r.headers.get('content-type','').lower():
+        raise RuntimeError('Confirme o compartilhamento dos arquivos do Drive como leitor por link.')
+    return BytesIO(r.content)
+
+
+def cod(s):
+    return pd.to_numeric(s.astype(str).str.extract(r'^\s*(\d+)', expand=False), errors='coerce').astype('Int64')
+
+
+def dt(s):
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return pd.to_datetime(s, errors='coerce')
+    n = pd.to_numeric(s, errors='coerce')
+    excel = pd.to_datetime(n, unit='D', origin='1899-12-30', errors='coerce')
+    txt = pd.to_datetime(s.astype(str), dayfirst=True, errors='coerce')
+    return txt.fillna(excel)
+
+
+def norm(v):
+    if pd.isna(v): return ''
+    s = unicodedata.normalize('NFKD', str(v))
+    return ''.join(c for c in s if not unicodedata.combining(c)).upper().strip()
+
+
+def brl(v, casas=2):
+    if pd.isna(v): return '—'
+    return f'R$ {float(v):,.{casas}f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def brl_compacto(v):
+    v = float(v or 0)
+    if abs(v) >= 1_000_000: return f'R$ {v/1_000_000:.2f} mi'.replace('.', ',')
+    if abs(v) >= 1_000: return f'R$ {v/1_000:.1f} mil'.replace('.', ',')
+    return brl(v)
+
+
+def pct(v):
+    return '—' if pd.isna(v) else f'{float(v):.1f}%'.replace('.', ',')
+
+
+def nint(v):
+    return f'{int(round(float(v or 0))):,}'.replace(',', '.')
+
+
+def dec(v):
+    return '—' if pd.isna(v) else f'{float(v):.2f}'.replace('.', ',')
+
+
+def mes_nome(x):
+    p = pd.Period(x)
+    nomes = ['', 'Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    return f'{nomes[p.month]}/{p.year}'
+
+
+def _excel_file(buf):
+    """Abre Excel com Calamine (mais rápido) e mantém fallback para openpyxl."""
+    buf.seek(0)
+    try:
+        return pd.ExcelFile(buf, engine='calamine')
+    except Exception:
+        buf.seek(0)
+        return pd.ExcelFile(buf, engine='openpyxl')
+
+
+def ler_vendas(buf):
+    # A base de vendas é grande. Lemos somente as colunas realmente usadas
+    # pelo dashboard para reduzir bastante o tempo de abertura e a memória.
+    colunas_necessarias = {
+        'Cod/Vend.','Cod/Cliente','Cod/Produto','Data Faturamento',
+        'Pedidos Enviados','Posição','DEPARTAMENTO','NUMPED',
+        'MUNICENT','ESTENT','SECAO','% Margem','Vl Desconto','% Desconto'
+    }
+    xls = _excel_file(buf)
+    previa = xls.parse(sheet_name='Sheet1', header=None, nrows=8)
+    header = 0
+    for i, row in previa.iterrows():
+        vals = set(row.astype(str).str.strip())
+        if 'Data Faturamento' in vals and 'Pedidos Enviados' in vals:
+            header = i
+            break
+    return xls.parse(
+        sheet_name='Sheet1',
+        header=header,
+        usecols=lambda col: str(col).strip() in colunas_necessarias,
+    )
+
+
+def chart_layout(fig, height=420, legend='h'):
+    """Tema executivo inspirado em BI: limpo, compacto e com foco no dado."""
+    fig.update_layout(
+        height=height,
+        margin=dict(l=16,r=18,t=58,b=18),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='#FFFFFF',
+        font=dict(color=TEXT,size=12,family='Arial, sans-serif'),
+        title_font=dict(color=NAVY,size=17,family='Arial, sans-serif'),
+        title_x=0.01,
+        title_y=0.97,
+        hoverlabel=dict(
+            bgcolor='#FFFFFF',
+            bordercolor='#D9DDEA',
+            font_color=TEXT,
+            font_size=12,
+            font_family='Arial, sans-serif',
+        ),
+        hovermode='closest',
+        bargap=.28,
+        barcornerradius=7,
+        legend=dict(
+            orientation=legend,
+            yanchor='bottom',y=1.03,
+            xanchor='left',x=0,
+            bgcolor='rgba(255,255,255,0)',
+            font=dict(size=11,color=MUTED),
+        ),
+        modebar=dict(bgcolor='rgba(0,0,0,0)',color=MUTED),
+        transition=dict(duration=250,easing='cubic-in-out'),
+    )
+    fig.update_xaxes(
+        showgrid=False,
+        zeroline=False,
+        showline=False,
+        ticks='',
+        tickfont=dict(color=MUTED,size=10),
+        title_font=dict(color=MUTED,size=11),
+        automargin=True,
+    )
+    fig.update_yaxes(
+        gridcolor='#EEF0F5',
+        gridwidth=1,
+        zeroline=False,
+        showline=False,
+        ticks='',
+        tickfont=dict(color=MUTED,size=10),
+        title_font=dict(color=MUTED,size=11),
+        automargin=True,
+    )
+    return fig
+
+
+def kpi(label, value, note=''):
+    return f"<div class='kpi'><div class='kpi-label'>{label}</div><div class='kpi-value'>{value}</div><div class='kpi-note'>{note}</div></div>"
+
+
+def plot_crossfilter(fig, key, state_key=None, point_field='y'):
+    """Renderiza gráfico selecionável e grava um filtro em session_state."""
+    try:
+        ev = st.plotly_chart(
+            fig,
+            use_container_width=True,
+            on_select='rerun',
+            selection_mode='points',
+            key=key,
+            config={'displayModeBar':False,'responsive':True,'scrollZoom':False},
+        )
+        if state_key:
+            sel = getattr(ev, 'selection', None)
+            pts = getattr(sel, 'points', None) if sel is not None else None
+            if pts and isinstance(pts[0], dict):
+                val = pts[0].get(point_field)
+                if val is not None:
+                    val = str(val)
+                    if st.session_state.get(state_key) != val:
+                        st.session_state[state_key] = val
+                        st.rerun()
+        return ev
+    except Exception:
+        st.plotly_chart(fig, use_container_width=True, key=f'{key}_fallback', config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
+        return None
+
+
+@st.cache_data(show_spinner='Carregando bases pela primeira vez...', max_entries=2)
+def load(base_version):
+    # Sem TTL curto: a base fica em memória entre reruns e usuários.
+    # Quando o arquivo do Drive for atualizado, o botão "Atualizar bases agora"
+    # limpa este cache explicitamente.
+    v = ler_vendas(drive_bytes(VENDAS_ID))
+
+    aux = drive_bytes(AUX_ID)
+    aux_xls = _excel_file(aux)
+    cli = aux_xls.parse(
+        sheet_name='CLIENTES',
+        usecols=lambda col: str(col).strip() in {'COD_RCA','CODCLI','CLIENTE'},
+    )
+    rca = aux_xls.parse(
+        sheet_name='RCA',
+        usecols=lambda col: str(col).strip() in {'COD_RCA','RCA','SUPERVISOR','ATIVO'},
+    )
+    met = aux_xls.parse(
+        sheet_name='METAS',
+        usecols=lambda col: str(col).strip() in {'COD_RCA','MES','DEPARTAMENTO','META'},
+    )
+
+    v['COD_RCA'] = cod(v['Cod/Vend.'])
+    v['CODCLI'] = cod(v['Cod/Cliente'])
+    v['CODPROD'] = cod(v['Cod/Produto'])
+    v['PRODUTO_NOME'] = (
+        v['Cod/Produto'].astype(str)
+        .str.replace(r'^\s*\d+\s*-\s*', '', regex=True)
+        .str.strip()
+    )
+    v.loc[v['PRODUTO_NOME'].isin(['','nan','None']), 'PRODUTO_NOME'] = v.loc[
+        v['PRODUTO_NOME'].isin(['','nan','None']), 'CODPROD'
+    ].map(lambda x: f'Produto {int(x)}' if pd.notna(x) else 'Sem produto')
+    v['DATA_FAT'] = dt(v['Data Faturamento'])
+    v['VALOR'] = pd.to_numeric(v['Pedidos Enviados'], errors='coerce').fillna(0)
+    v['MARGEM_PCT'] = pd.to_numeric(v.get('% Margem'), errors='coerce')
+    v['DESCONTO_VALOR'] = pd.to_numeric(v.get('Vl Desconto'), errors='coerce').fillna(0)
+    v['DESCONTO_PCT_ORIG'] = pd.to_numeric(v.get('% Desconto'), errors='coerce')
+    v['MARGEM_PESO'] = v['MARGEM_PCT'] * v['VALOR']
+    v['BASE_BRUTA_DESC'] = v['VALOR'] + v['DESCONTO_VALOR']
+    v['FATURADO'] = v['DATA_FAT'].notna() & v['Posição'].astype(str).str.strip().str.upper().eq('FECHADO')
+    v['MES_FAT'] = v['DATA_FAT'].dt.to_period('M').astype('string')
+
+    for d in (cli, rca, met):
+        d['COD_RCA'] = pd.to_numeric(d['COD_RCA'], errors='coerce').astype('Int64')
+    cli['CODCLI'] = pd.to_numeric(cli['CODCLI'], errors='coerce').astype('Int64')
+    rca['ATIVO'] = rca['ATIVO'].astype(str).str.upper().str.strip()
+    met['MES'] = met['MES'].astype(str).str[:7]
+    met['META'] = pd.to_numeric(met['META'], errors='coerce').fillna(0)
+
+    h = rca[['COD_RCA','RCA','SUPERVISOR','ATIVO']].drop_duplicates('COD_RCA')
+    v = v.merge(h, on='COD_RCA', how='left')
+    return v, cli, rca, met
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_nordeste_geojson():
+    features = []
+    for uf, code in NE_CODES.items():
+        url = f'https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-{code}-mun.json'
+        r = requests.get(url, timeout=120)
+        r.raise_for_status()
+        data = r.json()
+        for ft in data.get('features', []):
+            props = ft.setdefault('properties', {})
+            # O GeoJSON usado pelo projeto traz o município 2306306 como
+            # "Itapagé". O nome oficial do IBGE é "Itapajé".
+            if str(props.get('id', '')).strip() == '2306306':
+                props['name'] = 'Itapajé'
+                props['description'] = 'Itapajé'
+            name = props.get('name', '')
+            props['uf'] = uf
+            props['key'] = f'{uf}|{norm(name)}'
+            features.append(ft)
+    return {'type':'FeatureCollection','features':features}
+
+
+if st.sidebar.button(
+    '↻ Atualizar bases agora',
+    use_container_width=True,
+    help='Use somente quando os arquivos do Drive forem substituídos ou atualizados.'
+):
+    load.clear()
+    st.rerun()
+
+try:
+    vendas, clientes, rcas, metas = load(BASE_VENDAS_VERSAO)
+except Exception as e:
+    st.error(str(e)); st.stop()
+
+# Navegação principal no menu lateral.
+_nav_paginas = ['Visão Geral','Carteira','Mix e Oportunidades','Cidades','Gestão de Metas']
+_nav_atual = st.session_state.get('dashboard_section','Visão Geral')
+if _nav_atual not in _nav_paginas[:-1]:
+    _nav_atual = 'Visão Geral'
+
+st.sidebar.markdown(
+    "<div style='font-size:11px;font-weight:800;letter-spacing:.08em;color:#737A8C;margin:2px 0 5px 2px;'>PAINEL</div>",
+    unsafe_allow_html=True,
+)
+pagina_dashboard = st.sidebar.radio(
+    'Navegação',
+    _nav_paginas,
+    index=_nav_paginas.index(_nav_atual),
+    label_visibility='collapsed',
+    key='main_sidebar_navigation',
+    format_func=nav_format,
+)
+if pagina_dashboard == 'Gestão de Metas':
+    st.session_state.pop('gm_sidebar_navigation', None)
+    st.switch_page('pages/2_Gestao_de_Metas.py')
+else:
+    st.session_state['dashboard_section'] = pagina_dashboard
+
+st.sidebar.divider()
+
+# Cabeçalho no padrão das plataformas Políticas / Rebanho Academy.
+_subtitulos_pagina = {
+    'Visão Geral': 'Resumo executivo • faturamento, meta, ritmo e pontos de atenção',
+    'Carteira': 'Saúde da carteira • novos, inativos, recuperação e oportunidades',
+    'Mix e Oportunidades': 'Produtos • mix, concentração, desempenho e venda cruzada',
+    'Cidades': 'Cobertura comercial • evolução, cidades críticas, produtos e clientes',
+}
+render_app_header(
+    pagina_dashboard,
+    _subtitulos_pagina.get(pagina_dashboard, 'Gestão comercial • dados, análises e decisões')
+)
+
+ativos = rcas[rcas['ATIVO'].eq('S')].copy()
+meses = sorted(set(vendas.loc[vendas.FATURADO,'MES_FAT'].dropna().astype(str)) | set(metas.MES.dropna().astype(str)), reverse=True)
+mes = st.sidebar.selectbox('Mês de análise', meses, index=meses.index('2026-08') if '2026-08' in meses else 0, format_func=mes_nome)
+
+sups = sorted(ativos.SUPERVISOR.dropna().unique())
+ss = st.sidebar.multiselect('Supervisor', sups, default=[], placeholder='Todos os supervisores')
+ss_eff = ss or sups
+ro = sorted(ativos.loc[ativos.SUPERVISOR.isin(ss_eff),'RCA'].dropna().unique())
+rs = st.sidebar.multiselect('RCA', ro, default=[], placeholder='Todos os RCAs')
+rs_eff = rs or ro
+
+deps = sorted(set(vendas.loc[vendas.MES_FAT.eq(mes),'DEPARTAMENTO'].dropna().astype(str)) | set(metas.loc[metas.MES.eq(mes),'DEPARTAMENTO'].dropna().astype(str)))
+ds = st.sidebar.multiselect('Departamento', deps, default=[], placeholder='Todos os departamentos')
+ds_eff = ds or deps
+st.sidebar.caption('Seleções vazias significam “Todos”.')
+
+cods = set(ativos.loc[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff),'COD_RCA'].dropna())
+fat = vendas[vendas.FATURADO & vendas.MES_FAT.eq(mes) & vendas.COD_RCA.isin(cods) & vendas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = metas[metas.MES.eq(mes) & metas.COD_RCA.isin(cods) & metas.DEPARTAMENTO.astype(str).isin(ds_eff)].copy()
+meta = meta.merge(ativos[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA'), on='COD_RCA', how='left')
+
+# Cross-filter por clique: Supervisor, RCA e Departamento.
+xf_sup = st.session_state.get('xf_supervisor')
+xf_rca = st.session_state.get('xf_rca')
+xf_dep = st.session_state.get('xf_departamento')
+
+if xf_sup and xf_sup not in set(ss_eff):
+    st.session_state.pop('xf_supervisor', None); xf_sup = None
+if xf_rca and xf_rca not in set(rs_eff):
+    st.session_state.pop('xf_rca', None); xf_rca = None
+if xf_dep and xf_dep not in set(ds_eff):
+    st.session_state.pop('xf_departamento', None); xf_dep = None
+
+if xf_sup:
+    fat = fat[fat.SUPERVISOR.astype(str).eq(xf_sup)].copy()
+    meta = meta[meta.SUPERVISOR.astype(str).eq(xf_sup)].copy()
+if xf_rca:
+    fat = fat[fat.RCA.astype(str).eq(xf_rca)].copy()
+    meta = meta[meta.RCA.astype(str).eq(xf_rca)].copy()
+if xf_dep:
+    fat = fat[fat.DEPARTAMENTO.astype(str).eq(xf_dep)].copy()
+    meta = meta[meta.DEPARTAMENTO.astype(str).eq(xf_dep)].copy()
+
+ativos_xf = [x for x in [('Supervisor',xf_sup),('RCA',xf_rca),('Departamento',xf_dep)] if x[1]]
+if ativos_xf:
+    cc1, cc2 = st.columns([6,1])
+    with cc1:
+        chips = ''.join(f"<span class='filter-chip'>{k}: {v}</span>" for k,v in ativos_xf)
+        st.markdown(chips, unsafe_allow_html=True)
+    with cc2:
+        if st.button('Limpar cliques', use_container_width=True):
+            for k in ['xf_supervisor','xf_rca','xf_departamento']:
+                st.session_state.pop(k, None)
+            st.rerun()
+
+F = fat.VALOR.sum(); M = meta.META.sum(); P = fat.NUMPED.nunique(); C = fat.CODCLI.nunique(); A = F/M*100 if M else pd.NA
+base = ativos[ativos.SUPERVISOR.isin(ss_eff) & ativos.RCA.isin(rs_eff)][['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA')
+if xf_sup: base = base[base.SUPERVISOR.astype(str).eq(xf_sup)]
+if xf_rca: base = base[base.RCA.astype(str).eq(xf_rca)]
+fr = fat.groupby('COD_RCA').agg(
+    FATURAMENTO=('VALOR','sum'), PEDIDOS=('NUMPED','nunique'), POSITIVADOS=('CODCLI','nunique'),
+    MARGEM_PESO=('MARGEM_PESO','sum'), DESCONTO_VALOR=('DESCONTO_VALOR','sum'), BASE_BRUTA_DESC=('BASE_BRUTA_DESC','sum')
+).reset_index()
+fr['MARGEM_CALC'] = fr['MARGEM_PESO'].div(fr['FATURAMENTO'].replace(0,pd.NA))
+fr['DESCONTO_PCT_CALC'] = -fr['DESCONTO_VALOR'].div(fr['BASE_BRUTA_DESC'].replace(0,pd.NA))*100
+mr = meta.groupby('COD_RCA',as_index=False).META.sum()
+
+if fat.empty:
+    mix = pd.DataFrame(columns=['COD_RCA','MIX_PRODUTOS_CLIENTE'])
+    mix_geral = 0
+else:
+    pc = fat.groupby(['COD_RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique')).reset_index()
+    mix = pc.groupby('COD_RCA').agg(MIX_PRODUTOS_CLIENTE=('PRODUTOS','mean')).reset_index()
+    mix_geral = pc.PRODUTOS.mean()
+
+r = base.merge(fr,on='COD_RCA',how='left').merge(mr,on='COD_RCA',how='left').merge(mix,on='COD_RCA',how='left').fillna({'FATURAMENTO':0,'PEDIDOS':0,'POSITIVADOS':0,'META':0,'MIX_PRODUTOS_CLIENTE':0,'DESCONTO_VALOR':0})
+r['ATINGIMENTO'] = r.FATURAMENTO.div(r.META.replace(0,pd.NA))*100
+r['TICKET'] = r.FATURAMENTO.div(r.PEDIDOS.replace(0,pd.NA))
+
+hist = vendas[vendas.FATURADO & vendas.CODCLI.notna()].copy()
+primeira = hist.groupby('CODCLI',as_index=False)['DATA_FAT'].min().rename(columns={'DATA_FAT':'PRIMEIRA_COMPRA'})
+novos_mes = fat[['COD_RCA','CODCLI']].drop_duplicates().merge(primeira,on='CODCLI',how='left')
+novos_mes['NOVO'] = novos_mes['PRIMEIRA_COMPRA'].dt.to_period('M').astype('string').eq(mes)
+nr = novos_mes.groupby('COD_RCA')['NOVO'].sum().rename('NOVOS').reset_index()
+
+fim = pd.Period(mes).end_time.normalize()
+vida = hist[hist['DATA_FAT'].le(fim)].groupby('CODCLI',as_index=False).DATA_FAT.max().rename(columns={'DATA_FAT':'ULTIMA'})
+
+_cols_car = ['CODCLI','COD_RCA'] + (['CLIENTE'] if 'CLIENTE' in clientes.columns else [])
+car = clientes[clientes.COD_RCA.isin(cods)][_cols_car].drop_duplicates('CODCLI').merge(vida,on='CODCLI',how='left')
+if xf_rca:
+    cod_xf = set(base.COD_RCA.dropna())
+    car = car[car.COD_RCA.isin(cod_xf)].copy()
+
+# Indicadores oficiais da Ficha Comercial:
+# Curto prazo = completou 3 meses sem comprar e comprou nos últimos 6 meses.
+# Longo prazo = completou 3 meses sem comprar e comprou no último ano.
+# Pela definição literal da ficha, o Longo Prazo inclui os clientes do Curto Prazo.
+_lim3 = fim - pd.DateOffset(months=3)
+_lim6 = fim - pd.DateOffset(months=6)
+_lim12 = fim - pd.DateOffset(months=12)
+car['INATIVO_CURTO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim6)
+car['INATIVO_LONGO'] = car['ULTIMA'].notna() & car['ULTIMA'].le(_lim3) & car['ULTIMA'].ge(_lim12)
+car['DIAS_SEM_COMPRA'] = (fim - car['ULTIMA']).dt.days
+
+_fat12 = (
+    hist[hist['DATA_FAT'].between(_lim12,fim,inclusive='both')]
+    .groupby('CODCLI',as_index=False)['VALOR'].sum()
+    .rename(columns={'VALOR':'FAT_12M'})
+)
+car = car.merge(_fat12,on='CODCLI',how='left')
+car['FAT_12M'] = pd.to_numeric(car['FAT_12M'],errors='coerce').fillna(0)
+car = car.merge(ativos[['COD_RCA','RCA']].drop_duplicates('COD_RCA'),on='COD_RCA',how='left')
+
+ir_curto = car.groupby('COD_RCA')['INATIVO_CURTO'].sum().rename('INATIVO_CURTO').reset_index()
+ir_longo = car.groupby('COD_RCA')['INATIVO_LONGO'].sum().rename('INATIVO_LONGO').reset_index()
+r = (
+    r.merge(nr,on='COD_RCA',how='left')
+     .merge(ir_curto,on='COD_RCA',how='left')
+     .merge(ir_longo,on='COD_RCA',how='left')
+     .fillna({'NOVOS':0,'INATIVO_CURTO':0,'INATIVO_LONGO':0})
+)
+
+novos_total = int(r.NOVOS.sum())
+inativos_curto_total = int(r.INATIVO_CURTO.sum())
+inativos_longo_total = int(r.INATIVO_LONGO.sum())
+
+if pagina_dashboard == 'Visão Geral':
+    _ultima_data_visao = fat['DATA_FAT'].max() if not fat.empty else pd.NaT
+    _atualizado_visao = (
+        f"Atualizado até {_ultima_data_visao.strftime('%d/%m/%Y')}"
+        if pd.notna(_ultima_data_visao) else ''
+    )
+    st.markdown(
+        f"<div style='display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:2px 0 10px 0;'>"
+        f"<div style='font-size:25px;font-weight:800;color:{NAVY};letter-spacing:-.02em;'>Visão Geral</div>"
+        f"<div style='font-size:11px;color:{MUTED};'>{_atualizado_visao}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+k1,k2,k3,k4,k5,k6 = st.columns(6)
+k1.markdown(kpi('Faturamento',brl_compacto(F)),unsafe_allow_html=True)
+k2.markdown(kpi('Meta',brl_compacto(M)),unsafe_allow_html=True)
+k3.markdown(kpi('Atingimento',pct(A)),unsafe_allow_html=True)
+k4.markdown(kpi('Clientes positivados',nint(C)),unsafe_allow_html=True)
+k5.markdown(kpi('Ticket médio',brl_compacto(F/P if P else 0)),unsafe_allow_html=True)
+k6.markdown(kpi('Mix médio',dec(mix_geral)),unsafe_allow_html=True)
+
+# -------------------------------------------------------------------------
+# LEITURA EXECUTIVA E PONTOS DE ATENÇÃO AUTOMÁTICOS
+# -------------------------------------------------------------------------
+# Quando existe um único mês/ano selecionado, o painel compara o ritmo de
+# faturamento com o avanço do mês. Dias úteis aqui significam segunda a
+# sexta-feira; feriados não são descontados.
+_ano_mes_exec = None
+try:
+    if 'ano_sel' in globals() and 'mes_sel' in globals():
+        if ano_sel != 'Todos' and len(mes_sel) == 1:
+            _ano_mes_exec = (int(ano_sel), int(meses_nome[mes_sel[0]]))
+    elif 'mes' in globals():
+        _p_exec = pd.Period(mes)
+        _ano_mes_exec = (_p_exec.year, _p_exec.month)
+except Exception:
+    _ano_mes_exec = None
+
+_exec = {
+    'projecao': pd.NA, 'gap_proj': pd.NA, 'ritmo': pd.NA,
+    'necessario_dia': pd.NA, 'crescimento_a1': pd.NA,
+    'rcas_em_ritmo': 0, 'rcas_com_meta': 0, 'corte': None,
+    'dias_passados': 0, 'dias_total': 0, 'dias_restantes': 0,
+}
+_atencoes = []
+_oportunidades = []
+
+if _ano_mes_exec:
+    _ano_exec, _mes_exec = _ano_mes_exec
+    _inicio_exec = pd.Timestamp(year=_ano_exec, month=_mes_exec, day=1)
+    _fim_exec = _inicio_exec + pd.offsets.MonthEnd(0)
+    _hoje_exec = pd.Timestamp.now(tz='America/Fortaleza').tz_localize(None).normalize()
+    _ontem_exec = _hoje_exec - pd.Timedelta(days=1)
+    _mes_corrente = (_ano_exec == _hoje_exec.year and _mes_exec == _hoje_exec.month)
+
+    # O comparativo respeita exatamente o escopo atual de RCA/Departamento.
+    _cod_exec = set(pd.to_numeric(base['COD_RCA'], errors='coerce').dropna().astype('Int64'))
+    _dep_exec = [str(xf_dep)] if xf_dep else [str(x) for x in ds_eff]
+    _cmp = vendas[
+        vendas['FATURADO']
+        & vendas['COD_RCA'].isin(_cod_exec)
+        & vendas['DEPARTAMENTO'].astype(str).isin(_dep_exec)
+    ].copy()
+
+    _max_data = _cmp.loc[
+        _cmp['DATA_FAT'].between(_inicio_exec, _fim_exec, inclusive='both'),
+        'DATA_FAT'
+    ].max()
+    if _mes_corrente:
+        _corte_exec = min(_ontem_exec, _fim_exec)
+        if pd.notna(_max_data):
+            _corte_exec = min(_corte_exec, pd.Timestamp(_max_data).normalize())
+    else:
+        _corte_exec = _fim_exec
+
+    _exec['corte'] = _corte_exec
+    _atual_exec = _cmp[
+        _cmp['DATA_FAT'].between(_inicio_exec, _corte_exec, inclusive='both')
+    ].copy() if pd.notna(_corte_exec) else _cmp.iloc[0:0].copy()
+    _fat_corte = float(_atual_exec['VALOR'].sum())
+
+    _inicio_a1 = _inicio_exec - pd.DateOffset(years=1)
+    _corte_a1 = _corte_exec - pd.DateOffset(years=1) if pd.notna(_corte_exec) else _inicio_a1
+    _fat_a1 = float(_cmp.loc[
+        _cmp['DATA_FAT'].between(_inicio_a1, _corte_a1, inclusive='both'),
+        'VALOR'
+    ].sum())
+    _exec['crescimento_a1'] = (_fat_corte / _fat_a1 - 1) * 100 if _fat_a1 else pd.NA
+
+    if _mes_corrente and pd.notna(_corte_exec):
+        _dias_total = len(pd.bdate_range(_inicio_exec, _fim_exec))
+        _dias_passados = len(pd.bdate_range(_inicio_exec, _corte_exec))
+        _dias_restantes = max(_dias_total - _dias_passados, 0)
+        _fracao_tempo = (_dias_passados / _dias_total) if _dias_total else 0
+
+        _exec.update({
+            'dias_passados': _dias_passados,
+            'dias_total': _dias_total,
+            'dias_restantes': _dias_restantes,
+        })
+
+        if _dias_passados:
+            _proj = (_fat_corte / _dias_passados) * _dias_total
+            _exec['projecao'] = _proj
+            _exec['gap_proj'] = float(M) - _proj if M else pd.NA
+        if M and _fracao_tempo:
+            _esperado_hoje = float(M) * _fracao_tempo
+            _exec['ritmo'] = (_fat_corte / _esperado_hoje) * 100 if _esperado_hoje else pd.NA
+        if M and _dias_restantes > 0:
+            _exec['necessario_dia'] = max(float(M) - _fat_corte, 0) / _dias_restantes
+        elif M and _fat_corte >= float(M):
+            _exec['necessario_dia'] = 0.0
+
+        # Projeção por RCA.
+        _real_rca = _atual_exec.groupby('COD_RCA', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO_CORTE'})
+        _meta_rca = meta.groupby('COD_RCA', as_index=False)['META'].sum()
+        _rca_exec = base[['COD_RCA','RCA','SUPERVISOR']].drop_duplicates('COD_RCA').merge(
+            _real_rca, on='COD_RCA', how='left'
+        ).merge(_meta_rca, on='COD_RCA', how='left').fillna({'REALIZADO_CORTE':0,'META':0})
+        _rca_exec = _rca_exec[_rca_exec['META'].gt(0)].copy()
+        if not _rca_exec.empty and _dias_passados:
+            _rca_exec['PROJECAO'] = _rca_exec['REALIZADO_CORTE'] / _dias_passados * _dias_total
+            _rca_exec['GAP_PROJ'] = _rca_exec['META'] - _rca_exec['PROJECAO']
+            _rca_exec['RITMO'] = _rca_exec['REALIZADO_CORTE'].div((_rca_exec['META'] * _fracao_tempo).replace(0,pd.NA)) * 100
+            _exec['rcas_com_meta'] = int(len(_rca_exec))
+            _exec['rcas_em_ritmo'] = int((_rca_exec['RITMO'] >= 100).sum())
+
+            _riscos = _rca_exec[_rca_exec['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
+            if not _riscos.empty:
+                _rr = _riscos.iloc[0]
+                _need_rca = max(float(_rr['META']) - float(_rr['REALIZADO_CORTE']), 0)
+                _need_rca_dia = _need_rca / _dias_restantes if _dias_restantes else 0
+                _atencoes.append((
+                    'RCA com maior gap projetado',
+                    f"{_rr['RCA']} projeta fechamento de {brl(_rr['PROJECAO'])}, "
+                    f"com gap de {brl(_rr['GAP_PROJ'])}. "
+                    + (f"Precisa de aproximadamente {brl(_need_rca_dia)} por dia útil restante." if _dias_restantes else "")
+                ))
+
+            _destaques = _rca_exec[_rca_exec['PROJECAO'].gt(_rca_exec['META'] * 1.03)].sort_values('PROJECAO', ascending=False)
+            if not _destaques.empty:
+                _rd = _destaques.iloc[0]
+                _oportunidades.append((
+                    'RCA acima da trajetória',
+                    f"{_rd['RCA']} está em ritmo para fechar próximo de {brl(_rd['PROJECAO'])}, "
+                    f"acima da meta de {brl(_rd['META'])}. Vale identificar os clientes e linhas que estão puxando esse resultado."
+                ))
+
+        # Projeção por departamento e participação no gap.
+        _real_dep = _atual_exec.groupby('DEPARTAMENTO', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO_CORTE'})
+        _meta_dep = meta.groupby('DEPARTAMENTO', as_index=False)['META'].sum()
+        _dep_exec_df = _meta_dep.merge(_real_dep, on='DEPARTAMENTO', how='outer').fillna(0)
+        if not _dep_exec_df.empty and _dias_passados:
+            _dep_exec_df['PROJECAO'] = _dep_exec_df['REALIZADO_CORTE'] / _dias_passados * _dias_total
+            _dep_exec_df['GAP_PROJ'] = _dep_exec_df['META'] - _dep_exec_df['PROJECAO']
+            _gaps_pos = _dep_exec_df[_dep_exec_df['GAP_PROJ'].gt(0)].copy()
+            _gap_total_dep = float(_gaps_pos['GAP_PROJ'].sum())
+            if not _gaps_pos.empty:
+                _dr = _gaps_pos.sort_values('GAP_PROJ', ascending=False).iloc[0]
+                _part_gap = float(_dr['GAP_PROJ']) / _gap_total_dep * 100 if _gap_total_dep else 0
+                _atencoes.append((
+                    'Departamento que mais pressiona a meta',
+                    f"{_dr['DEPARTAMENTO']} concentra {pct(_part_gap)} do gap positivo projetado entre departamentos "
+                    f"({brl(_dr['GAP_PROJ'])})."
+                ))
+
+            _dep_acima = _dep_exec_df[_dep_exec_df['PROJECAO'].gt(_dep_exec_df['META'] * 1.03)].sort_values('PROJECAO', ascending=False)
+            if not _dep_acima.empty:
+                _do = _dep_acima.iloc[0]
+                _oportunidades.append((
+                    'Departamento com tração',
+                    f"{_do['DEPARTAMENTO']} projeta {brl(_do['PROJECAO'])} para uma meta de {brl(_do['META'])}. "
+                    "Use o detalhamento por RCA para identificar onde replicar o desempenho."
+                ))
+
+        if pd.notna(_exec['gap_proj']) and float(_exec['gap_proj']) > 0:
+            _atencoes.insert(0, (
+                'Risco de fechamento abaixo da meta',
+                f"No ritmo dos dias úteis, a projeção é {brl(_exec['projecao'])}, "
+                f"com gap aproximado de {brl(_exec['gap_proj'])}. "
+                + (f"O recorte precisa gerar {brl(_exec['necessario_dia'])} por dia útil restante para atingir a meta." if pd.notna(_exec['necessario_dia']) else "")
+            ))
+        elif pd.notna(_exec['gap_proj']) and float(_exec['gap_proj']) <= 0:
+            _oportunidades.insert(0, (
+                'Ritmo suficiente para a meta',
+                f"A projeção atual é {brl(_exec['projecao'])}, "
+                f"{brl(abs(float(_exec['gap_proj'])))} acima da meta do recorte."
+            ))
+
+    # Comparativo com o mesmo período do ano anterior.
+    if pd.notna(_exec['crescimento_a1']):
+        if float(_exec['crescimento_a1']) < -3:
+            _atencoes.append((
+                'Queda frente ao mesmo período do ano anterior',
+                f"O faturamento até {_corte_exec.strftime('%d/%m')} está {pct(abs(float(_exec['crescimento_a1'])))} abaixo do mesmo período de {_ano_exec-1}."
+            ))
+        elif float(_exec['crescimento_a1']) > 3:
+            _oportunidades.append((
+                'Crescimento sobre o ano anterior',
+                f"O recorte está {pct(float(_exec['crescimento_a1']))} acima do mesmo período de {_ano_exec-1}. "
+                "Vale identificar quais RCAs, departamentos e clientes sustentam esse avanço."
+            ))
+
+# Sinais adicionais de carteira e mix.
+# Usa o curto prazo como alerta operacional, pois é a faixa mais recuperável.
+if inativos_curto_total > novos_total and inativos_curto_total > 0:
+    _atencoes.append((
+        'Pressão na carteira',
+        f"Há {nint(inativos_curto_total)} clientes inativos de curto prazo contra {nint(novos_total)} novos no recorte. "
+        "Priorize os clientes de maior histórico antes que avancem para uma inatividade mais longa."
+    ))
+elif novos_total > inativos_curto_total and novos_total > 0:
+    _oportunidades.append((
+        'Renovação positiva da carteira',
+        f"O período registra {nint(novos_total)} novos clientes contra {nint(inativos_curto_total)} inativos de curto prazo."
+    ))
+
+if inativos_longo_total > 0:
+    _atencoes.append((
+        'Base inativa de longo prazo',
+        f"Há {nint(inativos_longo_total)} clientes na faixa oficial de 3 a 12 meses sem compra. "
+        "Use a tela Carteira para priorizar os de maior faturamento histórico."
+    ))
+
+if not r.empty and r['MIX_PRODUTOS_CLIENTE'].notna().any():
+    _mix_mediana = float(r.loc[r['MIX_PRODUTOS_CLIENTE'].gt(0), 'MIX_PRODUTOS_CLIENTE'].median()) if r['MIX_PRODUTOS_CLIENTE'].gt(0).any() else 0
+    _mix_cands = r[(r['POSITIVADOS'] >= 3) & r['MIX_PRODUTOS_CLIENTE'].gt(0)].sort_values('MIX_PRODUTOS_CLIENTE')
+    if _mix_mediana and not _mix_cands.empty:
+        _mx = _mix_cands.iloc[0]
+        if float(_mx['MIX_PRODUTOS_CLIENTE']) < _mix_mediana * 0.80:
+            _oportunidades.append((
+                'Oportunidade de aumento de mix',
+                f"{_mx['RCA']} tem mix médio de {dec(_mx['MIX_PRODUTOS_CLIENTE'])} produtos por cliente, "
+                f"abaixo da mediana do grupo ({dec(_mix_mediana)}). Há espaço para venda cruzada na carteira já positivada."
+            ))
+
+if pagina_dashboard == 'Visão Geral':
+    # 1) Indicadores de acompanhamento — sem repetir os KPIs globais do topo.
+    cx1,cx2,cx3,cx4,cx5,cx6 = st.columns(6)
+    cx1.markdown(kpi(
+        'Projeção fechamento',
+        brl_compacto(_exec['projecao']) if pd.notna(_exec['projecao']) else '—',
+        'Estimativa no ritmo atual'
+    ),unsafe_allow_html=True)
+    cx2.markdown(kpi(
+        'Gap projetado',
+        brl_compacto(_exec['gap_proj']) if pd.notna(_exec['gap_proj']) else '—',
+        'Meta menos projeção'
+    ),unsafe_allow_html=True)
+    cx3.markdown(kpi(
+        'Ritmo da meta',
+        pct(_exec['ritmo']) if pd.notna(_exec['ritmo']) else '—',
+        '100% = ritmo necessário'
+    ),unsafe_allow_html=True)
+    cx4.markdown(kpi(
+        'Necessário / dia útil',
+        brl_compacto(_exec['necessario_dia']) if pd.notna(_exec['necessario_dia']) else '—',
+        f"{_exec['dias_restantes']} dias úteis restantes" if _exec['dias_restantes'] else '—'
+    ),unsafe_allow_html=True)
+    cx5.markdown(kpi(
+        'Crescimento x A-1',
+        pct(_exec['crescimento_a1']) if pd.notna(_exec['crescimento_a1']) else '—',
+        'Mesmo período do ano anterior'
+    ),unsafe_allow_html=True)
+    _rca_ritmo_txt = f"{_exec['rcas_em_ritmo']}/{_exec['rcas_com_meta']}" if _exec['rcas_com_meta'] else '—'
+    cx6.markdown(kpi(
+        'RCAs em ritmo',
+        _rca_ritmo_txt,
+        'Ritmo ≥ 100%'
+    ),unsafe_allow_html=True)
+
+    # 2) Evolução mensal do faturamento no ano selecionado.
+    # Ignora somente o filtro de mês; mantém Supervisor, RCA e Departamento.
+    if 'ano_sel' in globals() and ano_sel != 'Todos':
+        _ano_evolucao = int(ano_sel)
+        _cods_evolucao = set(pd.to_numeric(base['COD_RCA'],errors='coerce').dropna().astype('Int64'))
+        _deps_evolucao = [str(xf_dep)] if xf_dep else [str(x) for x in ds_eff]
+
+        _evo_total = vendas[
+            vendas['FATURADO']
+            & vendas['DATA_FAT'].dt.year.eq(_ano_evolucao)
+            & vendas['COD_RCA'].isin(_cods_evolucao)
+            & vendas['DEPARTAMENTO'].astype(str).isin(_deps_evolucao)
+        ].copy()
+
+        if not _evo_total.empty:
+            _evo_total['MES_NUM'] = _evo_total['DATA_FAT'].dt.month
+            _evo_mes = (
+                _evo_total.groupby('MES_NUM',as_index=False)
+                .agg(
+                    FATURAMENTO=('VALOR','sum'),
+                    CLIENTES=('CODCLI','nunique'),
+                    PEDIDOS=('NUMPED','nunique')
+                )
+                .sort_values('MES_NUM')
+            )
+
+            _ultimo_mes_evo = int(_evo_total['DATA_FAT'].dt.month.max())
+            _grade_meses = pd.DataFrame({'MES_NUM':list(range(1,_ultimo_mes_evo+1))})
+            _evo_mes = _grade_meses.merge(_evo_mes,on='MES_NUM',how='left')
+            for _col in ['FATURAMENTO','CLIENTES','PEDIDOS']:
+                _evo_mes[_col] = pd.to_numeric(_evo_mes[_col],errors='coerce').fillna(0)
+
+            _meses_abrev = {
+                1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',
+                7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'
+            }
+            _evo_mes['MES'] = _evo_mes['MES_NUM'].map(_meses_abrev)
+
+            fig_evo_total = go.Figure()
+            fig_evo_total.add_trace(go.Scatter(
+                x=_evo_mes['MES'],
+                y=_evo_mes['FATURAMENTO'],
+                mode='lines+markers+text',
+                name='Faturamento',
+                line=dict(color='#1E2655',width=3),
+                marker=dict(size=8,color='#1E2655',line=dict(color='white',width=2)),
+                text=_evo_mes['FATURAMENTO'].map(brl_compacto),
+                textposition='top center',
+                customdata=_evo_mes[['CLIENTES','PEDIDOS']].to_numpy(),
+                hovertemplate=(
+                    '<b>%{x}/'+str(_ano_evolucao)+'</b><br>'
+                    'Faturamento: R$ %{y:,.2f}<br>'
+                    'Clientes: %{customdata[0]:.0f}<br>'
+                    'Pedidos: %{customdata[1]:.0f}'
+                    '<extra></extra>'
+                )
+            ))
+            fig_evo_total.update_layout(
+                title=f'Faturamento mês a mês — {_ano_evolucao}',
+                height=330,
+                showlegend=False,
+                margin=dict(l=10,r=16,t=58,b=18),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='#FFFFFF',
+                xaxis=dict(title='',showgrid=False,zeroline=False),
+                yaxis=dict(title='',tickprefix='R$ ',tickformat='.2s',showgrid=True,gridcolor='#EEF0F5',zeroline=False),
+            )
+            st.plotly_chart(
+                fig_evo_total,
+                use_container_width=True,
+                key=f'evolucao_total_{_ano_evolucao}',
+                config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+            )
+        else:
+            st.info(f'Sem faturamento disponível para {_ano_evolucao} no recorte selecionado.')
+
+    # 3) Linha de progresso: realizado, esperado no dia, projeção e meta.
+    if _ano_mes_exec and pd.notna(_exec['projecao']) and M:
+        _fracao_exec = (_exec['dias_passados'] / _exec['dias_total']) if _exec['dias_total'] else 0
+        _esperado_exec = float(M) * _fracao_exec
+        _limite_exec = max(float(M), float(_exec['projecao']), float(F), 1.0) * 1.08
+        fig_exec = go.Figure()
+        fig_exec.add_trace(go.Bar(
+            x=[float(F)], y=['Período'], orientation='h', name='Realizado',
+            marker=dict(color='#1E2655',line=dict(width=0)),
+            width=.34,
+            hovertemplate='<b>Realizado</b><br>R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_exec.add_trace(go.Scatter(
+            x=[_esperado_exec], y=['Período'], mode='markers', name='Esperado hoje',
+            marker=dict(size=14, symbol='diamond', color='#E5A43A', line=dict(color='white',width=2)),
+            hovertemplate='Esperado hoje: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_exec.add_trace(go.Scatter(
+            x=[float(_exec['projecao'])], y=['Período'], mode='markers', name='Projeção',
+            marker=dict(size=17, symbol='circle', color='#2E8B57' if float(_exec['projecao']) >= float(M) else '#C94A55', line=dict(color='white',width=2)),
+            hovertemplate='Projeção: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_exec.add_vline(x=float(M), line_width=3, line_dash='dash', line_color='#2D396F',
+                           annotation_text='Meta', annotation_position='top')
+        fig_exec.update_layout(
+            title='Trajetória do mês',
+            barmode='overlay',
+            height=230,
+            xaxis=dict(range=[0,_limite_exec], tickprefix='R$ ', tickformat='.2s', showgrid=True, gridcolor='#EEF0F5', zeroline=False),
+            yaxis=dict(showticklabels=False,showgrid=False,zeroline=False),
+            margin=dict(l=10,r=14,t=62,b=14),
+            legend={'orientation':'h','yanchor':'bottom','y':1.03,'x':0},
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='#FFFFFF',
+        )
+        st.plotly_chart(
+            fig_exec,
+            use_container_width=True,
+            key='cockpit_trajetoria',
+            config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+        )
+
+    # 4) Central de prioridades — cards executivos e acionáveis.
+    st.markdown('### Pontos de atenção do período')
+    st.caption('Os maiores impactos do recorte, resumidos para decisão rápida.')
+
+    _prioridades = []
+
+    if '_rca_exec' in globals() and isinstance(_rca_exec, pd.DataFrame) and not _rca_exec.empty:
+        _risco_rca = _rca_exec[_rca_exec['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
+        if not _risco_rca.empty:
+            _p = _risco_rca.iloc[0]
+            _need_rca = max(float(_p['META']) - float(_p['REALIZADO_CORTE']), 0)
+            _need_dia = (_need_rca / _exec['dias_restantes']) if _exec['dias_restantes'] else 0
+            _prioridades.append({
+                'nivel':'Crítico',
+                'classe':'critical',
+                'icone':'●',
+                'kicker':'RCA',
+                'titulo':str(_p['RCA']),
+                'label':'Gap projetado',
+                'valor':brl_compacto(_p['GAP_PROJ']),
+                'secundario':f"<strong>Projeção:</strong> {brl_compacto(_p['PROJECAO'])} &nbsp;·&nbsp; <strong>Meta:</strong> {brl_compacto(_p['META'])}",
+                'rodape':(
+                    f"Necessita aproximadamente {brl_compacto(_need_dia)} por dia útil restante."
+                    if _exec['dias_restantes'] else
+                    'Maior gap projetado entre os RCAs do recorte.'
+                ),
+                'tipo':'RCA',
+                'alvo':str(_p['RCA']),
+                'botao':'Ver análise do RCA',
+            })
+
+    if '_dep_exec_df' in globals() and isinstance(_dep_exec_df, pd.DataFrame) and not _dep_exec_df.empty:
+        _risco_dep = _dep_exec_df[_dep_exec_df['GAP_PROJ'].gt(0)].sort_values('GAP_PROJ', ascending=False)
+        if not _risco_dep.empty:
+            _p = _risco_dep.iloc[0]
+            _prioridades.append({
+                'nivel':'Atenção',
+                'classe':'attention',
+                'icone':'●',
+                'kicker':'Departamento',
+                'titulo':str(_p['DEPARTAMENTO']),
+                'label':'Gap projetado',
+                'valor':brl_compacto(_p['GAP_PROJ']),
+                'secundario':f"<strong>Projeção:</strong> {brl_compacto(_p['PROJECAO'])} &nbsp;·&nbsp; <strong>Meta:</strong> {brl_compacto(_p['META'])}",
+                'rodape':'Departamento com maior impacto negativo na projeção do período.',
+                'tipo':'Departamento',
+                'alvo':str(_p['DEPARTAMENTO']),
+                'botao':'Abrir departamento',
+            })
+
+    if pd.notna(_exec['crescimento_a1']):
+        _cres = float(_exec['crescimento_a1'])
+        _ano_ref = (_ano_mes_exec[0] - 1) if _ano_mes_exec else 'A-1'
+        _positivo = _cres >= 0
+        _prioridades.append({
+            'nivel':'Oportunidade' if _positivo else 'Atenção',
+            'classe':'opportunity' if _positivo else 'attention',
+            'icone':'●',
+            'kicker':'Comparativo',
+            'titulo':'Mesmo período do ano anterior',
+            'label':'Variação de faturamento',
+            'valor':pct(_cres),
+            'secundario':f"<strong>Referência:</strong> mesmo período de {_ano_ref}",
+            'rodape':(
+                'Crescimento no recorte. Use os rankings abaixo para localizar quem impulsiona o resultado.'
+                if _positivo else
+                'Queda no recorte. Use os rankings abaixo para localizar onde a variação está concentrada.'
+            ),
+            'tipo':'Nenhum',
+            'alvo':None,
+            'botao':None,
+        })
+
+    if not _prioridades and _atencoes:
+        _prioridades.append({
+            'nivel':'Atenção',
+            'classe':'attention',
+            'icone':'●',
+            'kicker':'Alerta',
+            'titulo':_atencoes[0][0],
+            'label':'Ponto de atenção',
+            'valor':'Revisar',
+            'secundario':_atencoes[0][1],
+            'rodape':'Analise o recorte atual antes do fechamento.',
+            'tipo':'Nenhum',
+            'alvo':None,
+            'botao':None,
+        })
+
+    if _prioridades:
+        _cols_prio = st.columns(min(3, len(_prioridades)), gap='medium')
+        for _i, _prio in enumerate(_prioridades[:3]):
+            with _cols_prio[_i]:
+                st.markdown(
+                    f"""
+                    <div class="insight-card {_prio['classe']}">
+                      <div class="insight-badge">{_prio['icone']} {_prio['nivel']}</div>
+                      <div class="insight-kicker">{_prio['kicker']}</div>
+                      <div class="insight-title">{_prio['titulo']}</div>
+                      <div class="insight-value-label">{_prio['label']}</div>
+                      <div class="insight-value">{_prio['valor']}</div>
+                      <div class="insight-secondary">{_prio['secundario']}</div>
+                      <div class="insight-foot">{_prio['rodape']}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                if _prio['tipo'] != 'Nenhum' and _prio['botao']:
+                    if st.button(
+                        _prio['botao'],
+                        key=f"cockpit_prio_{_i}",
+                        use_container_width=True,
+                        type='primary',
+                    ):
+                        if _prio['tipo'] == 'RCA':
+                            st.session_state['xf_rca'] = _prio['alvo']
+                        elif _prio['tipo'] == 'Departamento':
+                            st.session_state['xf_departamento'] = _prio['alvo']
+                        st.rerun()
+                else:
+                    st.caption('Explore os rankings abaixo para aprofundar.')
+    else:
+        st.success('Nenhum ponto de atenção automático forte foi identificado no recorte atual.')
+
+    # 5) Ranking RCA interativo.
+    st.markdown('### Ranking interativo de RCA')
+    _ranking_opcao = st.radio(
+        'Indicador',
+        ['Gap', 'Ritmo', 'Atingimento', 'Faturamento', 'Clientes', 'Mix'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='cockpit_ranking_indicador'
+    )
+
+    _rank = r[['COD_RCA','RCA','SUPERVISOR','FATURAMENTO','META','ATINGIMENTO','POSITIVADOS','MIX_PRODUTOS_CLIENTE']].copy()
+    if _ano_mes_exec and _exec['dias_passados'] and _exec['dias_total']:
+        _fator_proj = _exec['dias_total'] / _exec['dias_passados']
+        _rank['PROJECAO'] = _rank['FATURAMENTO'] * _fator_proj
+        _rank['GAP'] = _rank['META'] - _rank['PROJECAO']
+        _frac_rank = _exec['dias_passados'] / _exec['dias_total']
+        _rank['RITMO'] = _rank['FATURAMENTO'].div((_rank['META'] * _frac_rank).replace(0,pd.NA)) * 100
+    else:
+        _rank['PROJECAO'] = _rank['FATURAMENTO']
+        _rank['GAP'] = _rank['META'] - _rank['FATURAMENTO']
+        _rank['RITMO'] = _rank['ATINGIMENTO']
+
+    _map_rank = {
+        'Gap':('GAP','Gap para meta',False,'R$ '),
+        'Ritmo':('RITMO','Ritmo da meta',False,''),
+        'Atingimento':('ATINGIMENTO','Atingimento',False,''),
+        'Faturamento':('FATURAMENTO','Faturamento',False,'R$ '),
+        'Clientes':('POSITIVADOS','Clientes positivados',False,''),
+        'Mix':('MIX_PRODUTOS_CLIENTE','Mix médio',False,''),
+    }
+    _col_rank,_titulo_rank,_asc_rank,_prefix_rank = _map_rank[_ranking_opcao]
+    _rank_show = _rank[_rank[_col_rank].notna()].sort_values(_col_rank, ascending=_asc_rank).head(15).copy()
+
+    if not _rank_show.empty:
+        fig_rank = px.bar(
+            _rank_show.sort_values(_col_rank, ascending=not _asc_rank),
+            x=_col_rank, y='RCA', orientation='h',
+            title=f'{_titulo_rank} por RCA',
+            text=_rank_show.sort_values(_col_rank, ascending=not _asc_rank)[_col_rank].map(
+                lambda v: brl_compacto(v) if _ranking_opcao in ('Gap','Faturamento')
+                else (pct(v) if _ranking_opcao in ('Ritmo','Atingimento') else dec(v))
+            )
+        )
+        fig_rank.update_traces(marker_color=NAVY, textposition='outside')
+        if _ranking_opcao in ('Ritmo','Atingimento'):
+            fig_rank.add_vline(x=100, line_dash='dash', line_color=GREEN)
+        if _ranking_opcao in ('Gap','Faturamento'):
+            fig_rank.update_xaxes(tickprefix='R$ ', tickformat='.2s')
+        plot_crossfilter(
+            chart_layout(fig_rank, max(430, 30*len(_rank_show)+120), 'v'),
+            f'cockpit_rank_{_ranking_opcao}',
+            'xf_rca',
+            'y'
+        )
+        st.caption('Clique em uma barra para filtrar o dashboard inteiro pelo RCA selecionado.')
+    else:
+        st.info('Sem dados suficientes para montar o ranking neste recorte.')
+
+    # 5) Onde está o gap? Alterna dimensão sem poluir a tela.
+    st.markdown('### Onde está o gap?')
+    _dim_gap = st.radio(
+        'Dimensão',
+        ['Supervisor','Departamento','RCA'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='cockpit_dim_gap'
+    )
+
+    _fator_gap = (_exec['dias_total'] / _exec['dias_passados']) if _exec['dias_passados'] else 1.0
+    if _dim_gap == 'Supervisor':
+        _real_g = fat.groupby('SUPERVISOR', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO'})
+        _meta_g = meta.groupby('SUPERVISOR', as_index=False)['META'].sum()
+        _g = _meta_g.merge(_real_g, on='SUPERVISOR', how='outer').fillna(0)
+        _g['PROJECAO'] = _g['REALIZADO'] * _fator_gap
+        _g['GAP'] = (_g['META'] - _g['PROJECAO']).clip(lower=0)
+        _g = _g.sort_values('GAP', ascending=False)
+        _campo_gap='SUPERVISOR'; _state_gap='xf_supervisor'
+    elif _dim_gap == 'Departamento':
+        _real_g = fat.groupby('DEPARTAMENTO', as_index=False)['VALOR'].sum().rename(columns={'VALOR':'REALIZADO'})
+        _meta_g = meta.groupby('DEPARTAMENTO', as_index=False)['META'].sum()
+        _g = _meta_g.merge(_real_g, on='DEPARTAMENTO', how='outer').fillna(0)
+        _g['PROJECAO'] = _g['REALIZADO'] * _fator_gap
+        _g['GAP'] = (_g['META'] - _g['PROJECAO']).clip(lower=0)
+        _g = _g.sort_values('GAP', ascending=False)
+        _campo_gap='DEPARTAMENTO'; _state_gap='xf_departamento'
+    else:
+        _g = _rank[['RCA','META','PROJECAO','GAP']].copy()
+        _g['GAP'] = _g['GAP'].clip(lower=0)
+        _g = _g.sort_values('GAP', ascending=False)
+        _campo_gap='RCA'; _state_gap='xf_rca'
+
+    _g = _g[_g['GAP'].gt(0)].head(15)
+    if not _g.empty:
+        fig_gap = px.bar(
+            _g.sort_values('GAP'),
+            x='GAP', y=_campo_gap, orientation='h',
+            title=f'Gap projetado por {_dim_gap.lower()}',
+            text=_g.sort_values('GAP')['GAP'].map(brl_compacto)
+        )
+        fig_gap.update_traces(marker_color=RED, textposition='outside')
+        fig_gap.update_xaxes(tickprefix='R$ ', tickformat='.2s')
+        plot_crossfilter(
+            chart_layout(fig_gap, max(400, 32*len(_g)+110), 'v'),
+            f'cockpit_gap_{_dim_gap}',
+            _state_gap,
+            'y'
+        )
+        st.caption(f'Clique em uma barra para aplicar o filtro de {_dim_gap.lower()} em todo o dashboard.')
+    else:
+        st.success('Nenhum gap positivo relevante nesta dimensão para o recorte atual.')
+
+    # 6) Detalhes ficam recolhidos; o cockpit permanece limpo.
+    with st.expander('Ver análises detalhadas', expanded=False):
+        st.markdown('#### Resultado por supervisão')
+        s = r.groupby('SUPERVISOR',as_index=False).agg(FATURAMENTO=('FATURAMENTO','sum'),META=('META','sum'))
+        s['ATINGIMENTO'] = s.FATURAMENTO.div(s.META.replace(0,pd.NA))*100
+        fig = go.Figure()
+        fig.add_bar(x=s.SUPERVISOR,y=s.META,name='Meta',marker_color='#C8CEE1')
+        fig.add_bar(x=s.SUPERVISOR,y=s.FATURAMENTO,name='Faturamento',marker_color=NAVY)
+        fig.update_layout(barmode='group',title='Faturamento x Meta por supervisão',yaxis_tickprefix='R$ ',yaxis_tickformat='.2s')
+        plot_crossfilter(chart_layout(fig,390), 'xf_graf_supervisao', 'xf_supervisor', 'x')
+
+        c1,c2 = st.columns(2)
+        with c1:
+            rr = r.sort_values('ATINGIMENTO')
+            fig = px.bar(rr,x='ATINGIMENTO',y='RCA',orientation='h',title='Atingimento de meta por RCA',text=rr.ATINGIMENTO.map(pct))
+            fig.update_traces(marker_color=NAVY,textposition='outside')
+            fig.add_vline(x=100,line_dash='dash',line_color=GREEN)
+            plot_crossfilter(chart_layout(fig,max(430,28*len(rr)+100),'v'), 'xf_graf_rca_ating', 'xf_rca', 'y')
+        with c2:
+            dep_real = fat.groupby('DEPARTAMENTO',as_index=False).VALOR.sum().rename(columns={'VALOR':'REALIZADO'})
+            dep_meta = meta.groupby('DEPARTAMENTO',as_index=False).META.sum()
+            dep = dep_real.merge(dep_meta,on='DEPARTAMENTO',how='outer').fillna(0)
+            dep['ATINGIMENTO'] = dep.REALIZADO.div(dep.META.replace(0,pd.NA))*100
+            dep = dep.sort_values('REALIZADO')
+            fig = go.Figure()
+            fig.add_bar(y=dep.DEPARTAMENTO,x=dep.META,name='Meta',orientation='h',marker_color='#C8CEE1',customdata=dep[['ATINGIMENTO']])
+            fig.add_bar(y=dep.DEPARTAMENTO,x=dep.REALIZADO,name='Realizado',orientation='h',marker_color=NAVY_2,customdata=dep[['ATINGIMENTO']])
+            fig.update_layout(barmode='group',title='Meta x realizado por departamento',xaxis_tickprefix='R$ ',xaxis_tickformat='.2s')
+            fig.update_traces(hovertemplate='<b>%{y}</b><br>Valor: R$ %{x:,.2f}<br>Atingimento: %{customdata[0]:.1f}%<extra>%{fullData.name}</extra>')
+            plot_crossfilter(chart_layout(fig,max(430,38*len(dep)+100),'v'), 'xf_graf_departamento', 'xf_departamento', 'y')
+
+        st.markdown('#### Painel por RCA')
+        tabela = pd.DataFrame({
+            'RCA':r.RCA,'Supervisor':r.SUPERVISOR,'Faturamento':r.FATURAMENTO.map(brl),'Meta':r.META.map(brl),
+            'Atingimento':r.ATINGIMENTO.map(pct),'Clientes':r.POSITIVADOS.map(nint),'Ticket médio':r.TICKET.map(brl),
+            'Mix prod./cliente':r.MIX_PRODUTOS_CLIENTE.map(dec),'Margem':r.MARGEM_CALC.map(pct),
+            'Desconto (R$)':r.DESCONTO_VALOR.map(brl),'% Desconto':r.DESCONTO_PCT_CALC.map(pct)
+        })
+        st.dataframe(tabela,use_container_width=True,hide_index=True,height=min(620,40+35*len(tabela)))
+
+elif pagina_dashboard == 'Carteira':
+    st.subheader('Carteira e oportunidades')
+    st.caption('Leitura da saúde da carteira com foco em clientes que precisam de ação e espaço para ampliar relacionamento.')
+
+    _pc_carteira = (
+        fat.groupby(['COD_RCA','RCA','CODCLI'])
+        .agg(
+            PRODUTOS=('CODPROD','nunique'),
+            FATURAMENTO=('VALOR','sum'),
+            PEDIDOS=('NUMPED','nunique')
+        )
+        .reset_index()
+        if not fat.empty else
+        pd.DataFrame(columns=['COD_RCA','RCA','CODCLI','PRODUTOS','FATURAMENTO','PEDIDOS'])
+    )
+    _mono = int((_pc_carteira['PRODUTOS'] == 1).sum()) if not _pc_carteira.empty else 0
+    _ate3 = int((_pc_carteira['PRODUTOS'] <= 3).sum()) if not _pc_carteira.empty else 0
+    _mix_clientes = float(_pc_carteira['PRODUTOS'].mean()) if not _pc_carteira.empty else 0
+    _pct_mono = (_mono / len(_pc_carteira) * 100) if len(_pc_carteira) else 0
+
+    x1,x2,x3,x4,x5,x6 = st.columns(6)
+    x1.markdown(kpi('Positivados',nint(C),'Compraram no período'),unsafe_allow_html=True)
+    x2.markdown(kpi('Novos',nint(novos_total),'Primeira compra no período'),unsafe_allow_html=True)
+    x3.markdown(kpi('Inativos • curto',nint(inativos_curto_total),'3 a 6 meses sem comprar'),unsafe_allow_html=True)
+    x4.markdown(kpi('Inativos • longo',nint(inativos_longo_total),'3 a 12 meses • inclui curto'),unsafe_allow_html=True)
+    x5.markdown(kpi('Mix por cliente',dec(_mix_clientes),'Produtos distintos por cliente'),unsafe_allow_html=True)
+    x6.markdown(kpi('Clientes 1 produto',nint(_mono),pct(_pct_mono)+' dos positivados'),unsafe_allow_html=True)
+
+    _car_dim = st.radio(
+        'Visualizar carteira por',
+        ['Inativos curto x longo','Positivados','Mix baixo'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='carteira_visual'
+    )
+
+    if _car_dim == 'Inativos curto x longo':
+        _ci = r[['RCA','INATIVO_CURTO','INATIVO_LONGO']].sort_values('INATIVO_LONGO')
+        _fig = go.Figure()
+        _fig.add_bar(y=_ci.RCA,x=_ci.INATIVO_LONGO,name='Longo prazo (3–12m)',orientation='h',marker_color='#C8CEE1')
+        _fig.add_bar(y=_ci.RCA,x=_ci.INATIVO_CURTO,name='Curto prazo (3–6m)',orientation='h',marker_color=RED)
+        _fig.update_layout(barmode='group',title='Clientes inativos por RCA')
+        _fig.update_traces(hovertemplate='<b>%{y}</b><br>Clientes: %{x:.0f}<extra>%{fullData.name}</extra>')
+        plot_crossfilter(chart_layout(_fig,max(430,28*len(_ci)+100),'v'), 'xf_graf_rca_inativos', 'xf_rca', 'y')
+        st.caption('Regra oficial da ficha: longo prazo considera 3–12 meses sem compra e, portanto, inclui os clientes classificados no curto prazo.')
+
+    elif _car_dim == 'Positivados':
+        _cr = r.sort_values('POSITIVADOS')
+        _fig = px.bar(
+            _cr,x='POSITIVADOS',y='RCA',orientation='h',
+            title='Clientes positivados por RCA',
+            text='POSITIVADOS'
+        )
+        _fig.update_traces(marker_color=NAVY,textposition='outside')
+        plot_crossfilter(chart_layout(_fig,max(430,28*len(_cr)+100),'v'), 'xf_graf_rca_pos', 'xf_rca', 'y')
+
+    else:
+        if not _pc_carteira.empty:
+            _mix_rca_car = _pc_carteira.groupby('RCA',as_index=False).agg(
+                CLIENTES=('CODCLI','nunique'),
+                MIX=('PRODUTOS','mean'),
+                CLIENTES_ATE3=('PRODUTOS',lambda s:int((s<=3).sum()))
+            )
+            _mix_rca_car['PCT_ATE3'] = _mix_rca_car['CLIENTES_ATE3'].div(_mix_rca_car['CLIENTES'].replace(0,pd.NA))*100
+            _mix_rca_car = _mix_rca_car.sort_values('PCT_ATE3')
+            _fig = px.bar(
+                _mix_rca_car,x='PCT_ATE3',y='RCA',orientation='h',
+                title='Clientes com até 3 produtos por RCA',
+                text=_mix_rca_car.PCT_ATE3.map(pct)
+            )
+            _fig.update_traces(marker_color=NAVY_2,textposition='outside')
+            _fig.update_xaxes(title='% da carteira positivada')
+            plot_crossfilter(chart_layout(_fig,max(430,28*len(_mix_rca_car)+100),'v'), 'xf_graf_rca_mixbaixo', 'xf_rca', 'y')
+        else:
+            st.info('Sem clientes positivados no recorte.')
+
+    st.markdown('### Clientes inativos para ação')
+    _tipo_inat = st.radio(
+        'Faixa de inatividade',
+        ['Curto prazo (3–6 meses)','Longo prazo oficial (3–12 meses)'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='carteira_inativos_faixa'
+    )
+    _col_flag = 'INATIVO_CURTO' if _tipo_inat.startswith('Curto') else 'INATIVO_LONGO'
+    _car_inat = car[car[_col_flag].fillna(False)].copy()
+    if not _car_inat.empty:
+        _car_inat = _car_inat.sort_values(['FAT_12M','DIAS_SEM_COMPRA'],ascending=[False,False]).head(100)
+        _tab_inat = pd.DataFrame({
+            'Cliente': (
+                _car_inat['CLIENTE'].fillna(_car_inat['CODCLI'].astype(str))
+                if 'CLIENTE' in _car_inat.columns else _car_inat['CODCLI'].astype(str)
+            ),
+            'RCA': _car_inat['RCA'].fillna('—'),
+            'Última compra': _car_inat['ULTIMA'].dt.strftime('%d/%m/%Y').fillna('—'),
+            'Dias sem comprar': _car_inat['DIAS_SEM_COMPRA'].map(nint),
+            'Faturamento últimos 12m': _car_inat['FAT_12M'].map(brl),
+        })
+        st.dataframe(_tab_inat,use_container_width=True,hide_index=True,height=min(560,42+35*len(_tab_inat)))
+        st.caption('Ordenado pelo maior faturamento dos últimos 12 meses para ajudar a priorizar recuperação de clientes.')
+    else:
+        st.success('Nenhum cliente nesta faixa de inatividade para o recorte atual.')
+
+    st.markdown('### Clientes com maior espaço para ampliar mix')
+    if not _pc_carteira.empty:
+        _oport_cli = _pc_carteira[_pc_carteira['PRODUTOS'].le(3)].copy()
+        _oport_cli = _oport_cli.sort_values(['FATURAMENTO','PRODUTOS'],ascending=[False,True]).head(25)
+        _nomes_cli = (
+            clientes[['CODCLI','CLIENTE']].drop_duplicates('CODCLI')
+            if 'CLIENTE' in clientes.columns else pd.DataFrame(columns=['CODCLI','CLIENTE'])
+        )
+        _oport_cli = _oport_cli.merge(_nomes_cli,on='CODCLI',how='left')
+        _tab_oport = pd.DataFrame({
+            'Cliente': _oport_cli['CLIENTE'].fillna(_oport_cli['CODCLI'].astype(str)) if 'CLIENTE' in _oport_cli.columns else _oport_cli['CODCLI'].astype(str),
+            'RCA': _oport_cli['RCA'],
+            'Produtos comprados': _oport_cli['PRODUTOS'].map(nint),
+            'Pedidos': _oport_cli['PEDIDOS'].map(nint),
+            'Faturamento': _oport_cli['FATURAMENTO'].map(brl),
+        })
+        st.dataframe(_tab_oport,use_container_width=True,hide_index=True,height=min(520,40+35*len(_tab_oport)))
+        st.caption('Prioridade sugerida: clientes com poucos produtos, ordenados pelo maior faturamento do período.')
+    else:
+        st.info('Sem dados de carteira no recorte atual.')
+
+
+elif pagina_dashboard == 'Mix e Oportunidades':
+    st.subheader('Mix, produtos e oportunidades')
+    st.caption('Explore amplitude de mix, desempenho dos produtos e onde existe espaço para venda cruzada.')
+
+    # Métricas próprias da tela de Mix. Antes elas eram calculadas somente
+    # dentro da página Carteira; com a nova navegação lateral isso causava
+    # NameError ao abrir Mix diretamente.
+    _pc_mix = (
+        fat.groupby(['COD_RCA','RCA','CODCLI'])
+        .agg(
+            PRODUTOS=('CODPROD','nunique'),
+            FATURAMENTO=('VALOR','sum'),
+            PEDIDOS=('NUMPED','nunique')
+        )
+        .reset_index()
+        if not fat.empty else
+        pd.DataFrame(columns=['COD_RCA','RCA','CODCLI','PRODUTOS','FATURAMENTO','PEDIDOS'])
+    )
+    _mono_mix = int((_pc_mix['PRODUTOS'] == 1).sum()) if not _pc_mix.empty else 0
+    _ate3_mix = int((_pc_mix['PRODUTOS'] <= 3).sum()) if not _pc_mix.empty else 0
+
+    _produtos_distintos = int(fat['CODPROD'].nunique()) if not fat.empty else 0
+    _linhas_produto = (
+        fat.groupby('NUMPED')['CODPROD'].nunique().mean()
+        if not fat.empty and 'NUMPED' in fat.columns else 0
+    )
+    _prod_perf = (
+        fat.groupby('CODPROD',as_index=False)
+        .agg(
+            PRODUTO=('PRODUTO_NOME','first'),
+            FATURAMENTO=('VALOR','sum'),
+            CLIENTES=('CODCLI','nunique'),
+            PEDIDOS=('NUMPED','nunique'),
+            RCAS=('COD_RCA','nunique')
+        )
+        if not fat.empty else
+        pd.DataFrame(columns=['CODPROD','FATURAMENTO','CLIENTES','PEDIDOS','RCAS'])
+    )
+    if not _prod_perf.empty:
+        _top10_share = _prod_perf.nlargest(10,'FATURAMENTO')['FATURAMENTO'].sum() / max(float(_prod_perf['FATURAMENTO'].sum()),1) * 100
+    else:
+        _top10_share = 0
+
+    m1,m2,m3,m4,m5,m6 = st.columns(6)
+    m1.markdown(kpi('Produtos distintos',nint(_produtos_distintos),'Códigos vendidos no período'),unsafe_allow_html=True)
+    m2.markdown(kpi('Mix médio',dec(mix_geral),'Produtos por cliente'),unsafe_allow_html=True)
+    m3.markdown(kpi('Produtos por pedido',dec(_linhas_produto),'Média de códigos distintos'),unsafe_allow_html=True)
+    m4.markdown(kpi('Clientes 1 produto',nint(_mono_mix),'Maior potencial de cross-sell'),unsafe_allow_html=True)
+    m5.markdown(kpi('Top 10 produtos',pct(_top10_share),'Participação no faturamento'),unsafe_allow_html=True)
+    m6.markdown(kpi('Clientes até 3 prod.',nint(_ate3_mix),'Base para expansão de mix'),unsafe_allow_html=True)
+
+    _modo_mix = st.radio(
+        'Explorar',
+        ['RCAs','Produtos','Seções','Clientes'],
+        horizontal=True,
+        label_visibility='collapsed',
+        key='mix_explorar'
+    )
+
+    if _modo_mix == 'RCAs':
+        mixr = r.sort_values('MIX_PRODUTOS_CLIENTE')
+        fig = px.bar(
+            mixr,x='MIX_PRODUTOS_CLIENTE',y='RCA',orientation='h',
+            title='Mix médio de produtos por cliente — RCA',
+            text=mixr.MIX_PRODUTOS_CLIENTE.map(dec)
+        )
+        fig.update_traces(marker_color=NAVY,textposition='outside')
+        plot_crossfilter(chart_layout(fig,max(430,30*len(mixr)+100),'v'), 'xf_graf_rca_mix', 'xf_rca', 'y')
+        st.caption('Clique em uma barra para filtrar o dashboard inteiro pelo RCA.')
+
+    elif _modo_mix == 'Produtos':
+        if _prod_perf.empty:
+            st.info('Sem produtos no recorte atual.')
+        else:
+            _met_prod = st.radio(
+                'Ranking de produtos',
+                ['Faturamento','Clientes','Pedidos','RCAs'],
+                horizontal=True,
+                key='mix_prod_metrica'
+            )
+            _map_prod = {
+                'Faturamento':('FATURAMENTO','Faturamento','R$ '),
+                'Clientes':('CLIENTES','Clientes',''),
+                'Pedidos':('PEDIDOS','Pedidos',''),
+                'RCAs':('RCAS','RCAs que venderam',''),
+            }
+            _cp,_tp,_pref = _map_prod[_met_prod]
+            _top_prod = _prod_perf.nlargest(20,_cp).sort_values(_cp)
+            _fig = px.bar(
+                _top_prod,x=_cp,y='PRODUTO',orientation='h',
+                title=f'Top 20 produtos por {_tp.lower()}',
+                text=_top_prod[_cp].map(lambda v: brl_compacto(v) if _met_prod=='Faturamento' else nint(v))
+            )
+            _fig.update_traces(marker_color=NAVY_2,textposition='outside')
+            if _met_prod == 'Faturamento':
+                _fig.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(chart_layout(_fig,max(500,29*len(_top_prod)+120),'v'),use_container_width=True,key='mix_produtos_rank',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
+
+            _prod_opcoes = _prod_perf.sort_values('FATURAMENTO',ascending=False).copy()
+            _prod_opcoes['LABEL'] = _prod_opcoes['PRODUTO'].astype(str)
+            _duplicados = _prod_opcoes['LABEL'].duplicated(keep=False)
+            _prod_opcoes.loc[_duplicados,'LABEL'] = (
+                _prod_opcoes.loc[_duplicados,'LABEL']
+                + ' · cód. '
+                + _prod_opcoes.loc[_duplicados,'CODPROD'].astype('Int64').astype(str)
+            )
+            _prod_sel = st.selectbox(
+                'Analisar um produto',
+                _prod_opcoes['LABEL'].tolist(),
+                key='mix_produto_detalhe'
+            )
+            _cod_sel = _prod_opcoes.loc[_prod_opcoes['LABEL'].eq(_prod_sel),'CODPROD'].iloc[0]
+            _produto_nome_sel = _prod_opcoes.loc[_prod_opcoes['LABEL'].eq(_prod_sel),'PRODUTO'].iloc[0]
+            _fp = fat[fat['CODPROD'].eq(_cod_sel)].copy()
+            if not _fp.empty:
+                p1,p2,p3,p4 = st.columns(4)
+                p1.metric('Faturamento',brl(_fp['VALOR'].sum()))
+                p2.metric('Clientes',nint(_fp['CODCLI'].nunique()))
+                p3.metric('Pedidos',nint(_fp['NUMPED'].nunique()))
+                p4.metric('RCAs',nint(_fp['COD_RCA'].nunique()))
+                _por_rca = _fp.groupby('RCA',as_index=False)['VALOR'].sum().sort_values('VALOR')
+                _figp = px.bar(_por_rca,x='VALOR',y='RCA',orientation='h',title=f'{_produto_nome_sel} por RCA',text=_por_rca.VALOR.map(brl_compacto))
+                _figp.update_traces(marker_color=NAVY,textposition='outside')
+                _figp.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+                plot_crossfilter(chart_layout(_figp,max(360,28*len(_por_rca)+100),'v'),'mix_prod_rca','xf_rca','y')
+
+    elif _modo_mix == 'Seções':
+        if fat.empty or 'SECAO' not in fat.columns:
+            st.info('Sem informação de seção no recorte.')
+        else:
+            _sec = fat.groupby('SECAO',as_index=False).agg(
+                FATURAMENTO=('VALOR','sum'),
+                PRODUTOS=('CODPROD','nunique'),
+                CLIENTES=('CODCLI','nunique')
+            ).sort_values('FATURAMENTO')
+            _fig = px.bar(
+                _sec,x='FATURAMENTO',y='SECAO',orientation='h',
+                title='Faturamento por seção',
+                text=_sec.FATURAMENTO.map(brl_compacto),
+                custom_data=['PRODUTOS','CLIENTES']
+            )
+            _fig.update_traces(
+                marker_color=NAVY,
+                textposition='outside',
+                hovertemplate='<b>%{y}</b><br>Faturamento: R$ %{x:,.2f}<br>Produtos: %{customdata[0]:.0f}<br>Clientes: %{customdata[1]:.0f}<extra></extra>'
+            )
+            _fig.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(chart_layout(_fig,max(430,30*len(_sec)+120),'v'),use_container_width=True,key='mix_secao',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
+
+    else:
+        if fat.empty:
+            st.info('Sem clientes no recorte.')
+        else:
+            _pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(
+                PRODUTOS=('CODPROD','nunique'),
+                FATURAMENTO=('VALOR','sum'),
+                PEDIDOS=('NUMPED','nunique')
+            ).reset_index()
+            _faixas = pd.cut(
+                _pc_det.PRODUTOS,
+                bins=[0,1,3,5,10,float('inf')],
+                labels=['1 produto','2–3','4–5','6–10','11+'],
+                include_lowest=True
+            )
+            _dist = _faixas.value_counts(sort=False).reset_index()
+            _dist.columns=['Faixa','Clientes']
+            _fig = px.bar(_dist,x='Faixa',y='Clientes',title='Clientes por faixa de mix',text='Clientes')
+            _fig.update_traces(marker_color=NAVY_2,textposition='outside')
+            st.plotly_chart(chart_layout(_fig,390,'v'),use_container_width=True,key='mix_clientes_faixa',config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
+
+
+    st.markdown('### Inteligência de produtos')
+    st.caption('Leitura direta dos produtos que mais puxam o resultado, dos menores faturamentos e dos dois principais produtos de cada RCA.')
+
+    if _prod_perf.empty:
+        st.info('Sem produtos faturados no recorte atual.')
+    else:
+        col_top, col_low = st.columns(2, gap='large')
+
+        with col_top:
+            _melhores_prod = _prod_perf.nlargest(10,'FATURAMENTO').sort_values('FATURAMENTO')
+            fig_top_prod = px.bar(
+                _melhores_prod,
+                x='FATURAMENTO',
+                y='PRODUTO',
+                orientation='h',
+                title='10 produtos com maior faturamento',
+                text=_melhores_prod['FATURAMENTO'].map(brl_compacto),
+                custom_data=['CLIENTES','PEDIDOS','RCAS']
+            )
+            fig_top_prod.update_traces(
+                marker_color=NAVY,
+                textposition='outside',
+                hovertemplate=(
+                    '<b>%{y}</b><br>'
+                    'Faturamento: R$ %{x:,.2f}<br>'
+                    'Clientes: %{customdata[0]:.0f}<br>'
+                    'Pedidos: %{customdata[1]:.0f}<br>'
+                    'RCAs: %{customdata[2]:.0f}'
+                    '<extra></extra>'
+                )
+            )
+            fig_top_prod.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(
+                chart_layout(fig_top_prod,max(360,30*len(_melhores_prod)+100),'v'),
+                use_container_width=True,
+                key='mix_prod_top10',
+                config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+            )
+
+        with col_low:
+            _menor_giro = (
+                _prod_perf[_prod_perf['FATURAMENTO'].gt(0)]
+                .nsmallest(10,'FATURAMENTO')
+                .sort_values('FATURAMENTO',ascending=False)
+            )
+            fig_low_prod = px.bar(
+                _menor_giro,
+                x='FATURAMENTO',
+                y='PRODUTO',
+                orientation='h',
+                title='10 menores faturamentos entre produtos vendidos',
+                text=_menor_giro['FATURAMENTO'].map(brl_compacto),
+                custom_data=['CLIENTES','PEDIDOS','RCAS']
+            )
+            fig_low_prod.update_traces(
+                marker_color='#8991B7',
+                textposition='outside',
+                hovertemplate=(
+                    '<b>%{y}</b><br>'
+                    'Faturamento: R$ %{x:,.2f}<br>'
+                    'Clientes: %{customdata[0]:.0f}<br>'
+                    'Pedidos: %{customdata[1]:.0f}<br>'
+                    'RCAs: %{customdata[2]:.0f}'
+                    '<extra></extra>'
+                )
+            )
+            fig_low_prod.update_xaxes(tickprefix='R$ ',tickformat='.2s')
+            st.plotly_chart(
+                chart_layout(fig_low_prod,max(360,30*len(_menor_giro)+100),'v'),
+                use_container_width=True,
+                key='mix_prod_bottom10',
+                config={'displayModeBar':False,'responsive':True,'scrollZoom':False}
+            )
+
+        st.markdown('#### Dois principais produtos por RCA')
+        _rca_prod = (
+            fat.groupby(['COD_RCA','RCA','CODPROD'],as_index=False)
+            .agg(
+                PRODUTO=('PRODUTO_NOME','first'),
+                FATURAMENTO=('VALOR','sum'),
+                CLIENTES=('CODCLI','nunique')
+            )
+            .sort_values(['RCA','FATURAMENTO'],ascending=[True,False])
+        )
+        if not _rca_prod.empty:
+            _rca_prod['POSICAO'] = _rca_prod.groupby('RCA').cumcount()+1
+            _top2_rca = _rca_prod[_rca_prod['POSICAO'].le(2)].copy()
+            _tot_rca = _rca_prod.groupby('RCA',as_index=False)['FATURAMENTO'].sum().rename(columns={'FATURAMENTO':'TOTAL_RCA'})
+            _sum_top2 = _top2_rca.groupby('RCA',as_index=False)['FATURAMENTO'].sum().rename(columns={'FATURAMENTO':'TOP2_TOTAL'})
+            _conc = _tot_rca.merge(_sum_top2,on='RCA',how='left')
+            _conc['TOP2_PCT'] = _conc['TOP2_TOTAL'].div(_conc['TOTAL_RCA'].replace(0,pd.NA))*100
+
+            _p1 = _top2_rca[_top2_rca['POSICAO'].eq(1)][['RCA','PRODUTO','FATURAMENTO']].rename(
+                columns={'PRODUTO':'1º produto','FATURAMENTO':'Fat. 1º'}
+            )
+            _p2 = _top2_rca[_top2_rca['POSICAO'].eq(2)][['RCA','PRODUTO','FATURAMENTO']].rename(
+                columns={'PRODUTO':'2º produto','FATURAMENTO':'Fat. 2º'}
+            )
+            _top2_tab = (
+                _p1.merge(_p2,on='RCA',how='left')
+                .merge(_conc[['RCA','TOP2_PCT']],on='RCA',how='left')
+                .sort_values('Fat. 1º',ascending=False)
+            )
+            _top2_exibir = pd.DataFrame({
+                'RCA': _top2_tab['RCA'],
+                '1º produto': _top2_tab['1º produto'],
+                'Fat. 1º': _top2_tab['Fat. 1º'].map(brl),
+                '2º produto': _top2_tab['2º produto'].fillna('—'),
+                'Fat. 2º': _top2_tab['Fat. 2º'].map(brl),
+                'Concentração Top 2': _top2_tab['TOP2_PCT'].map(pct),
+            })
+            st.dataframe(
+                _top2_exibir,
+                use_container_width=True,
+                hide_index=True,
+                height=min(620,42+35*len(_top2_exibir))
+            )
+            st.caption('Concentração Top 2 = participação dos dois produtos de maior faturamento dentro do faturamento total do RCA.')
+        else:
+            st.info('Sem dados suficientes para calcular os principais produtos por RCA.')
+
+    with st.expander('Distribuição detalhada do mix', expanded=False):
+        if not fat.empty:
+            pc_det = fat.groupby(['COD_RCA','RCA','CODCLI']).agg(PRODUTOS=('CODPROD','nunique'),FATURAMENTO=('VALOR','sum'),PEDIDOS=('NUMPED','nunique')).reset_index()
+            c1,c2 = st.columns(2)
+            with c1:
+                fig = px.histogram(pc_det,x='PRODUTOS',nbins=min(20,max(6,int(pc_det.PRODUTOS.max()))),title='Distribuição do mix entre clientes')
+                fig.update_traces(marker_color=NAVY_2)
+                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True,config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
+            with c2:
+                faixas = pd.cut(pc_det.PRODUTOS,bins=[0,1,3,5,10,float('inf')],labels=['1 produto','2–3','4–5','6–10','11+'],include_lowest=True)
+                dist = faixas.value_counts(sort=False).reset_index(); dist.columns=['Faixa','Clientes']
+                fig = px.pie(dist,names='Faixa',values='Clientes',hole=.58,title='Clientes por faixa de mix',color_discrete_sequence=[NAVY,NAVY_2,'#59659A','#8991B7','#BAC0D8'])
+                st.plotly_chart(chart_layout(fig,390,'v'),use_container_width=True,config={'displayModeBar':False,'responsive':True,'scrollZoom':False})
+
+elif pagina_dashboard == 'Cidades':
+    st.subheader('Cobertura municipal — Nordeste')
+    st.info('Mapa municipal carregado pela camada de compatibilidade do app_v1.py.')
+
+
