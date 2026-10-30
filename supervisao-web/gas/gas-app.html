@@ -112,6 +112,8 @@ let RCA_BY_CODE = new Map();
 let CLIENT_HISTORY = new Map();
 let LATEST_DATE = null;
 let FORCE_REFRESH = false;
+let PREFER_FRESH = false;
+let READY_FROM_LOCAL = false;
 let SERVER_UPDATED_AT = null;
 let SERVER_INFO = null;
 let SERVER_REQUEST_ID = 0;
@@ -187,7 +189,7 @@ function emitReady(){
   const visibleRcas=catalog.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
   const geography=[...new Map(SALES.filter(s=>s.uf&&s.region&&s.city).map(s=>{const uf=String(s.uf).trim().toUpperCase(),region=String(s.region).trim(),city=String(s.city).trim();return [uf+'|'+norm(region)+'|'+norm(city),{uf,region,city}]})).values()];
   postStage('Base pronta.',100);
-  postMessage({type:'ready',serverUpdatedAt:SERVER_UPDATED_AT,dimensions:{years,departments,supervisors,rcas:visibleRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
+  postMessage({type:'ready',fromLocal:READY_FROM_LOCAL,serverUpdatedAt:SERVER_UPDATED_AT,dimensions:{years,departments,supervisors,rcas:visibleRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
 }
 
 const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -347,6 +349,9 @@ async function init(){
     if(!FORCE_REFRESH){
       postStage('Abrindo base local…',4);
       const cached=await loadLocalCache();
+      if(!PREFER_FRESH&&cached?.sales?.length&&cached?.serverUpdatedAt){
+        restoreLocalCache(cached);READY_FROM_LOCAL=true;emitReady();return;
+      }
       postStage('Conferindo atualização do servidor…',6);
       let info=null;
       try{info=await fetchServerDatasetInfo();}
@@ -756,7 +761,7 @@ onmessage=async(e)=>{
     if(msg.error)pending.reject(new Error(msg.error));else pending.resolve(msg.data);
     return;
   }
-  if(msg.type==='init'){FORCE_REFRESH=!!msg.force;return init();}
+  if(msg.type==='init'){FORCE_REFRESH=!!msg.force;PREFER_FRESH=!!msg.preferFresh;return init();}
   if(msg.type==='query'){
     try{
       const f=msg.filters||{};
@@ -773,7 +778,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@6bebc966933600737ccff34b560fcf45a0e8d8ce/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@421bb0ad4df0a6f7ba486078544b583fbf1be30d/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
