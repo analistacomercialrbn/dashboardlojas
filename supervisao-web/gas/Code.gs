@@ -101,7 +101,11 @@ function buildSnapshotRecords_() {
     const ix = headerIndex_(values.shift());
     ['Posição', 'Data Pedido', 'Cod/Vend.', 'Cod/Cliente', 'Cod/Produto', 'Pedidos Enviados'].forEach(name => { if (ix[name] == null) throw new Error('A aba ' + year + ' não contém a coluna ' + name + '.'); });
     values.forEach(row => {
-      if (norm_(cell_(row, ix, 'Posição')) !== 'FECHADO') return;
+      const status = norm_(cell_(row, ix, 'Posição'));
+      const isSale = status === 'FECHADO';
+      const isOpenOrder = ['PENDENTE', 'LIBERADO', 'BLOQUEADO'].indexOf(status) >= 0;
+      if (!isSale && !isOpenOrder) return;
+      if (isOpenOrder && (cell_(row, ix, 'Numero Nota Fiscal') || cell_(row, ix, 'Data Faturamento'))) return;
       const iso = dateIso_(cell_(row, ix, 'Data Pedido'));
       if (!iso) return;
       const orderDate = new Date(iso), orderYear = orderDate.getUTCFullYear();
@@ -110,8 +114,13 @@ function buildSnapshotRecords_() {
       const rawProduct = String(cell_(row, ix, 'Cod/Produto') || '').trim(), productCode = code_(rawProduct);
       const productName = rawProduct.replace(/^\s*\d+\s*-\s*/, '').trim() || (productCode == null ? 'Sem descrição' : 'Produto ' + productCode);
       const city = String(cell_(row, ix, 'MUNICENT') || '').trim(), region = aux.routeMap.get(String(rcaCode) + '|' + norm_(city)) || '';
-      const sale = { date: iso, year: orderYear, month: orderDate.getUTCMonth() + 1, monthKey: orderYear + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'), rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: clientCode, product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')), marginPct: null };
-      records.push(JSON.stringify({ type: 'sale', value: sale })); validCount++; if (!latest || iso > latest) latest = iso;
+      const base = { date: iso, year: orderYear, month: orderDate.getUTCMonth() + 1, monthKey: orderYear + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'), rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: clientCode, product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')) };
+      if (isSale) {
+        records.push(JSON.stringify({ type: 'sale', value: Object.assign({ marginPct: null }, base) }));
+        validCount++; if (!latest || iso > latest) latest = iso;
+      } else {
+        records.push(JSON.stringify({ type: 'openOrder', value: Object.assign({ status: status }, base) }));
+      }
     });
   });
   if (!validCount || !latest) throw new Error('Não foram encontradas vendas fechadas com Data Pedido válida.');
@@ -145,6 +154,7 @@ function compactSnapshotRecord_(raw) {
     case 'goal': return [2, v.monthKey, v.year, v.month, v.rca, v.rcaName, v.supervisor, v.department, v.value];
     case 'client': return [3, v[0], v[1] && v[1].name, v[1] && v[1].rca];
     case 'meta': return [4, v.latest];
+    case 'openOrder': return [5, v.date, v.year, v.month, v.monthKey, v.rca, v.department, v.client, v.product, v.productName, v.order, v.city, v.uf, v.region, v.value, v.status];
     default: return null;
   }
 }
