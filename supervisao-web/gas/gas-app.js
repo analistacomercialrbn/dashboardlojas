@@ -33,6 +33,8 @@ const state = {
   coverageSelection:null,
   selectedOrderClient:'',
   selectedOrderKey:'',
+  selectedOrderStatus:'',
+  orderClientQuery:'',
   orderPayload:null,
   coverageFilters:{department:'Nutrição',uf:[],rca:'Todos',status:'Todas'}
 };
@@ -142,6 +144,7 @@ function bindShell(){
   $('#clearFilters').addEventListener('click',()=>{
     const latest=state.dimensions?.latest?new Date(state.dimensions.latest):new Date();
     state.filters={uf:[],region:'Todos',city:'Todos',year:String(latest.getFullYear()),month:String(latest.getMonth()+1),supervisor:[],rca:[],department:[]};
+    state.selectedOrderStatus='';state.selectedOrderClient='';state.selectedOrderKey='';state.orderClientQuery='';
     syncUiFromFilters(); queryPage();
   });
   $('#toggleAdvancedFilters').addEventListener('click',e=>{
@@ -742,10 +745,8 @@ function renderOrders(p){
   const statusLabel={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'};
   const statusClass={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
   state.orderPayload=p;
-  const clientCodes=[...new Set(rows.map(x=>String(x.client??'')))];
-  if(!clientCodes.includes(String(state.selectedOrderClient)))state.selectedOrderClient=clientCodes[0]||'';
-  const selected=rows.find(x=>String(x.client??'')===String(state.selectedOrderClient));
-  if(!rows.some(x=>x.key===state.selectedOrderKey))state.selectedOrderKey=selected?.key||'';
+  if(!rows.some(x=>orderClientCode(x)===state.selectedOrderClient))state.selectedOrderClient='';
+  if(!rows.some(x=>x.key===state.selectedOrderKey))state.selectedOrderKey='';
   $('#content').innerHTML=`
     ${sectionHeading('Pedidos em aberto e posição','Visão de carteira por cliente, pedido e item, inspirada na rotina 336 do Winthor.')}
     <div class="grid kpi-grid four">
@@ -754,42 +755,62 @@ function renderOrders(p){
       ${kpi('Projeção liberados + pendentes',money(p.projected,true),`${pct(p.projectedAttainment)} da meta do recorte`)}
       ${kpi('Bloqueados',money(p.blockedValue,true),`${integer(p.blockedCount)} pedidos fora da projeção`)}
     </div>
-    <div class="panel order-status-panel"><div class="panel-title-row"><div><h2>Pedidos por posição</h2><div class="panel-sub">A carteira total inclui pedidos bloqueados; a projeção considera pendentes e liberados.</div></div></div><div class="order-status-breakdown">
-      ${byStatus.map(x=>`<div class="status-summary ${String(x.status).toLowerCase()}"><b>${esc(statusLabel[x.status]||x.status)}</b><strong>${money(x.value,true)}</strong><small>${integer(x.count)} pedidos</small></div>`).join('')||'<span class="muted">Sem pedidos neste recorte.</span>'}
+    <div class="panel order-status-panel order-status-filter"><div class="panel-title-row"><div><h2>Pedidos por posição</h2><div class="panel-sub">Clique em uma posição para filtrar os clientes e os pedidos abaixo.</div></div></div><div class="order-status-breakdown">
+      <button type="button" class="status-summary order-position-choice" data-order-status="" aria-pressed="false"><b>Todas as posições</b><strong>${money(p.totalOpenValue??rows.reduce((sum,x)=>sum+Number(x.value||0),0),true)}</strong><small>${orderCount(rows.length)}</small></button>
+      ${byStatus.map(x=>`<button type="button" class="status-summary order-position-choice ${String(x.status).toLowerCase()}" data-order-status="${esc(x.status)}" aria-pressed="false"><b>${esc(statusLabel[x.status]||x.status)}</b><strong>${money(x.value,true)}</strong><small>${orderCount(x.count)}</small></button>`).join('')}
     </div></div>
     <div class="order-explorer">
-      <div class="panel order-clients-panel"><div class="panel-title-row"><div><h2>Clientes</h2><div class="panel-sub">Selecione um cliente para consultar a carteira.</div></div></div>
+      <div class="panel order-clients-panel"><div class="panel-title-row"><div><h2>Clientes</h2><div id="orderClientFilterNote" class="panel-sub">Todos os clientes do recorte.</div></div></div>
         <label class="order-search-label" for="orderClientSearch">Buscar cliente</label><input id="orderClientSearch" class="order-client-search" type="search" placeholder="Nome ou código do cliente" autocomplete="off">
+        <button id="allOrderClients" class="order-client-all" type="button">Todos os clientes</button>
         <div id="orderClientList" class="order-client-list"></div>
       </div>
-      <div class="panel order-detail-panel"><div class="panel-title-row"><div><h2 id="orderClientTitle">Pedidos do cliente</h2><div class="panel-sub">Selecione um pedido para ver os itens.</div></div><span id="orderClientTotal" class="panel-chip"></span></div>
+      <div class="panel order-detail-panel"><div class="panel-title-row"><div><h2 id="orderClientTitle">Todos os clientes</h2><div id="orderDetailNote" class="panel-sub">Pedidos de todos os clientes. Clique em um pedido para ver os itens.</div></div><span id="orderClientTotal" class="panel-chip"></span></div>
         <div id="clientOrders"></div>
         <div id="orderLineDetails" class="order-line-details"></div>
       </div>
     </div>
     <div class="small-note order-stock-note">O arquivo de pedidos atual não traz saldo de estoque. Quando essa informação estiver disponível na integração, os itens serão marcados como disponíveis ou em falta; por enquanto, o saldo aparece como “não informado”.</div>`;
-  $('#orderClientSearch').addEventListener('input',updateOrderExplorer);
+  $('#orderClientSearch').value=state.orderClientQuery;
+  $('#orderClientSearch').addEventListener('input',e=>{state.orderClientQuery=e.target.value;updateOrderExplorer()});
+  $('#allOrderClients').addEventListener('click',()=>{state.selectedOrderClient='';state.selectedOrderKey='';state.orderClientQuery='';$('#orderClientSearch').value='';updateOrderExplorer()});
+  $$('.order-position-choice').forEach(button=>button.addEventListener('click',()=>{const status=button.dataset.orderStatus;state.selectedOrderStatus=state.selectedOrderStatus===status?'':status;state.selectedOrderClient='';state.selectedOrderKey='';updateOrderExplorer()}));
   updateOrderExplorer();
 }
-function updateOrderExplorer(){
-  const p=state.orderPayload||{},rows=p.orders||[],query=normalize($('#orderClientSearch')?.value||''),groups=new Map();
+function orderClientCode(order){return String(order.client??'')||'__sem_cliente'}
+function orderCount(count){return `${integer(count)} ${Number(count)===1?'pedido':'pedidos'}`}
+function orderExplorerData(){
+  const rows=(state.orderPayload?.orders||[]).filter(x=>!state.selectedOrderStatus||x.status===state.selectedOrderStatus),query=normalize(state.orderClientQuery),groups=new Map();
   rows.forEach(order=>{
-    const code=String(order.client??'');
-    if(!groups.has(code))groups.set(code,{code,name:order.clientName||code||'Cliente sem identificação',orders:[],value:0});
+    const code=orderClientCode(order);
+    if(!groups.has(code))groups.set(code,{code,labelCode:String(order.client??''),name:order.clientName||String(order.client??'')||'Cliente sem identificação',orders:[],value:0});
     const group=groups.get(code);group.orders.push(order);group.value+=Number(order.value)||0;
   });
   const clients=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
-  const visible=clients.filter(x=>!query||normalize(x.name).includes(query)||normalize(x.code).includes(query));
-  $('#orderClientList').innerHTML=visible.length?visible.slice(0,100).map(x=>`<button type="button" class="order-client-choice ${String(state.selectedOrderClient)===x.code?'selected':''}" data-client="${esc(x.code)}"><span><strong>${esc(x.name)}</strong><small>Cód. ${esc(x.code||'—')} · ${integer(x.orders.length)} pedidos</small></span><b>${money(x.value,true)}</b></button>`).join(''):'<div class="empty">Nenhum cliente corresponde à busca.</div>';
-  $$('.order-client-choice').forEach(button=>button.addEventListener('click',()=>{state.selectedOrderClient=button.dataset.client;const clientOrders=groups.get(state.selectedOrderClient)?.orders||[];state.selectedOrderKey=clientOrders[0]?.key||'';updateOrderExplorer()}));
-  const selected=groups.get(String(state.selectedOrderClient));
-  $('#orderClientTitle').textContent=selected?.name||'Pedidos do cliente';
-  $('#orderClientTotal').textContent=selected?`${integer(selected.orders.length)} pedidos · ${money(selected.value,true)}`:`${integer(rows.length)} pedidos no recorte`;
+  const visible=clients.filter(x=>!query||normalize(x.name).includes(query)||normalize(x.labelCode).includes(query));
+  const selected=visible.find(x=>x.code===state.selectedOrderClient);
+  const orders=selected?selected.orders:visible.flatMap(x=>x.orders);
+  return {clients,visible,selected,orders,value:orders.reduce((sum,x)=>sum+Number(x.value||0),0)};
+}
+function updateOrderExplorer(){
+  const {visible,selected,orders,value}=orderExplorerData();
+  if(!selected)state.selectedOrderClient='';
+  if(!orders.some(x=>x.key===state.selectedOrderKey))state.selectedOrderKey='';
   const statusLabel={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'},statusClass={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
-  $('#clientOrders').innerHTML=selected?.orders.length?`<div class="table-wrap order-table-wrap"><table class="order-table"><thead><tr><th>Pedido</th><th>Posição</th><th>Data</th><th>RCA</th><th>Itens</th><th class="align-right">Valor</th></tr></thead><tbody>${selected.orders.map(x=>`<tr class="order-select-row ${state.selectedOrderKey===x.key?'selected':''}" data-order="${esc(x.key)}"><td><strong>${esc(x.order||'—')}</strong></td><td><span class="order-status ${statusClass[x.status]||''}">${esc(statusLabel[x.status]||x.status)}</span></td><td>${fmtDate(x.date)}</td><td>${esc(x.rcaName||x.rca||'—')}</td><td>${integer(x.lines||x.items?.length||0)}</td><td class="align-right"><strong>${money(x.value,true)}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Selecione um cliente com pedido em aberto.</div>';
-  $$('.order-select-row').forEach(row=>row.addEventListener('click',()=>{state.selectedOrderKey=row.dataset.order;updateOrderExplorer()}));
-  const order=selected?.orders.find(x=>x.key===state.selectedOrderKey);
-  $('#orderLineDetails').innerHTML=order?`<div class="order-lines-heading"><div><h3>Itens do pedido ${esc(order.order||'')}</h3><span>${esc(order.department||'')}</span></div><span class="order-status ${statusClass[order.status]||''}">${esc(statusLabel[order.status]||order.status)}</span></div><div class="table-wrap"><table><thead><tr><th>Produto</th><th class="align-right">Quantidade</th><th>Estoque</th><th class="align-right">Valor do item</th></tr></thead><tbody>${(order.items||[]).map(item=>`<tr><td><strong>${esc(item.productName||'Produto sem descrição')}</strong><small class="item-code">${item.product!=null?'Cód. '+esc(item.product):''}</small></td><td class="align-right">${item.quantity?dec(item.quantity):'—'}</td><td>${item.stock==null?'<span class="stock-unknown">Não informado</span>':item.stock>0?`<span class="stock-available">${dec(item.stock)} disponível</span>`:'<span class="stock-missing">Sem estoque</span>'}</td><td class="align-right">${money(item.value,true)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">A base não contém o detalhamento dos itens deste pedido.</td></tr>'}</tbody></table></div>`:'<div class="order-lines-empty">Selecione um pedido para abrir o detalhamento dos itens.</div>';
+  const position=state.selectedOrderStatus?statusLabel[state.selectedOrderStatus]||state.selectedOrderStatus:'Todas as posições';
+  $$('.order-position-choice').forEach(button=>{const active=button.dataset.orderStatus===state.selectedOrderStatus;button.classList.toggle('selected',active);button.setAttribute('aria-pressed',String(active))});
+  $('#orderClientFilterNote').textContent=`${integer(visible.length)} ${visible.length===1?'cliente':'clientes'} · ${position}`;
+  $('#allOrderClients').classList.toggle('selected',!selected&&!state.orderClientQuery);
+  $('#allOrderClients').setAttribute('aria-pressed',String(!selected&&!state.orderClientQuery));
+  $('#orderClientList').innerHTML=visible.length?visible.map(x=>`<button type="button" class="order-client-choice ${selected?.code===x.code?'selected':''}" data-client="${esc(x.code)}" aria-pressed="${selected?.code===x.code}"><span><strong>${esc(x.name)}</strong><small>Cód. ${esc(x.labelCode||'—')} · ${orderCount(x.orders.length)}</small></span><b>${money(x.value,true)}</b></button>`).join(''):'<div class="empty">Nenhum cliente corresponde aos filtros.</div>';
+  $$('.order-client-choice').forEach(button=>button.addEventListener('click',()=>{state.selectedOrderClient=state.selectedOrderClient===button.dataset.client?'':button.dataset.client;state.selectedOrderKey=visible.find(x=>x.code===state.selectedOrderClient)?.orders[0]?.key||'';updateOrderExplorer()}));
+  $('#orderClientTitle').textContent=selected?.name||(state.orderClientQuery?'Clientes da busca':'Todos os clientes');
+  $('#orderDetailNote').textContent=`${position} · ${selected?'Pedidos deste cliente':'Pedidos de todos os clientes listados'}. Clique no número do pedido para ver os itens.`;
+  $('#orderClientTotal').textContent=`${orderCount(orders.length)} · ${money(value,true)}`;
+  $('#clientOrders').innerHTML=orders.length?`<div class="table-wrap order-table-wrap"><table class="order-table order-browser-table"><thead><tr><th>Pedido</th><th>Cliente</th><th>Posição</th><th>Data</th><th>RCA</th><th>Itens</th><th class="align-right">Valor</th></tr></thead><tbody>${orders.map(x=>`<tr class="order-select-row ${state.selectedOrderKey===x.key?'selected':''}"><td data-label="Pedido"><button type="button" class="order-open" data-order="${esc(x.key)}" aria-label="Ver itens do pedido ${esc(x.order||'sem número')}" aria-expanded="${state.selectedOrderKey===x.key}">${esc(x.order||'—')} <span aria-hidden="true">↗</span></button></td><td data-label="Cliente" class="order-customer-cell"><strong>${esc(x.clientName||x.client||'Cliente sem identificação')}</strong><small class="item-code">Cód. ${esc(x.client??'—')}</small></td><td data-label="Posição"><span class="order-status ${statusClass[x.status]||''}">${esc(statusLabel[x.status]||x.status)}</span></td><td data-label="Data">${fmtDate(x.date)}</td><td data-label="RCA">${esc(x.rcaName||x.rca||'—')}</td><td data-label="Itens">${integer(x.lines||x.items?.length||0)}</td><td data-label="Valor" class="align-right"><strong>${money(x.value,true)}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhum pedido corresponde aos filtros selecionados.</div>';
+  $$('.order-open').forEach(button=>button.addEventListener('click',()=>{state.selectedOrderKey=state.selectedOrderKey===button.dataset.order?'':button.dataset.order;updateOrderExplorer();if(state.selectedOrderKey)$('#orderLineDetails').scrollIntoView({behavior:'smooth',block:'nearest'})}));
+  const order=orders.find(x=>x.key===state.selectedOrderKey);
+  $('#orderLineDetails').innerHTML=order?`<div class="order-lines-heading"><div><h3>Itens do pedido ${esc(order.order||'')}</h3><span>${esc(order.clientName||order.client||'Cliente sem identificação')} · ${esc(order.department||'')}</span></div><span class="order-status ${statusClass[order.status]||''}">${esc(statusLabel[order.status]||order.status)}</span></div><div class="table-wrap"><table><thead><tr><th>Produto</th><th class="align-right">Quantidade</th><th>Estoque</th><th class="align-right">Valor do item</th></tr></thead><tbody>${(order.items||[]).map(item=>`<tr><td><strong>${esc(item.productName||'Produto sem descrição')}</strong><small class="item-code">${item.product!=null?'Cód. '+esc(item.product):''}</small></td><td class="align-right">${item.quantity?dec(item.quantity):'—'}</td><td>${item.stock==null?'<span class="stock-unknown">Não informado</span>':item.stock>0?`<span class="stock-available">${dec(item.stock)} disponível</span>`:'<span class="stock-missing">Sem estoque</span>'}</td><td class="align-right">${money(item.value,true)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">A base não contém o detalhamento dos itens deste pedido.</td></tr>'}</tbody></table></div>`:'<div class="order-lines-empty">Selecione um pedido para abrir o detalhamento dos itens.</div>';
 }
 function renderMetas(p){
   const attainment=p.totalMeta?p.totalRevenue/p.totalMeta*100:null;
@@ -1189,5 +1210,6 @@ function downloadCoverageMap(type){
     image.onerror=()=>{URL.revokeObjectURL(url);throw new Error('Não foi possível gerar a imagem PNG.')};image.src=url;
   }catch(error){alert(error?.message||String(error))}
 }
+
 
 
