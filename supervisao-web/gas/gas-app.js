@@ -224,7 +224,10 @@ function initData(force=false,{preserveFilters=false}={}){
       if(retainedFilters){state.filters=retainedFilters;syncUiFromFilters();}
       state.loadingData=false;
       state.serverUpdatedAt=m.serverUpdatedAt||null;
-      if(state.serverUpdatedAt)$('#periodChip').title='Dados atualizados em '+new Date(state.serverUpdatedAt).toLocaleString('pt-BR');
+      const stamp=state.serverUpdatedAt?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(state.serverUpdatedAt)):'';
+      $('#lastBaseUpdate').textContent=stamp?'Última atualização: '+stamp:'';
+      $('#lastBaseUpdate').dateTime=state.serverUpdatedAt||'';
+      if(stamp)$('#periodChip').title='Dados atualizados em '+stamp;
       beginAutomaticUpdates();
       setStatus('',false);
       queryPage();
@@ -509,7 +512,6 @@ function renderPage(page,payload){
 function renderOverview(p){
   const k=p.kpis||{};
   const daily=p.daily||{},dailyDate=daily.date?daily.date.split('-').reverse().join('/'):'Sem movimento no período';
-  const updateLabel=p.updatedAt?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(p.updatedAt)):'Não informado';
   const pipeline=p.pipeline||{},goal=Number(k.meta)||0,revenue=Number(k.revenue)||0;
   const attainment=Math.max(0,Math.min(100,goal?revenue/goal*100:0));
   const openWidth=goal?Math.min(100-attainment,Number(pipeline.openValue||0)/goal*100):0;
