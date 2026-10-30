@@ -238,7 +238,7 @@ const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/da
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
   if (response.getResponseCode() !== 200) throw new Error('Não foi possível carregar a interface do dashboard.');
-  return HtmlService.createHtmlOutput(response.getContentText()).setTitle('Dashboard de Supervisão • Rebanho');
+  return HtmlService.createHtmlOutput(response.getContentText()).setTitle('Dashboard de Supervisão • Rebanho').addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 function authorizeDashboard() {
   const response = UrlFetchApp.fetch(AUTH.usersUrl, { muteHttpExceptions: true });
