@@ -523,9 +523,9 @@ function renderOverview(p){
   $('#content').innerHTML=`
     
     <section class="executive-day" aria-label="Resumo comercial diário">
-      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)} · Valores pela data do pedido</p></div></div>
+      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)} · Realizado: data de faturamento · Abertos: data do pedido</p></div></div>
       <div class="executive-day-grid">
-        ${kpi('Vendas realizadas do dia',money(daily.soldValue),`${integer(daily.soldOrders)} pedidos realizados`)}
+        ${kpi('Faturamento do dia',money(daily.soldValue),`${integer(daily.soldOrders)} pedidos realizados`)}
         ${kpi('Pedidos abertos do dia',money(daily.openValue),`${integer(daily.openOrders)} pedidos · inclui bloqueados`)}
         ${kpi('Clientes no dia',integer(daily.clients),'Com venda realizada ou pedido em aberto')}
       </div>
@@ -533,9 +533,9 @@ function renderOverview(p){
     <div class="section-heading executive-period-heading"><div><h2>Resultado do período</h2><p>Meta, carteira e potencial de fechamento no recorte selecionado.</p></div></div>
     <div class="overview-hero">
       <div class="overview-revenue">
-        <div class="revenue-kicker"><i></i> Vendas realizadas no recorte</div>
+        <div class="revenue-kicker"><i></i> Faturamento no recorte</div>
         <div class="revenue-value" title="${money(revenue)}">${money(k.revenue,true)}</div>
-        <div class="revenue-caption"><strong>${money(revenue)}</strong> · Vendas pela data do pedido</div>
+        <div class="revenue-caption"><strong>${money(revenue)}</strong> · Vendas pela data de faturamento</div>
         <div class="revenue-divider"></div>
         <div class="revenue-meta"><span>Meta do recorte</span><strong>${money(k.meta,true)}</strong><span>${pct(k.attainment)} atingido</span></div>
         <div class="goal-progress" role="img" aria-label="Faturado ${pct(attainment)}; pedidos ativos e bloqueados aparecem em tons claros">
