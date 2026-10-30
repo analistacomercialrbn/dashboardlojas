@@ -27,6 +27,9 @@ const state = {
   coverage:null,
   coverageGeo:{},
   coverageSelection:null,
+  selectedOrderClient:'',
+  selectedOrderKey:'',
+  orderPayload:null,
   coverageFilters:{department:'Nutrição',uf:[],rca:'Todos',status:'Todas'}
 };
 
@@ -275,13 +278,15 @@ function multiSummary(values, options){
 }
 function fillMultiSelect(el,options,selected,onChange){
   const picked=new Set(normalizeMulti(selected));
+  const emptyLabel=el.id==='filterUf'?'Todos os estados':'Todos';
   el.innerHTML=`
     <button type="button" class="multi-select-trigger">
-      <span class="multi-select-text">${esc(multiSummary([...picked],options))}</span>
+      <span class="multi-select-text">${esc(picked.size?multiSummary([...picked],options):emptyLabel)}</span>
       <span class="multi-select-arrow">⌄</span>
     </button>
     <div class="multi-select-menu">
-      <button type="button" class="multi-select-all">Todos</button>
+      <input type="search" class="multi-select-search" aria-label="Pesquisar opções" placeholder="Pesquisar…" autocomplete="off">
+      <button type="button" class="multi-select-all">${esc(emptyLabel)}</button>
       <div class="multi-select-options">
         ${options.map(o=>`<label class="multi-select-option"><input type="checkbox" data-value="${esc(o.value)}" ${picked.has(String(o.value))?'checked':''}><span>${esc(o.label)}</span></label>`).join('')}
       </div>
@@ -293,13 +298,20 @@ function fillMultiSelect(el,options,selected,onChange){
     el.classList.toggle('open');
   });
   $('.multi-select-menu',el).addEventListener('click',e=>e.stopPropagation());
+  $('.multi-select-search',el).addEventListener('input',e=>{
+    const needle=normalize(e.currentTarget.value);
+    $$('.multi-select-option',el).forEach(option=>option.classList.toggle('filtered-out',needle&&!normalize(option.textContent).includes(needle)));
+  });
   $('.multi-select-all',el).addEventListener('click',()=>{
     $$('input[type="checkbox"][data-value]',el).forEach(x=>x.checked=false);
-    $('.multi-select-text',el).textContent='Todos';
+    $('.multi-select-text',el).textContent=emptyLabel;
+    $('.multi-select-search',el).value='';
+    $$('.multi-select-option',el).forEach(option=>option.classList.remove('filtered-out'));
     onChange?.();
   });
   $$('input[type="checkbox"][data-value]',el).forEach(ch=>ch.addEventListener('change',()=>{
-    $('.multi-select-text',el).textContent=multiSummary(selectedMulti(el.id),options);
+    const selectedValues=selectedMulti(el.id);
+    $('.multi-select-text',el).textContent=selectedValues.length?multiSummary(selectedValues,options):emptyLabel;
     onChange?.();
   }));
 }
@@ -420,6 +432,31 @@ function chart(canvas,type,data,options={}){
   const c=new Chart(canvas,{type,data,options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:horizontal,color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(horizontal?{callback:moneyTick}:{})}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(!horizontal?{callback:moneyTick}:{})}}},...options}});
   state.charts.push(c);return c;
 }
+function toggleCrossFilter(key,value){
+  const selected=normalizeMulti(state.filters[key]);
+  const text=String(value);
+  state.filters[key]=selected.includes(text)?selected.filter(x=>x!==text):[...selected,text];
+  state.selectedCity='Todos';
+  syncUiFromFilters();
+  queryPage();
+}
+if(typeof Chart!=='undefined'&&!Chart.registry.plugins.get('barValueLabels')){
+  Chart.register({id:'barValueLabels',afterDatasetsDraw(chartInstance,_args,pluginOptions){
+    if(!pluginOptions?.display)return;
+    const ctx=chartInstance.ctx,area=chartInstance.chartArea;
+    ctx.save();ctx.font='600 10px Inter,system-ui,sans-serif';ctx.textBaseline='middle';
+    chartInstance.data.datasets.forEach((dataset,datasetIndex)=>{
+      if(dataset.showValueLabels===false)return;
+      chartInstance.getDatasetMeta(datasetIndex).data.forEach((bar,index)=>{
+        const value=dataset.data[index];if(value==null||!Number.isFinite(Number(value)))return;
+        const label=money(Number(value),true),width=ctx.measureText(label).width;
+        const inside=bar.x+width+12>area.right;
+        ctx.textAlign=inside?'right':'left';ctx.fillStyle=inside?'#FFFFFF':'#334155';
+        ctx.fillText(label,inside?bar.x-7:bar.x+7,bar.y);
+      });
+    });ctx.restore();
+  }});
+}
 function kpi(label,value,note=''){
   return `<div class="kpi-card"><div class="kpi-label">${esc(label)}</div><div class="kpi-value">${value}</div><div class="kpi-note">${esc(note)}</div></div>`;
 }
@@ -442,7 +479,13 @@ function renderPage(page,payload){
 
 function renderOverview(p){
   const k=p.kpis||{};
-  const attainment=Math.max(0,Math.min(100,Number(k.attainment)||0));
+  const pipeline=p.pipeline||{},goal=Number(k.meta)||0,revenue=Number(k.revenue)||0;
+  const attainment=Math.max(0,Math.min(100,goal?revenue/goal*100:0));
+  const openWidth=goal?Math.min(100-attainment,Number(pipeline.openValue||0)/goal*100):0;
+  const blockedWidth=goal?Math.min(Math.max(0,100-attainment-openWidth),Number(pipeline.blockedValue||0)/goal*100):0;
+  const gap=Math.max(0,goal-revenue),departmentSelected=normalizeMulti(state.filters.department).length>0;
+  const goalGapLabel=departmentSelected?'Falta para meta do departamento':'Falta para a meta';
+  const statusLabels={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'};
   $('#content').innerHTML=`
     <div class="overview-hero">
       <div class="overview-revenue">
@@ -451,38 +494,53 @@ function renderOverview(p){
         <div class="revenue-caption">Realizado para os filtros e período selecionados</div>
         <div class="revenue-divider"></div>
         <div class="revenue-meta"><span>Meta do recorte</span><strong>${money(k.meta,true)}</strong><span>${pct(k.attainment)} atingido</span></div>
-        <div class="revenue-progress"><i style="width:${attainment}%"></i></div>
+        <div class="goal-progress" role="img" aria-label="Faturado ${pct(attainment)}; pedidos ativos e bloqueados aparecem em tons claros">
+          <i class="goal-segment realized" style="width:${attainment}%"></i><i class="goal-segment open" style="width:${openWidth}%"></i><i class="goal-segment blocked" style="width:${blockedWidth}%"></i>
+        </div>
+        <div class="goal-legend"><span><i class="legend-dot realized"></i>Faturado</span><span><i class="legend-dot open"></i>Pedidos ativos</span><span><i class="legend-dot blocked"></i>Bloqueados</span></div>
+        <div class="revenue-caption goal-caption">Pedidos em aberto no recorte: <strong>${money(Number(pipeline.totalOpenValue||0),true)}</strong> <span>(inclui bloqueados)</span></div>
       </div>
       <div class="overview-kpis">
         ${kpi('Clientes positivados',integer(k.clients),'Clientes únicos com compra')}
         ${kpi('Ticket médio',money(k.ticket,true),'Valor por pedido')}
-        ${kpi('Mix por cliente',dec(k.mix),'Produtos distintos em média')}
-        ${kpi('Diferença para a meta',money(Number(k.meta||0)-Number(k.revenue||0),true),Number(k.meta||0)>=Number(k.revenue||0)?'Valor que falta para atingir':'Acima da meta')}
+        ${kpi('Pedidos em aberto',money(Number(pipeline.totalOpenValue||0),true),`${integer(pipeline.totalOpenCount||0)} pedidos · inclui bloqueados`)}
+        ${kpi(goalGapLabel,money(gap,true),goal?`${pct(k.attainment)} atingido${revenue>=goal?' · meta alcançada':''}`:'Meta não cadastrada para este recorte')}
+      </div>
+    </div>
+    <div class="overview-pipeline">
+      <div class="grid kpi-grid four">
+        ${kpi('Carteira total',money(Number(pipeline.totalOpenValue||0),true),`${integer(pipeline.totalOpenCount||0)} pedidos · inclui bloqueados`)}
+        ${kpi('Carteira ÷ faturamento',pct(revenue?Number(pipeline.totalOpenValue||0)/revenue*100:null),'Peso total dos pedidos em aberto')}
+        ${kpi('Projeção liberados + pendentes',money(pipeline.projected,true),`${pct(pipeline.projectedAttainment)} da meta · bloqueados separados`)}
+        ${kpi('Valor bloqueado',money(pipeline.blockedValue,true),`${integer(pipeline.blockedCount)} pedidos aguardando solução`)}
+      </div>
+      <div class="order-status-breakdown" aria-label="Pedidos em aberto por posição"><strong>Posição dos pedidos</strong>
+        ${(pipeline.byStatus||[]).map(x=>`<span class="status-summary ${String(x.status).toLowerCase()}"><b>${esc(statusLabels[x.status]||x.status)}</b><strong>${money(x.value,true)}</strong><small>${integer(x.count)} pedidos</small></span>`).join('')||'<span class="muted">Sem pedidos neste recorte.</span>'}
       </div>
     </div>
     <div class="overview-analysis">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Ritmo de faturamento</div><div class="panel-sub">Compare os meses do ano no mesmo recorte comercial.</div></div><span class="panel-chip">${esc(state.filters.year||'Ano')}</span></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Ritmo de faturamento</div><div class="panel-sub">Eixo iniciado em R$ 1 milhão para destacar a variação entre os meses.</div></div><span class="panel-chip">${esc(state.filters.year||'Ano')}</span></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
       <div class="panel"><div class="panel-head"><div><div class="panel-title">Leituras para acompanhar</div><div class="panel-sub">Sinais identificados nesta seleção.</div></div></div><div class="overview-insights">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Recorte estável',value:'—',text:'Nenhum alerta forte identificado.'}]).slice(0,4).map(insight).join('')}</div></div>
     </div>
     <div class="section-heading"><div><h2>Quem movimenta o resultado</h2><p>Distribuição do faturamento por RCA e departamento.</p></div></div>
     <div class="overview-bottom">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Desempenho por RCA</div><div class="panel-sub">Maiores faturamentos no recorte selecionado.</div></div></div><div class="chart-wrap short"><canvas id="overviewRca"></canvas></div></div>
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Composição por departamento</div><div class="panel-sub">Participação no faturamento do período.</div></div></div><div id="depList" class="overview-departments metric-list"></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Desempenho por RCA</div><div class="panel-sub">Clique em um RCA para filtrar os cartões e os demais gráficos. As barras claras indicam a meta.</div></div></div><div class="chart-wrap short"><canvas id="overviewRca"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Composição por departamento</div><div class="panel-sub">Clique em uma linha para aplicar o departamento aos cartões e gráficos.</div></div></div><div id="depList" class="overview-departments metric-list"></div></div>
     </div>
   `;
   const monthly=p.monthly||[];
-  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1D285F',backgroundColor:'rgba(29,40,95,.08)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]});
-  const top=(p.rca||[]).slice(0,10).reverse();
-  chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[{data:top.map(x=>x.revenue),backgroundColor:'#42548D',borderRadius:7,barThickness:16}]},{indexAxis:'y'});
+  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{label:'Faturamento',data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.09)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]},{scales:{x:{grid:{display:false},border:{display:false}},y:{min:1000000,beginAtZero:false,grid:{color:'#E8EDF6'},border:{display:false},ticks:{callback:v=>money(v,true)}}}});
+  const top=(p.rca||[]).slice(0,10);
+  const selectedRcas=new Set(normalizeMulti(state.filters.rca));
+  const rcaChart=chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[
+    {label:'Faturamento',data:top.map(x=>x.revenue),backgroundColor:top.map(x=>selectedRcas.size&&!selectedRcas.has(String(x.key))?'#BDD0EE':'#1D2A68'),borderRadius:7,barThickness:10},
+    {label:'Meta',data:top.map(x=>x.meta||0),backgroundColor:'#C7D8F2',borderRadius:7,barThickness:10,showValueLabels:false}
+  ]},{indexAxis:'y',onClick:(_event,elements)=>{if(elements?.length)toggleCrossFilter('rca',top[elements[0].index].key)},plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:9}}},barValueLabels:{display:true},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(ctx.raw,true)}`}}},scales:{x:{afterDataLimits:axis=>{axis.max=axis.max*1.18},grid:{color:'#E8EDF6'},ticks:{callback:v=>money(v,true)}},y:{grid:{display:false},ticks:{autoSkip:false,font:{size:9}}}}});
+  rcaChart.canvas.style.cursor='pointer';
   const total=(p.departments||[]).reduce((a,x)=>a+x.revenue,0)||1;
-  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<div class="metric-row"><div><div class="metric-name">${esc(x.key||'Sem departamento')}</div><div class="progress"><i style="width:${Math.min(100,x.revenue/total*100)}%"></i></div></div><div class="metric-value">${money(x.revenue,true)} · ${pct(x.revenue/total*100)}</div></div>`).join('');
-  const pipe=p.pipeline||{};
-  const pipelineCards=`<div class="grid kpi-grid three overview-pipeline">
-    ${kpi('Pedidos em aberto',money(pipe.openValue,true),`${integer(pipe.openCount)} pedidos · ${pct(pipe.shareRevenue)} do faturamento realizado`)}
-    ${kpi('Projeção com pedidos',money(pipe.projected,true),`${pct(pipe.projectedAttainment)} da meta incluindo pedidos pendentes/liberados`)}
-    ${kpi('Pedidos bloqueados',money(pipe.blockedValue,true),`${integer(pipe.blockedCount)} pedidos fora da projeção`)}
-  </div>`;
-  $('#overviewMonthly').closest('.overview-analysis')?.insertAdjacentHTML('beforebegin',pipelineCards);
+  const selectedDepartments=new Set(normalizeMulti(state.filters.department));
+  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<button type="button" class="metric-row department-filter ${selectedDepartments.has(String(x.key))?'selected':''}" data-department="${esc(x.key)}"><span><span class="metric-name">${esc(x.key||'Sem departamento')}</span><span class="progress"><i style="width:${Math.min(100,x.revenue/total*100)}%"></i></span></span><span class="metric-value">${money(x.revenue,true)} · ${pct(x.revenue/total*100)}<small>${x.meta?`Meta ${money(x.meta,true)}`:'Meta não cadastrada'}</small></span></button>`).join('')||'<div class="empty">Sem departamento neste recorte.</div>';
+  $$('.department-filter').forEach(button=>button.addEventListener('click',()=>toggleCrossFilter('department',button.dataset.department)));
 }
 function renderCarteira(p){
   const k=p.kpis||{};
@@ -586,7 +644,7 @@ function renderCidadesSales(p){
     ${sectionHeading('Pontos críticos do recorte','Mudam conforme período, RCA, departamento e cidade selecionada.')}
     <div class="grid insight-grid">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Sem alerta crítico forte',value:'—',text:'O recorte não apresentou uma queda relevante automática.'}]).map(insight).join('')}</div>
     <div class="grid city-layout">
-      <div class="panel"><div class="panel-title-row"><div><h2>Mapa da área</h2><div class="panel-sub">Clique em um município para abrir o detalhamento.</div></div><button id="allCitiesBtn" class="btn secondary small">Ver todos</button></div><div id="cityMap"></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>Faturamento por município</h2><div class="panel-sub">Tons mais escuros indicam maior faturamento. Clique para filtrar.</div></div><button id="allCitiesBtn" class="btn secondary small">Ver todos</button></div><div id="cityMap"></div><div class="map-revenue-legend"><span>Menor faturamento</span><i></i><i></i><i></i><i></i><span>Maior faturamento</span></div></div>
       <div class="panel"><div class="panel-title-row"><div><h2>${selected?esc(selected.city+' - '+selected.uf):'Cidades da área'}</h2><div class="panel-sub">Ranking por faturamento.</div></div></div><div id="cityList" class="city-list"></div></div>
     </div>
     ${sectionHeading('Evolução mensal do faturamento',selected?`Histórico de ${selected.city} no ano selecionado.`:'Histórico da área no ano selecionado.')}
@@ -612,11 +670,16 @@ function renderCidadesSales(p){
 async function renderCityMap(cities,selectedKey){
   if(state.map){try{state.map.remove()}catch{}state.map=null}
   const el=$('#cityMap'); if(!el)return;
-  state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10}).setView([-8.5,-40.5],5);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,opacity:.18}).addTo(state.map);
+  state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10,scrollWheelZoom:false}).setView([-8.5,-40.5],5);
   const codes={MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29'};
   const cityMap=new Map(cities.map(c=>[`${aliasCity(c.city)}|${c.uf}`,c]));
-  const max=Math.max(1,...cities.map(c=>c.revenue));
+  const sortedValues=cities.map(c=>Number(c.revenue)||0).sort((a,b)=>a-b);
+  const max=Math.max(1,...sortedValues);
+  const colorAt=value=>{
+    const t=Math.max(0,Math.min(1,(Number(value)||0)/max));
+    const start=[226,237,252],end=[29,66,145],rgb=start.map((v,i)=>Math.round(v+(end[i]-v)*Math.pow(t,.68)));
+    return '#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+  };
   const states=[...new Set(cities.map(c=>c.uf).filter(uf=>codes[uf]))];
   const bounds=[];
   for(const uf of states){
@@ -627,9 +690,8 @@ async function renderCityMap(cities,selectedKey){
         style:f=>{
           const name=f.properties?.name||f.properties?.NOME||'';
           const c=cityMap.get(`${aliasCity(name)}|${uf}`);
-          const ratio=c?c.revenue/max:0;
           const selected=c&&c.key===selectedKey;
-          return {color:selected?'#1E2655':'#AAB3C9',weight:selected?3.5:.65,fillColor:selected?'#E5A43A':ratio>.65?'#1E2655':ratio>.35?'#596CA7':ratio>0?'#BBC5DE':'#E8EBF1',fillOpacity:selected ? .95 : (c ? .82 : .20)};
+          return {color:selected?'#112B63':'#B8C6D8',weight:selected?2.8:.75,fillColor:selected?'#1D2A68':c?colorAt(c.revenue):'#F2F5FA',fillOpacity:selected?0.96:c?0.9:0.55};
         },
         onEachFeature:(f,l)=>{
           const name=f.properties?.name||f.properties?.NOME||'';
@@ -653,23 +715,55 @@ function renderOrders(p){
   const rows=p.orders||[];
   const statusLabel={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'};
   const statusClass={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
+  state.orderPayload=p;
+  const clientCodes=[...new Set(rows.map(x=>String(x.client??'')))];
+  if(!clientCodes.includes(String(state.selectedOrderClient)))state.selectedOrderClient=clientCodes[0]||'';
+  const selected=rows.find(x=>String(x.client??'')===String(state.selectedOrderClient));
+  if(!rows.some(x=>x.key===state.selectedOrderKey))state.selectedOrderKey=selected?.key||'';
   $('#content').innerHTML=`
-    ${sectionHeading('Pedidos em aberto e posição','Acompanhe o valor em carteira, o status de cada pedido e a participação sobre o faturamento realizado.')}
+    ${sectionHeading('Pedidos em aberto e posição','Visão de carteira por cliente, pedido e item, inspirada na rotina 336 do Winthor.')}
     <div class="grid kpi-grid four">
-      ${kpi('Pedidos pendentes e liberados',money(p.openValue,true),`${integer(p.openCount)} pedidos`)}
-      ${kpi('Participação no faturamento',pct(p.shareRevenue),'Pedidos em aberto ÷ faturamento realizado no recorte')}
-      ${kpi('Projeção com pedidos',money(p.projected,true),`${pct(p.projectedAttainment)} da meta do recorte`)}
+      ${kpi('Carteira total',money(p.totalOpenValue??(Number(p.openValue||0)+Number(p.blockedValue||0)),true),`${integer(p.totalOpenCount??(Number(p.openCount||0)+Number(p.blockedCount||0)))} pedidos · todos os status`)}
+      ${kpi('Participação no faturamento',pct(p.shareRevenue),'Pedidos liberados e pendentes ÷ faturado')}
+      ${kpi('Projeção liberados + pendentes',money(p.projected,true),`${pct(p.projectedAttainment)} da meta do recorte`)}
       ${kpi('Bloqueados',money(p.blockedValue,true),`${integer(p.blockedCount)} pedidos fora da projeção`)}
     </div>
-    <div class="grid kpi-grid three order-status-cards">
-      ${byStatus.map(x=>kpi(statusLabel[x.status]||x.status,money(x.value,true),`${integer(x.count)} pedidos`)).join('')}
+    <div class="panel order-status-panel"><div class="panel-title-row"><div><h2>Pedidos por posição</h2><div class="panel-sub">A carteira total inclui pedidos bloqueados; a projeção considera pendentes e liberados.</div></div></div><div class="order-status-breakdown">
+      ${byStatus.map(x=>`<div class="status-summary ${String(x.status).toLowerCase()}"><b>${esc(statusLabel[x.status]||x.status)}</b><strong>${money(x.value,true)}</strong><small>${integer(x.count)} pedidos</small></div>`).join('')||'<span class="muted">Sem pedidos neste recorte.</span>'}
+    </div></div>
+    <div class="order-explorer">
+      <div class="panel order-clients-panel"><div class="panel-title-row"><div><h2>Clientes</h2><div class="panel-sub">Selecione um cliente para consultar a carteira.</div></div></div>
+        <label class="order-search-label" for="orderClientSearch">Buscar cliente</label><input id="orderClientSearch" class="order-client-search" type="search" placeholder="Nome ou código do cliente" autocomplete="off">
+        <div id="orderClientList" class="order-client-list"></div>
+      </div>
+      <div class="panel order-detail-panel"><div class="panel-title-row"><div><h2 id="orderClientTitle">Pedidos do cliente</h2><div class="panel-sub">Selecione um pedido para ver os itens.</div></div><span id="orderClientTotal" class="panel-chip"></span></div>
+        <div id="clientOrders"></div>
+        <div id="orderLineDetails" class="order-line-details"></div>
+      </div>
     </div>
-    <div class="panel order-panel">
-      <div class="panel-title-row"><div><h2>Detalhe da carteira de pedidos</h2><div class="panel-sub">A projeção soma pedidos pendentes e liberados. Bloqueados ficam separados.</div></div><span class="panel-chip">${integer(rows.length)} pedidos</span></div>
-      <div class="table-wrap"><table class="order-table"><thead><tr><th>Pedido</th><th>Posição</th><th>Data</th><th>Cliente</th><th>RCA</th><th>Supervisor</th><th>Departamento</th><th class="align-right">Valor</th></tr></thead><tbody>
-        ${rows.length?rows.map(x=>`<tr><td><strong>${esc(x.order||'—')}</strong></td><td><span class="order-status ${statusClass[x.status]||''}">${esc(statusLabel[x.status]||x.status)}</span></td><td>${fmtDate(x.date)}</td><td>${esc(x.clientName||x.client||'—')}</td><td>${esc(x.rcaName||x.rca||'—')}</td><td>${esc(x.supervisor||'—')}</td><td>${esc(x.department||'—')}</td><td class="align-right"><strong>${money(x.value,true)}</strong></td></tr>`).join(''):`<tr><td colspan="8" class="muted">Nenhum pedido em aberto para os filtros selecionados.</td></tr>`}
-      </tbody></table></div>
-    </div>`;
+    <div class="small-note order-stock-note">O arquivo de pedidos atual não traz saldo de estoque. Quando essa informação estiver disponível na integração, os itens serão marcados como disponíveis ou em falta; por enquanto, o saldo aparece como “não informado”.</div>`;
+  $('#orderClientSearch').addEventListener('input',updateOrderExplorer);
+  updateOrderExplorer();
+}
+function updateOrderExplorer(){
+  const p=state.orderPayload||{},rows=p.orders||[],query=normalize($('#orderClientSearch')?.value||''),groups=new Map();
+  rows.forEach(order=>{
+    const code=String(order.client??'');
+    if(!groups.has(code))groups.set(code,{code,name:order.clientName||code||'Cliente sem identificação',orders:[],value:0});
+    const group=groups.get(code);group.orders.push(order);group.value+=Number(order.value)||0;
+  });
+  const clients=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  const visible=clients.filter(x=>!query||normalize(x.name).includes(query)||normalize(x.code).includes(query));
+  $('#orderClientList').innerHTML=visible.length?visible.slice(0,100).map(x=>`<button type="button" class="order-client-choice ${String(state.selectedOrderClient)===x.code?'selected':''}" data-client="${esc(x.code)}"><span><strong>${esc(x.name)}</strong><small>Cód. ${esc(x.code||'—')} · ${integer(x.orders.length)} pedidos</small></span><b>${money(x.value,true)}</b></button>`).join(''):'<div class="empty">Nenhum cliente corresponde à busca.</div>';
+  $$('.order-client-choice').forEach(button=>button.addEventListener('click',()=>{state.selectedOrderClient=button.dataset.client;const clientOrders=groups.get(state.selectedOrderClient)?.orders||[];state.selectedOrderKey=clientOrders[0]?.key||'';updateOrderExplorer()}));
+  const selected=groups.get(String(state.selectedOrderClient));
+  $('#orderClientTitle').textContent=selected?.name||'Pedidos do cliente';
+  $('#orderClientTotal').textContent=selected?`${integer(selected.orders.length)} pedidos · ${money(selected.value,true)}`:`${integer(rows.length)} pedidos no recorte`;
+  const statusLabel={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'},statusClass={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
+  $('#clientOrders').innerHTML=selected?.orders.length?`<div class="table-wrap order-table-wrap"><table class="order-table"><thead><tr><th>Pedido</th><th>Posição</th><th>Data</th><th>RCA</th><th>Itens</th><th class="align-right">Valor</th></tr></thead><tbody>${selected.orders.map(x=>`<tr class="order-select-row ${state.selectedOrderKey===x.key?'selected':''}" data-order="${esc(x.key)}"><td><strong>${esc(x.order||'—')}</strong></td><td><span class="order-status ${statusClass[x.status]||''}">${esc(statusLabel[x.status]||x.status)}</span></td><td>${fmtDate(x.date)}</td><td>${esc(x.rcaName||x.rca||'—')}</td><td>${integer(x.lines||x.items?.length||0)}</td><td class="align-right"><strong>${money(x.value,true)}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Selecione um cliente com pedido em aberto.</div>';
+  $$('.order-select-row').forEach(row=>row.addEventListener('click',()=>{state.selectedOrderKey=row.dataset.order;updateOrderExplorer()}));
+  const order=selected?.orders.find(x=>x.key===state.selectedOrderKey);
+  $('#orderLineDetails').innerHTML=order?`<div class="order-lines-heading"><div><h3>Itens do pedido ${esc(order.order||'')}</h3><span>${esc(order.department||'')}</span></div><span class="order-status ${statusClass[order.status]||''}">${esc(statusLabel[order.status]||order.status)}</span></div><div class="table-wrap"><table><thead><tr><th>Produto</th><th class="align-right">Quantidade</th><th>Estoque</th><th class="align-right">Valor do item</th></tr></thead><tbody>${(order.items||[]).map(item=>`<tr><td><strong>${esc(item.productName||'Produto sem descrição')}</strong><small class="item-code">${item.product!=null?'Cód. '+esc(item.product):''}</small></td><td class="align-right">${item.quantity?dec(item.quantity):'—'}</td><td>${item.stock==null?'<span class="stock-unknown">Não informado</span>':item.stock>0?`<span class="stock-available">${dec(item.stock)} disponível</span>`:'<span class="stock-missing">Sem estoque</span>'}</td><td class="align-right">${money(item.value,true)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">A base não contém o detalhamento dos itens deste pedido.</td></tr>'}</tbody></table></div>`:'<div class="order-lines-empty">Selecione um pedido para abrir o detalhamento dos itens.</div>';
 }
 function renderMetas(p){
   const attainment=p.totalMeta?p.totalRevenue/p.totalMeta*100:null;
