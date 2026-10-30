@@ -95,3 +95,41 @@ html,body{background:var(--bg);color:var(--ink)}
   .filterbar .filter-advanced .filter-group.period{width:100%}
   .filter-advanced-hint{grid-column:1;justify-self:start}
 }
+
+/* Mobile dashboard: use the handset viewport and give each visual a readable canvas. */
+html,body,#appView{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+@media(max-width:700px){
+  .main{width:100%;max-width:100%;padding:16px 12px 86px}
+  .overview-hero,.overview-analysis,.overview-bottom,.city-layout,.order-explorer,.two-col,.equal-col,.three-col{grid-template-columns:minmax(0,1fr)!important}
+  .overview-hero{gap:10px;margin-bottom:14px}
+  .overview-revenue{min-height:0;padding:18px}
+  .overview-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .overview-kpis .kpi-card{padding:12px;min-width:0}
+  .overview-kpis .kpi-value{font-size:clamp(19px,5vw,24px);white-space:normal;overflow-wrap:anywhere}
+  .kpi-grid,.kpi-grid.four,.kpi-grid.five,.kpi-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .overview-analysis,.overview-bottom{gap:10px;margin-bottom:14px}
+  .overview-analysis .panel,.overview-bottom .panel{min-width:0;min-height:0;padding:14px 12px}
+  .chart-wrap,.chart-wrap.short,.chart-wrap.tall{height:clamp(260px,72vw,390px);min-width:0}
+  .overview-analysis .chart-wrap{height:clamp(280px,78vw,410px)}
+  .overview-insights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .overview-insights .insight{padding:11px;min-width:0}
+  .overview-bottom .chart-wrap{height:340px}
+  .panel-sub{font-size:11px;line-height:1.4}
+  .kpi-label{font-size:10px;line-height:1.3}
+  .kpi-note{font-size:10px;line-height:1.35;white-space:normal}
+  .department-filter{grid-template-columns:minmax(0,1fr) minmax(100px,auto);padding:10px 7px}
+  .department-filter .metric-name{font-size:11px}
+  .department-filter .metric-value{font-size:10px}
+  .order-table-wrap,.table-wrap{max-width:100%;overflow:auto}
+  .city-layout{gap:10px}
+  #cityMap{height:400px}
+}
+@media(max-width:420px){
+  .main{padding-left:10px;padding-right:10px}
+  .overview-kpis .kpi-value{font-size:19px}
+  .kpi-grid,.kpi-grid.four,.kpi-grid.five,.kpi-grid.three{grid-template-columns:1fr 1fr}
+  .overview-insights{grid-template-columns:1fr}
+  .chart-wrap,.chart-wrap.short,.chart-wrap.tall{height:290px}
+  .overview-analysis .chart-wrap{height:320px}
+  .panel h2,.panel h3,.panel-title{font-size:16px}
+}
