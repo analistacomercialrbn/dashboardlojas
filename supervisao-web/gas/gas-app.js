@@ -14,6 +14,10 @@ const state = {
   user:null,
   dimensions:null,
   worker:null,
+  loadingData:false,
+  serverUpdatedAt:null,
+  updateCheckTimer:null,
+  checkingForUpdates:false,
   page:'overview',
   filters:{uf:[],region:'Todos',city:'Todos',year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
   selectedCity:'Todos',
@@ -181,7 +185,8 @@ function createInlineDataEngine(source){
   }
   return engine;
 }
-function initData(force=false){
+function initData(force=false,{preserveFilters=false}={}){
+  state.loadingData=true;
   destroyCharts();
   if(state.worker)state.worker.terminate();
   setStatus(force?'Atualizando bases no Apps Script…':'Carregando bases comerciais…',true);
@@ -210,8 +215,14 @@ function initData(force=false){
     }
     if(m.type==='stage'){setStatus(m.text,true);}
     else if(m.type==='ready'){
+      const retainedFilters=preserveFilters?{...state.filters}:null;
       state.dimensions=m.dimensions;
       setupFilters();
+      if(retainedFilters){state.filters=retainedFilters;syncUiFromFilters();}
+      state.loadingData=false;
+      state.serverUpdatedAt=m.serverUpdatedAt||null;
+      if(state.serverUpdatedAt)$('#periodChip').title='Dados atualizados em '+new Date(state.serverUpdatedAt).toLocaleString('pt-BR');
+      beginAutomaticUpdates();
       setStatus('',false);
       queryPage();
     }else if(m.type==='result'){
@@ -223,6 +234,7 @@ function initData(force=false){
         $('#content').innerHTML=`<div class="empty"><strong>Não foi possível exibir esta tela.</strong><br><br>${esc(error?.message||'Ocorreu uma falha ao montar os gráficos e informações.')}</div>`;
       }
     }else if(m.type==='error'||m.type==='queryError'){
+      state.loadingData=false;
       setStatus('',false);
       $('#content').innerHTML=`<div class="empty"><strong>Não foi possível carregar os dados.</strong><br><br>${esc(m.message||'Erro desconhecido')}</div>`;
     }
@@ -258,6 +270,20 @@ function initData(force=false){
     fallbackTimer=setTimeout(()=>{if(!firstWorkerMessage)startFallback(new Error('O processador em segundo plano não respondeu.'));},3000);
     worker.postMessage({type:'init',force});
   }catch(error){startFallback(error);}
+}
+async function checkAutomaticUpdate(){
+  if(document.hidden||state.loadingData||state.checkingForUpdates||!state.user||!state.serverUpdatedAt)return;
+  state.checkingForUpdates=true;
+  try{
+    const info=await api('/api/info');
+    if(info.exists&&info.updatedAt&&info.updatedAt!==state.serverUpdatedAt)initData(false,{preserveFilters:true});
+  }catch(error){console.warn('Não foi possível conferir a atualização automática:',error?.message||String(error));}
+  finally{state.checkingForUpdates=false;}
+}
+function beginAutomaticUpdates(){
+  if(state.updateCheckTimer)return;
+  state.updateCheckTimer=setInterval(checkAutomaticUpdate,60000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkAutomaticUpdate();});
 }
 function normalizeMulti(v){
   if(Array.isArray(v)) return v.map(String).filter(x=>x&&x!=='Todos');
@@ -490,8 +516,8 @@ function renderOverview(p){
     <div class="overview-hero">
       <div class="overview-revenue">
         <div class="revenue-kicker"><i></i> Faturamento no recorte</div>
-        <div class="revenue-value">${money(k.revenue,true)}</div>
-        <div class="revenue-caption">Realizado para os filtros e período selecionados</div>
+        <div class="revenue-value" title="${money(revenue)}">${money(k.revenue,true)}</div>
+        <div class="revenue-caption"><strong>${money(revenue)}</strong> · Vendas pela data do pedido</div>
         <div class="revenue-divider"></div>
         <div class="revenue-meta"><span>Meta do recorte</span><strong>${money(k.meta,true)}</strong><span>${pct(k.attainment)} atingido</span></div>
         <div class="goal-progress" role="img" aria-label="Faturado ${pct(attainment)}; pedidos ativos e bloqueados aparecem em tons claros">
@@ -1163,4 +1189,5 @@ function downloadCoverageMap(type){
     image.onerror=()=>{URL.revokeObjectURL(url);throw new Error('Não foi possível gerar a imagem PNG.')};image.src=url;
   }catch(error){alert(error?.message||String(error))}
 }
+
 
