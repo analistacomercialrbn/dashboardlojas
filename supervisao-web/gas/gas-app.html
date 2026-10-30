@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@1c2f33c6fedf4511dd6c29759e54f2e2864466a1/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@da98486192a0ebb46248042b81ce360288666ccf/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -541,15 +541,45 @@ function compactInsights(filters,rows){
   }
   return out.slice(0,4);
 }
+
+function commercialDayKey(value){
+  const date=value instanceof Date?value:new Date(value);
+  return Number.isNaN(date.getTime())?'':date.toISOString().slice(0,10);
+}
+function commercialToday(){
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const get=type=>parts.find(p=>p.type===type).value;
+  return get('year')+'-'+get('month')+'-'+get('day');
+}
+function dailyCommercial(filters,sales,open,today=commercialToday()){
+  const selectedYear=filters.year&&filters.year!=='Todos'?Number(filters.year):null;
+  const selectedMonth=filters.month&&filters.month!=='Todos'?Number(filters.month):null;
+  const current=(!selectedYear||selectedYear===Number(today.slice(0,4)))&&(!selectedMonth||selectedMonth===Number(today.slice(5,7)));
+  let date=current?today:'';
+  if(!current)for(const row of [...SALES,...OPEN_ORDERS]){
+    if(selectedYear&&row.year!==selectedYear||selectedMonth&&row.month!==selectedMonth)continue;
+    const key=commercialDayKey(row.date);if(key>date)date=key;
+  }
+  const sold=sales.filter(row=>commercialDayKey(row.date)===date);
+  const pending=open.filter(row=>commercialDayKey(row.date)===date);
+  const orderKey=row=>[row.year,row.order,row.rca].join('|');
+  const soldValue=sold.reduce((sum,row)=>sum+(Number(row.value)||0),0);
+  const openValue=pending.reduce((sum,row)=>sum+(Number(row.value)||0),0);
+  const clients=new Set([...sold,...pending].map(row=>row.client).filter(x=>x!=null)).size;
+  return {date,isToday:date===today,soldValue,openValue,clients,soldOrders:new Set(sold.map(orderKey)).size,openOrders:new Set(pending.map(orderKey)).size};
+}
+
 function overview(filters){
   const rows=filterSales(filters);
   const yearRows=filterSales(filters,{ignoreMonth:true});
   const k=metrics(rows);
   const metaRows=filterMetas(filters),meta=totalMeta(metaRows);
-  const pipeline=openOrderSummary(filterOpenOrders(filters),k.revenue,meta);
+  const openRows=filterOpenOrders(filters);
+  const pipeline=openOrderSummary(openRows,k.revenue,meta);
+  const daily=dailyCommercial(filters,rows,openRows);
   const rca=groupRevenue(rows,s=>s.rca).map(x=>({...x,name:(RCA_BY_CODE.get(x.key)||{}).name||String(x.key),meta:metaRows.filter(m=>String(m.rca)===String(x.key)).reduce((sum,m)=>sum+(Number(m.value)||0),0)})).sort((a,b)=>b.revenue-a.revenue);
   const departments=groupRevenue(rows,s=>s.department).map(x=>({...x,meta:metaRows.filter(m=>String(m.department)===String(x.key)).reduce((sum,m)=>sum+(Number(m.value)||0),0)})).sort((a,b)=>b.revenue-a.revenue);
-  return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},pipeline,monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
+  return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},pipeline,daily,updatedAt:SERVER_UPDATED_AT,monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
 }
 function ordersPage(filters){
   const rows=filterOpenOrders(filters);
@@ -742,7 +772,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@808d85a539d1e16833910bb20c59411c43e091e5/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@d4ae340bda13e469678a9ee5d3c5c3aeb9734941/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
