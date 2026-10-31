@@ -595,6 +595,7 @@ function rbnExecutarJob_(cfg,job) {
     Array.from(dirty).sort((a,b)=>a-b).forEach(k=>{const rows=state.blocks.get(k);state.sheet.getRange(2+k*size,1,rows.length,20).setValues(rows);});
     if(state.append.length){const last=state.sheet.getLastRow(),need=last+state.append.length;if(need>state.sheet.getMaxRows())state.sheet.insertRowsAfter(state.sheet.getMaxRows(),need-state.sheet.getMaxRows());state.sheet.getRange(last+1,1,state.append.length,20).setValues(state.append);}
   });
+  summary.datasPedidos=rbnAtualizarDatasPedidos_(ss);
   SpreadsheetApp.flush();summary.concluidaEm=new Date().toISOString();summary.durationMs=Date.now()-started;
   console.log('Sincronização concluída: '+JSON.stringify(summary));return summary;
 }
@@ -656,11 +657,12 @@ function selectedSourceRows_(sheet, ix, predicate, width) {
   const dates=sheet.getRange(2,ix['Data Pedido']+1,count,1).getValues(), statuses=sheet.getRange(2,ix['Posição']+1,count,1).getValues();
   const invoices=ix['Numero Nota Fiscal']==null?null:sheet.getRange(2,ix['Numero Nota Fiscal']+1,count,1).getValues();
   const billings=ix['Data Faturamento']==null?null:sheet.getRange(2,ix['Data Faturamento']+1,count,1).getValues();
+  const initials=ix['Data inicial do pedido']==null?null:sheet.getRange(2,ix['Data inicial do pedido']+1,count,1).getValues();
   const blocks=new Set(),size=4000,result=[];
-  for(let i=0;i<count;i++) if(predicate({row:i+2,date:dates[i][0],status:statuses[i][0],invoice:invoices&&invoices[i][0],billingDate:billings&&billings[i][0]})) blocks.add(Math.floor(i/size));
+  for(let i=0;i<count;i++) if(predicate({row:i+2,date:dates[i][0],initialDate:initials&&initials[i][0],status:statuses[i][0],invoice:invoices&&invoices[i][0],billingDate:billings&&billings[i][0]})) blocks.add(Math.floor(i/size));
   Array.from(blocks).sort((a,b)=>a-b).forEach(k=>{
     const first=2+k*size, rows=sheet.getRange(first,1,Math.min(size,count-k*size),width).getValues();
-    rows.forEach((row,i)=>{if(predicate({row:first+i,date:cell_(row,ix,'Data Pedido'),status:cell_(row,ix,'Posição'),invoice:cell_(row,ix,'Numero Nota Fiscal'),billingDate:cell_(row,ix,'Data Faturamento')}))result.push(row);});
+    rows.forEach((row,i)=>{if(predicate({row:first+i,date:cell_(row,ix,'Data Pedido'),initialDate:cell_(row,ix,'Data inicial do pedido'),status:cell_(row,ix,'Posição'),invoice:cell_(row,ix,'Numero Nota Fiscal'),billingDate:cell_(row,ix,'Data Faturamento')}))result.push(row);});
   });
   return result;
 }
@@ -676,11 +678,11 @@ function buildOrderEntries_(aux, fromMonth) {
     ['Posição', 'Data Pedido', 'Cod/Vend.', 'Cod/Cliente', 'Cod/Produto', 'Pedidos Enviados'].forEach(name => { if (ix[name] == null) throw new Error('A aba ' + year + ' não contém a coluna ' + name + '.'); });
     const matches = selectedSourceRows_(sheet, ix, item => {
       if (norm_(item.status) === 'SUBSTITUIDO_NA_IMPORTACAO') return false;
-      const iso = dateIso_(item.date);
+      const iso = dateIso_(item.initialDate||item.date);
       return !!iso && iso.slice(0, 7) >= fromMonth;
     }, width);
     matches.forEach(row => {
-      const iso = dateIso_(cell_(row, ix, 'Data Pedido'));
+      const iso = dateIso_(cell_(row, ix, 'Data inicial do pedido')||cell_(row, ix, 'Data Pedido'));
       if (!iso || norm_(cell_(row, ix, 'Posição')) === 'SUBSTITUIDO_NA_IMPORTACAO' || iso.slice(0, 7) < fromMonth) return;
       const date = new Date(iso), rcaCode = code_(cell_(row, ix, 'Cod/Vend.')), rca = aux.rcaMap.get(rcaCode) || {}, clientCode = code_(cell_(row, ix, 'Cod/Cliente'));
       const rawProduct = String(cell_(row, ix, 'Cod/Produto') || '').trim(), productCode = code_(rawProduct);
@@ -813,4 +815,43 @@ function validarCacheRbn(){
  const open=openOrdersData_().orders,positions={};open.forEach(v=>{const k=v.monthKey+'|'+v.status;if(!positions[k])positions[k]={itens:0,valor:0,pedidos:{}};positions[k].itens++;positions[k].valor+=v.value;positions[k].pedidos[v.order]=true;});
  Object.keys(positions).forEach(k=>{positions[k].valor=Math.round(positions[k].valor*100)/100;positions[k].pedidos=Object.keys(positions[k].pedidos).length;});
  console.log(JSON.stringify({snapshot:info,totals:totals,positions:positions,cachePendente:p.getProperty('VENDAS_RBN_CACHE_PENDENTE'),ultimaSync:p.getProperty('VENDAS_RBN_ULTIMA_SYNC')}));
+}
+
+function rbnAtualizarDatasPedidos_(ss) {
+  const names=['Data inicial do pedido','Data atual do pedido'], groups=new Map(), sheets=[];
+  VENDAS_RBN_CFG.anos.forEach(year=>{
+    const sheet=ss.getSheetByName(year);if(!sheet)return;
+    if(sheet.getMaxColumns()<22)sheet.insertColumnsAfter(sheet.getMaxColumns(),22-sheet.getMaxColumns());
+    const headers=sheet.getRange(1,21,1,2).getValues()[0];
+    if(headers.some((v,i)=>v&&String(v)!==names[i]))throw new Error('Colunas U/V ocupadas na aba '+year+'.');
+    sheet.getRange(1,21,1,2).setValues([names]);
+    const n=Math.max(0,sheet.getLastRow()-1);if(!n)return;
+    const ids=sheet.getRange(2,9,n,1).getValues(),dates=sheet.getRange(2,16,n,1).getValues(),status=sheet.getRange(2,11,n,1).getValues(),saved=sheet.getRange(2,21,n,2).getValues();
+    const rows=[];
+    for(let i=0;i<n;i++){
+      const id=rbnCodigo_(ids[i][0]);if(!/^\d+$/.test(id))continue;
+      const date=rbnIso_(dates[i][0]),initial=rbnIso_(saved[i][0]),current=rbnIso_(saved[i][1]),active=norm_(status[i][0])!=='SUBSTITUIDO_NA_IMPORTACAO';
+      rows.push({i,id,date,initial,current,active});
+      if(!groups.has(id))groups.set(id,{initial:'',current:'',activeDate:''});
+      const g=groups.get(id);
+      if(initial&&(!g.initial||initial<g.initial))g.initial=initial;
+      if(current&&(!g.current||current>g.current))g.current=current;
+      if(active&&date&&(!g.activeDate||date>g.activeDate))g.activeDate=date;
+    }
+    sheets.push({sheet,n,rows,saved});
+  });
+  groups.forEach(g=>{g.current=g.activeDate||g.current;g.initial=g.initial||g.current;});
+  let changed=0;
+  sheets.forEach(({sheet,n,rows,saved})=>{
+    const values=saved.map(r=>r.slice());let dirty=false;
+    rows.forEach(row=>{const g=groups.get(row.id);if(!g.initial)return;
+      if(row.initial!==g.initial||row.current!==g.current){values[row.i]=[g.initial,g.current];dirty=true;changed++;}
+    });
+    if(dirty)for(let i=0;i<n;i+=4000){const chunk=values.slice(i,i+4000);sheet.getRange(i+2,21,chunk.length,2).setValues(chunk);}
+  });
+  return {pedidos:groups.size,linhasAtualizadas:changed};
+}
+function inicializarDatasPedidosRbn(){
+  const lock=LockService.getScriptLock();if(!lock.tryLock(1000))throw new Error('Outra rotina em execução.');
+  try{const result=rbnAtualizarDatasPedidos_(SpreadsheetApp.openById(CFG.salesSpreadsheetId));PropertiesService.getScriptProperties().setProperty('VENDAS_RBN_CACHE_PENDENTE','1');console.log(JSON.stringify(result));return result;}finally{lock.releaseLock();}
 }
