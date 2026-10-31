@@ -526,7 +526,7 @@ function renderOverview(p){
       <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)} · Realizado: data de faturamento · Abertos: data do pedido</p></div></div>
       <div class="executive-day-grid">
         ${kpi('Faturamento do dia',money(daily.soldValue),`${integer(daily.soldOrders)} pedidos realizados`)}
-        ${kpi('Pedidos abertos do dia',money(daily.openValue),`${integer(daily.openOrders)} pedidos · inclui bloqueados`)}
+        ${kpi('Pedidos recebidos no dia',daily.entriesAvailable?money(daily.entryValue):'—',daily.entriesAvailable?`${integer(daily.entryCount)} pedidos · faturados e não faturados`:'Entradas diárias disponíveis nos dois meses mais recentes')}
         ${kpi('Clientes no dia',integer(daily.clients),'Com venda realizada ou pedido em aberto')}
       </div>
     </section>
