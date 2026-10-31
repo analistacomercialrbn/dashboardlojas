@@ -105,6 +105,7 @@
   <script id="workerSource" type="text/plain">/* Rebanho Supervisão Web — processamento das bases fora da thread principal. */
 let SALES = [];
 let OPEN_ORDERS = [];
+let ORDER_ENTRIES = [];
 let METAS = [];
 let RCAS = [];
 let CLIENTS = new Map();
@@ -124,7 +125,7 @@ function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits
 function now(){return performance.now();}
 const CACHE_DB = 'rbn-supervisao-cache';
 const CACHE_STORE = 'snapshots';
-const CACHE_KEY = 'server-invoice-date-v1';
+const CACHE_KEY = 'server-daily-all-orders-v1';
 const LOCAL_CACHE_FALLBACK_MS = 12 * 60 * 60 * 1000;
 
 function openCacheDb(){
@@ -155,6 +156,7 @@ async function saveLocalCache(){
       serverUpdatedAt:SERVER_UPDATED_AT,
       sales:SALES,
       openOrders:OPEN_ORDERS,
+      orderEntries:ORDER_ENTRIES,
       metas:METAS,
       rcas:RCAS,
       clients:[...CLIENTS.entries()],
@@ -172,6 +174,7 @@ function restoreLocalCache(snapshot){
   SERVER_UPDATED_AT=snapshot?.serverUpdatedAt||null;
   SALES=Array.isArray(snapshot?.sales)?snapshot.sales:[];
   OPEN_ORDERS=Array.isArray(snapshot?.openOrders)?snapshot.openOrders:[];
+  ORDER_ENTRIES=Array.isArray(snapshot?.orderEntries)?snapshot.orderEntries:[];
   METAS=Array.isArray(snapshot?.metas)?snapshot.metas:[];
   RCAS=Array.isArray(snapshot?.rcas)?snapshot.rcas:[];
   CLIENTS=new Map(Array.isArray(snapshot?.clients)?snapshot.clients:[]);
@@ -278,7 +281,7 @@ async function fetchServerDataset(force){
   }
   if(!SERVER_INFO?.exists)throw new Error('Não há snapshot preparado no cache do Apps Script.');
   SERVER_UPDATED_AT=SERVER_INFO.updatedAt||null;
-  SALES=[];OPEN_ORDERS=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
+  SALES=[];OPEN_ORDERS=[];ORDER_ENTRIES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
   let received=0,expected=Number(SERVER_INFO.recordCount)||0;
 const pageSize=10000;
 const concurrency=4;
@@ -292,6 +295,7 @@ const concurrency=4;
         else if(item.type==='goal')METAS.push(v);
         else if(item.type==='client')CLIENTS.set(v[0],v[1]);
         else if(item.type==='sale'){v.date=new Date(v.date);SALES.push(v);}
+        else if(item.type==='orderEntry'){v.date=new Date(v.date);ORDER_ENTRIES.push(v);}
         else if(item.type==='openOrder'){v.date=new Date(v.date);OPEN_ORDERS.push(v);}
       }else switch(row[0]){
         case 0:{
@@ -299,6 +303,7 @@ const concurrency=4;
           SALES.push({date,year,month,monthKey:year+'-'+String(month).padStart(2,'0'),rca:row[2],rcaName:rca.name||String(row[2]??''),supervisor:rca.supervisor||'',department:row[3],client:row[4],product:row[5],productName:row[6],order:row[7],city:row[8],uf:row[9],region:row[10],value:row[11],marginPct:null});
           break;
         }
+        case 5:{const date=new Date(row[1]);ORDER_ENTRIES.push({date,year:date.getUTCFullYear(),month:date.getUTCMonth()+1,rca:row[2],department:row[3],client:row[4],product:row[5],order:row[7],city:row[8],uf:row[9],region:row[10],value:row[11]});break;}
         case 1:RCAS.push({code:row[1],name:row[2],supervisor:row[3],active:row[4]});break;
         case 2:METAS.push({monthKey:row[1],year:row[2],month:row[3],rca:row[4],rcaName:row[5],supervisor:row[6],department:row[7],value:row[8]});break;
         case 3:CLIENTS.set(row[1],{code:row[1],name:row[2],rca:row[3]});break;
@@ -385,7 +390,7 @@ function multi(v){
 }
 function rcaCatalog(){
   const catalog=new Map(RCAS.map(r=>[String(r.code),{...r}]));
-  for(const rows of [SALES,OPEN_ORDERS,METAS])for(const row of rows){
+  for(const rows of [SALES,OPEN_ORDERS,ORDER_ENTRIES,METAS])for(const row of rows){
     const key=String(row.rca);
     if(catalog.has(key))continue;
     catalog.set(key,{code:row.rca,name:row.rcaName&&String(row.rcaName)!==key?row.rcaName:(row.rca==null?'Sem RCA':'RCA '+key),supervisor:row.supervisor||'Sem supervisor',active:false,fromTransactions:true});
@@ -421,7 +426,7 @@ function filterSales(filters,{ignoreMonth=false, city=null}={}){
     return true;
   });
 }
-function filterOpenOrders(filters,{ignoreMonth=false}={}){
+function filterOpenOrders(filters,{ignoreMonth=false,source=OPEN_ORDERS}={}){
   const allowed=allowedRca(filters);
   const departments=multi(filters.department);
   const targetYear=filters.year&&filters.year!=='Todos'?Number(filters.year):null;
@@ -429,7 +434,7 @@ function filterOpenOrders(filters,{ignoreMonth=false}={}){
   const targetUfs=multi(filters.uf).map(value=>value.toUpperCase());
   const targetRegion=filters.region&&filters.region!=='Todos'?norm(filters.region):null;
   const targetCity=filters.city&&filters.city!=='Todos'?norm(filters.city):null;
-  return OPEN_ORDERS.filter(o=>{
+  return source.filter(o=>{
     if(!allowed.has(o.rca))return false;
     if(targetYear!==null&&o.year!==targetYear)return false;
     if(targetMonth!==null&&o.month!==targetMonth)return false;
@@ -568,11 +573,14 @@ function dailyCommercial(filters,sales,open,today=commercialToday()){
   }
   const sold=sales.filter(row=>commercialDayKey(row.date)===date);
   const pending=open.filter(row=>commercialDayKey(row.date)===date);
+  const entries=filterOpenOrders(filters,{ignoreMonth:true,source:ORDER_ENTRIES}).filter(row=>commercialDayKey(row.date)===date);
+  const earliest=ORDER_ENTRIES.reduce((min,row)=>{const key=commercialDayKey(row.date).slice(0,7);return !min||key<min?key:min},'');
+  const entriesAvailable=!!earliest&&date.slice(0,7)>=earliest;
   const orderKey=row=>[row.year,row.order,row.rca].join('|');
   const soldValue=sold.reduce((sum,row)=>sum+(Number(row.value)||0),0);
   const openValue=pending.reduce((sum,row)=>sum+(Number(row.value)||0),0);
   const clients=new Set([...sold,...pending].map(row=>row.client).filter(x=>x!=null)).size;
-  return {date,isToday:date===today,soldValue,openValue,clients,soldOrders:new Set(sold.map(orderKey)).size,openOrders:new Set(pending.map(orderKey)).size};
+  return {date,isToday:date===today,soldValue,openValue,clients,entriesAvailable,entryValue:entries.reduce((sum,row)=>sum+Number(row.value||0),0),entryCount:new Set(entries.map(orderKey)).size,soldOrders:new Set(sold.map(orderKey)).size,openOrders:new Set(pending.map(orderKey)).size};
 }
 
 function overview(filters){
@@ -778,7 +786,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c4414e6b3a8d254f5376beb7cf63fbcf4b6a9d55/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@f1692daee5efd62f513410ae35a8a71b050bd976/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
