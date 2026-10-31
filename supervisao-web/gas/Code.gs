@@ -203,6 +203,7 @@ function datasetInfo_() {
 function compactSnapshotRecord_(raw) {
   const item = JSON.parse(String(raw || '{}')), v = item.value || {};
   switch (item.type) {
+    case 'orderEntry': return [5, v.date, v.rca, v.department, v.client, v.product, v.productName, v.order, v.city, v.uf, v.region, v.value];
     case 'sale': return [0, v.date, v.rca, v.department, v.client, v.product, v.productName, v.order, v.city, v.uf, v.region, v.value];
     case 'rca': return [1, v.code, v.name, v.supervisor, v.active];
     case 'goal': return [2, v.monthKey, v.year, v.month, v.rca, v.rcaName, v.supervisor, v.department, v.value];
@@ -232,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/a9ea792fe0252ac2d31387fe299148b8f178b113/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/6fe208fa150b231693fcfc1c0778ea415ec53e65/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -663,6 +664,35 @@ function selectedSourceRows_(sheet, ix, predicate, width) {
   });
   return result;
 }
+function buildOrderEntries_(aux, fromMonth) {
+  const source = SpreadsheetApp.openById(CFG.salesSpreadsheetId), records = [];
+  let latest = null;
+  CFG.years.forEach(year => {
+    const sheet = source.getSheetByName(year);
+    if (!sheet) throw new Error('A aba anual ' + year + ' não foi encontrada na base de vendas.');
+    const width = sheet.getLastColumn();
+    if (!width || sheet.getLastRow() < 2) return;
+    const ix = headerIndex_(sheet.getRange(1, 1, 1, width).getValues()[0]);
+    ['Posição', 'Data Pedido', 'Cod/Vend.', 'Cod/Cliente', 'Cod/Produto', 'Pedidos Enviados'].forEach(name => { if (ix[name] == null) throw new Error('A aba ' + year + ' não contém a coluna ' + name + '.'); });
+    const matches = selectedSourceRows_(sheet, ix, item => {
+      if (norm_(item.status) === 'SUBSTITUIDO_NA_IMPORTACAO') return false;
+      const iso = dateIso_(item.date);
+      return !!iso && iso.slice(0, 7) >= fromMonth;
+    }, width);
+    matches.forEach(row => {
+      const iso = dateIso_(cell_(row, ix, 'Data Pedido'));
+      if (!iso || norm_(cell_(row, ix, 'Posição')) === 'SUBSTITUIDO_NA_IMPORTACAO' || iso.slice(0, 7) < fromMonth) return;
+      const date = new Date(iso), rcaCode = code_(cell_(row, ix, 'Cod/Vend.')), rca = aux.rcaMap.get(rcaCode) || {}, clientCode = code_(cell_(row, ix, 'Cod/Cliente'));
+      const rawProduct = String(cell_(row, ix, 'Cod/Produto') || '').trim(), productCode = code_(rawProduct);
+      const productName = rawProduct.replace(/^\s*\d+\s*-\s*/, '').trim() || (productCode == null ? 'Sem descrição' : 'Produto ' + productCode);
+      const city = String(cell_(row, ix, 'MUNICENT') || '').trim(), region = aux.routeMap.get(String(rcaCode) + '|' + norm_(city)) || '';
+      const sale = { date: iso, year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, monthKey: iso.slice(0, 7), rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: clientCode, product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')), marginPct: null };
+      records.push(JSON.stringify({ type: 'orderEntry', value: sale })); if (!latest || iso > latest) latest = iso;
+    });
+  });
+  return { records: records, latest: latest };
+}
+
 function buildRecentSalesRecords_(aux, fromMonth) {
   const source = SpreadsheetApp.openById(CFG.salesSpreadsheetId), records = [];
   let latest = null;
@@ -738,6 +768,7 @@ function refreshDataset_() {
       snapshot={records:head.concat(retained,recent.records),latest:latest,validCount:retained.length+recentCount};
       snapshot.records.push(JSON.stringify({type:'meta',value:{latest:latest,validCount:snapshot.validCount}}));
     }else snapshot=buildSnapshotRecords_();
+    snapshot.records=snapshot.records.concat(buildOrderEntries_(aux,fromMonth).records);
     let next=cache.getSheetByName(nextName);if(!next)next=cache.insertSheet(nextName);
     const need=snapshot.records.length+1;if(need>next.getMaxRows())next.insertRowsAfter(next.getMaxRows(),need-next.getMaxRows());
     next.clearContents();next.getRange(1,1).setValue('NDJSON');
