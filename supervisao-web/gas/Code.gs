@@ -823,7 +823,12 @@ function rbnAtualizarDatasPedidos_(ss) {
     const sheet=ss.getSheetByName(year);if(!sheet)return;
     if(sheet.getMaxColumns()<22)sheet.insertColumnsAfter(sheet.getMaxColumns(),22-sheet.getMaxColumns());
     const headers=sheet.getRange(1,21,1,2).getValues()[0];
-    if(headers.some((v,i)=>v&&String(v)!==names[i]))throw new Error('Colunas U/V ocupadas na aba '+year+'.');
+    headers.forEach((v,i)=>{
+      if(!v||String(v)===names[i])return;
+      if(String(v)!=='Column '+(21+i))throw new Error('Colunas U/V ocupadas na aba '+year+'.');
+      const count=sheet.getLastRow()-1;
+      if(count>0){const range=sheet.getRange(2,21+i,count,1);if(range.getValues().some(r=>r[0]!==''&&r[0]!=null)||range.getFormulas().some(r=>r[0]))throw new Error('Coluna reservada possui dados na aba '+year+'.');}
+    });
     sheet.getRange(1,21,1,2).setValues([names]);
     const n=Math.max(0,sheet.getLastRow()-1);if(!n)return;
     const ids=sheet.getRange(2,9,n,1).getValues(),dates=sheet.getRange(2,16,n,1).getValues(),status=sheet.getRange(2,11,n,1).getValues(),saved=sheet.getRange(2,21,n,2).getValues();
@@ -855,3 +860,4 @@ function inicializarDatasPedidosRbn(){
   const lock=LockService.getScriptLock();if(!lock.tryLock(1000))throw new Error('Outra rotina em execução.');
   try{const result=rbnAtualizarDatasPedidos_(SpreadsheetApp.openById(CFG.salesSpreadsheetId));PropertiesService.getScriptProperties().setProperty('VENDAS_RBN_CACHE_PENDENTE','1');console.log(JSON.stringify(result));return result;}finally{lock.releaseLock();}
 }
+
