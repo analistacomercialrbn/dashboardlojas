@@ -192,7 +192,7 @@ function emitReady(){
   const visibleRcas=catalog.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
   const geography=[...new Map(SALES.filter(s=>s.uf&&s.region&&s.city).map(s=>{const uf=String(s.uf).trim().toUpperCase(),region=String(s.region).trim(),city=String(s.city).trim();return [uf+'|'+norm(region)+'|'+norm(city),{uf,region,city}]})).values()];
   postStage('Base pronta.',100);
-  postMessage({type:'ready',fromLocal:READY_FROM_LOCAL,serverUpdatedAt:SERVER_UPDATED_AT,dimensions:{years,departments,supervisors,rcas:visibleRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
+  postMessage({type:'ready',fromLocal:READY_FROM_LOCAL,serverUpdatedAt:SERVER_UPDATED_AT,updateInfo:SERVER_INFO,dimensions:{years,departments,supervisors,rcas:visibleRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
 }
 
 const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -274,7 +274,7 @@ async function fetchServerDataset(force){
     const result=await serverRequest('refresh');
     if(!result?.ok)throw new Error(result?.message||'Não foi possível atualizar as bases.');
     SERVER_INFO=await fetchServerDatasetInfo();
-    postStage('Bases processadas. Carregando páginas do cache…',30);
+    postStage(result.pending?'Atualização em andamento. Abrindo a última base disponível…':'Bases processadas. Carregando páginas do cache…',30);
   }else{
     SERVER_INFO=await fetchServerDatasetInfo();
     if(!SERVER_INFO?.exists)throw new Error('A base preparada ainda não existe. Clique em “Atualizar bases” para criá-la.');
