@@ -198,7 +198,7 @@ function refreshDataset_() {
 }
 function datasetInfo_() {
   const p = PropertiesService.getScriptProperties(), updatedAt = p.getProperty('SNAPSHOT_UPDATED_AT'), recordCount = Number(p.getProperty('SNAPSHOT_RECORD_COUNT') || 0);
-  return { ok: true, exists: !!updatedAt && recordCount > 0, updatedAt: updatedAt, latest: p.getProperty('SNAPSHOT_LATEST_DATE'), salesCount: Number(p.getProperty('SNAPSHOT_SALES_COUNT') || 0), recordCount: recordCount };
+  return { ok: true, exists: !!updatedAt && recordCount > 0, updatedAt: updatedAt, latest: p.getProperty('SNAPSHOT_LATEST_DATE'), salesCount: Number(p.getProperty('SNAPSHOT_SALES_COUNT') || 0), recordCount: recordCount, updating: p.getProperty('VENDAS_RBN_CACHE_PENDENTE')==='1'||!!p.getProperty('RBN_SALES_JOB_N'), updateStage:p.getProperty('RBN_UPDATE_STAGE')||'',updateError:p.getProperty('RBN_UPDATE_ERROR')||'' };
 }
 function compactSnapshotRecord_(raw) {
   const item = JSON.parse(String(raw || '{}')), v = item.value || {};
@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/6fe208fa150b231693fcfc1c0778ea415ec53e65/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/5fee82b175fa394dae8dbb543bb86815d6111d28/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -502,6 +502,7 @@ function rbnMesmaLinha_(a,b) {
   return a.every(function(v,i) {
     var w=b[i];
     if ([15,16].indexOf(i)!==-1) return rbnIso_(v) === rbnIso_(w);
+    if([11,12,13,14].indexOf(i)!==-1){if((v===''||v==null)&&(w===''||w==null))return true;if(v===''||v==null||w===''||w==null)return false;return Math.abs(num_(v)-num_(w))<0.0000001;}
     return String(v == null ? '' : v).trim() === String(w == null ? '' : w).trim();
   });
 }
@@ -548,7 +549,7 @@ function rbnExecutarJob_(cfg,job) {
     total+=p.linhas.length;if(total>VENDAS_RBN_CFG.maxItens)throw new Error('Divida a sincronização por mês.');
     if(p.proximo_cursor!=null&&p.proximo_cursor<=cursor)throw new Error('Cursor não avançou.');cursor=p.proximo_cursor;
   }while(cursor!=null);
-  if(!incoming.size)throw new Error('Exportação vazia: origem preservada.');
+  if(!incoming.size&&!job.allowEmpty)throw new Error('Exportação vazia: origem preservada.');
   console.log('Exportação recebida: '+total+' itens em '+Math.round((Date.now()-started)/1000)+'s.');
   const ss=SpreadsheetApp.openById(cfg.sheetId),matches=new Map(),byYear={},size=4000,marker='SUBSTITUIDO_NA_IMPORTACAO';
   const incomingYears=new Set(Array.from(incoming.values()).map(v=>v.ano));
@@ -605,7 +606,7 @@ function atualizarCacheVendasRbn() {
   // A função existente refreshDataset_ já usa LockService para evitar concorrência.
   var result=refreshDataset_();
   if (result && result.ok) {
-    props.deleteProperty('VENDAS_RBN_CACHE_PENDENTE');
+    if(!result.pending)props.deleteProperty('VENDAS_RBN_CACHE_PENDENTE');
     return {ok:true,atualizar:true,resultado:result};
   }
   throw new Error('Não foi possível atualizar o cache da Supervisão.');
@@ -783,7 +784,7 @@ function refreshDataset_() {
   }catch(err){props.setProperty('VENDAS_RBN_ULTIMO_ERRO_CACHE',String(err).slice(0,1500));throw err;}finally{lock.releaseLock();}
 }
 function sourceSignature_() {
-  return String(PropertiesService.getScriptProperties().getProperty('VENDAS_RBN_ULTIMA_SYNC') || '') + ':' + SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId).getSheets().map(function(sheet) { return sheet.getLastRow(); }).join(',');
+  return String(PropertiesService.getScriptProperties().getProperty('VENDAS_RBN_ULTIMA_SYNC') || '') + ':' + String(PropertiesService.getScriptProperties().getProperty('RBN_GOALS_SIGNATURE')||'') + ':' + SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId).getSheets().map(function(sheet) { return sheet.getLastRow(); }).join(',');
 }
 function automaticRefreshDataset_() {
   const lock = LockService.getScriptLock(); if (!lock.tryLock(1000)) return { ok: true, skipped: true, reason: 'Atualização já em andamento.' };
@@ -848,11 +849,11 @@ function rbnAtualizarDatasPedidos_(ss) {
   groups.forEach(g=>{g.current=g.activeDate||g.current;g.initial=g.initial||g.current;});
   let changed=0;
   sheets.forEach(({sheet,n,rows,saved})=>{
-    const values=saved.map(r=>r.slice());let dirty=false;
+    const values=saved.map(r=>r.slice()),dirty=new Set();
     rows.forEach(row=>{const g=groups.get(row.id);if(!g.initial)return;
-      if(row.initial!==g.initial||row.current!==g.current){values[row.i]=[g.initial,g.current];dirty=true;changed++;}
+      if(row.initial!==g.initial||row.current!==g.current){values[row.i]=[g.initial,g.current];dirty.add(Math.floor(row.i/4000));changed++;}
     });
-    if(dirty)for(let i=0;i<n;i+=4000){const chunk=values.slice(i,i+4000);sheet.getRange(i+2,21,chunk.length,2).setValues(chunk);}
+    Array.from(dirty).sort((a,b)=>a-b).forEach(k=>{const i=k*4000,chunk=values.slice(i,i+4000);sheet.getRange(i+2,21,chunk.length,2).setValues(chunk);});
   });
   return {pedidos:groups.size,linhasAtualizadas:changed};
 }
@@ -861,3 +862,59 @@ function inicializarDatasPedidosRbn(){
   try{const result=rbnAtualizarDatasPedidos_(SpreadsheetApp.openById(CFG.salesSpreadsheetId));PropertiesService.getScriptProperties().setProperty('VENDAS_RBN_CACHE_PENDENTE','1');console.log(JSON.stringify(result));return result;}finally{lock.releaseLock();}
 }
 
+
+
+// Checkpoints keep completed work across executions. Only a complete staging cache is published.
+function rbnLoadState_(key){const p=PropertiesService.getScriptProperties(),n=Number(p.getProperty(key+'_N')||0);if(!n)return null;let s='';for(let i=0;i<n;i++)s+=p.getProperty(key+'_'+i)||'';return JSON.parse(s);}
+function rbnSaveState_(key,value){const p=PropertiesService.getScriptProperties(),s=JSON.stringify(value),parts={};for(let i=0;i<s.length;i+=6000)parts[key+'_'+(i/6000)]=s.slice(i,i+6000);p.setProperties(parts,false);p.setProperty(key+'_N',String(Math.ceil(s.length/6000)));}
+function rbnClearState_(key){const p=PropertiesService.getScriptProperties(),n=Number(p.getProperty(key+'_N')||0);for(let i=0;i<n;i++)p.deleteProperty(key+'_'+i);p.deleteProperty(key+'_N');}
+function rbnScheduleContinuation_(){const h='continuarAtualizacaoRbn';if(!ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()===h))ScriptApp.newTrigger(h).timeBased().after(1000).create();}
+function rbnStatus_(stage,error){PropertiesService.getScriptProperties().setProperties({RBN_UPDATE_STAGE:stage,RBN_UPDATE_STAGE_AT:new Date().toISOString(),RBN_UPDATE_ERROR:error?String(error).slice(0,1000):''},false);}
+function rbnSheetsBatch_(id,requests){if(!requests.length)return;const res=UrlFetchApp.fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(id)+':batchUpdate',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+ScriptApp.getOAuthToken()},payload:JSON.stringify({requests:requests}),muteHttpExceptions:true});if(res.getResponseCode()>=300)throw new Error('Gravação do cache HTTP '+res.getResponseCode()+': '+res.getContentText().slice(0,500));}
+function rbnWriteRecords_(ss,sheet,start,records){for(let i=0;i<records.length;i+=2000)rbnSheetsBatch_(ss.getId(),[{updateCells:{start:{sheetId:sheet.getSheetId(),rowIndex:start+i,columnIndex:0},rows:records.slice(i,i+2000).map(v=>({values:[{userEnteredValue:{stringValue:v}}]})),fields:'userEnteredValue'}}]);}
+function rbnHistoryRuns_(rows,fromMonth){const runs=[];let count=0,latest=null;rows.forEach((row,i)=>{const item=JSON.parse(String(row[0]||''));if(item.type!=='sale'||!item.value)return;const date=String(item.value.date||'');if(!date||date.slice(0,7)>=fromMonth)return;const source=i+1,last=runs[runs.length-1];if(last&&last.source+last.length===source)last.length++;else runs.push({source:source,target:count,length:1});count++;if(!latest||date>latest)latest=date;});return {runs:runs,count:count,latest:latest};}
+function refreshDataset_(){
+  const lock=LockService.getScriptLock();if(!lock.tryLock(1000))return {ok:true,pending:true,message:'Atualização em andamento.'};
+  const p=PropertiesService.getScriptProperties(),started=Date.now();
+  try{
+    if(rbnLoadState_('RBN_SALES_JOB')){rbnScheduleContinuation_();return {ok:true,pending:true,message:'Sincronizando vendas antes do cache.'};}
+    let st=rbnLoadState_('RBN_CACHE_JOB');const cache=SpreadsheetApp.openById(CFG.cacheSpreadsheetId);
+    if(st&&st.signature!==sourceSignature_()){rbnClearState_('RBN_CACHE_JOB');st=null;}
+    if(!st){
+      rbnStatus_('Preparando dados recentes');const aux=readAuxiliary_(),info=datasetInfo_(),from=previousMonthKey_(new Date()),sourceName=p.getProperty('SNAPSHOT_SHEET_NAME')||'DATASET',old=cache.getSheetByName(sourceName);
+      if(p.getProperty('SNAPSHOT_DATE_BASIS')!=='invoice'||!info.exists||!old)throw new Error('Histórico precisa estar previamente inicializado por faturamento.');
+      const history=rbnHistoryRuns_(old.getRange(2,1,Math.min(info.recordCount,old.getLastRow()-1),1).getValues(),from),recent=buildRecentSalesRecords_(aux,from),entries=buildOrderEntries_(aux,from),head=[];
+      aux.rcas.forEach(v=>head.push(JSON.stringify({type:'rca',value:v})));aux.goals.forEach(v=>head.push(JSON.stringify({type:'goal',value:v})));aux.clients.forEach(v=>head.push(JSON.stringify({type:'client',value:v})));
+      let latest=history.latest;const totals={};recent.records.forEach(raw=>{const v=JSON.parse(raw).value;if(!latest||v.date>latest)latest=v.date;const k=v.monthKey;if(!totals[k])totals[k]={itens:0,valor:0};totals[k].itens++;totals[k].valor+=v.value;});
+      if(!history.count&&!recent.records.length)throw new Error('Nenhuma venda válida; cache anterior preservado.');
+      const salesCount=history.count+recent.records.length,tail=recent.records.concat([JSON.stringify({type:'meta',value:{latest:latest,validCount:salesCount}})],entries.records),targetName=sourceName==='DATASET_A'?'DATASET_B':'DATASET_A';let target=cache.getSheetByName(targetName);if(!target)target=cache.insertSheet(targetName);
+      const count=head.length+history.count+tail.length;if(target.getMaxRows()<count+1)target.insertRowsAfter(target.getMaxRows(),count+1-target.getMaxRows());
+      rbnSheetsBatch_(cache.getId(),[{updateCells:{range:{sheetId:target.getSheetId(),startRowIndex:0,endRowIndex:target.getMaxRows(),startColumnIndex:0,endColumnIndex:1},fields:'userEnteredValue'}}]);
+      rbnWriteRecords_(cache,target,0,['NDJSON'].concat(head));rbnWriteRecords_(cache,target,1+head.length+history.count,tail);
+      const open=p.getProperty('OPEN_ORDERS_SHEET_NAME')||'OPEN_ORDERS';st={sourceName:sourceName,targetName:targetName,targetOpen:open==='OPEN_ORDERS_A'?'OPEN_ORDERS_B':'OPEN_ORDERS_A',signature:sourceSignature_(),fromMonth:from,headLength:head.length,history:history,runsDone:0,latest:latest,salesCount:salesCount,recordCount:count,totals:totals,startedAt:new Date(started).toISOString()};
+      rbnSaveState_('RBN_CACHE_JOB',st);rbnStatus_('Copiando histórico consolidado');rbnScheduleContinuation_();console.log('Cache preparado: '+JSON.stringify({recordCount:count,history:history.count,written:head.length+tail.length,durationMs:Date.now()-started}));return {ok:true,pending:true,message:'Dados recentes preparados; histórico em conclusão.'};
+    }
+    const source=cache.getSheetByName(st.sourceName),target=cache.getSheetByName(st.targetName);if(!source||!target)throw new Error('Cache de preparação ausente.');
+    while(st.runsDone<st.history.runs.length){const runs=st.history.runs.slice(st.runsDone,st.runsDone+40);rbnSheetsBatch_(cache.getId(),runs.map(r=>({copyPaste:{source:{sheetId:source.getSheetId(),startRowIndex:r.source,endRowIndex:r.source+r.length,startColumnIndex:0,endColumnIndex:1},destination:{sheetId:target.getSheetId(),startRowIndex:1+st.headLength+r.target,endRowIndex:1+st.headLength+r.target+r.length,startColumnIndex:0,endColumnIndex:1},pasteType:'PASTE_VALUES'}})));st.runsDone+=runs.length;rbnSaveState_('RBN_CACHE_JOB',st);if(Date.now()-started>180000){rbnScheduleContinuation_();return {ok:true,pending:true};}}
+    rbnStatus_('Atualizando pedidos em aberto');const opened=refreshOpenOrdersCache_(readAuxiliary_(),st.targetOpen,true);SpreadsheetApp.flush();if(st.signature!==sourceSignature_())throw new Error('Origem mudou durante o processamento; cache anterior preservado.');
+    const updatedAt=new Date().toISOString();Object.keys(st.totals).forEach(k=>st.totals[k].valor=Math.round(st.totals[k].valor*100)/100);
+    p.setProperties({SNAPSHOT_DATE_BASIS:'invoice',SNAPSHOT_SHEET_NAME:st.targetName,OPEN_ORDERS_SHEET_NAME:st.targetOpen,SNAPSHOT_UPDATED_AT:updatedAt,OPEN_ORDERS_UPDATED_AT:updatedAt,SNAPSHOT_LATEST_DATE:st.latest,SNAPSHOT_SALES_COUNT:String(st.salesCount),SNAPSHOT_RECORD_COUNT:String(st.recordCount),SNAPSHOT_RECENT_TOTALS:JSON.stringify(st.totals),AUTO_REFRESH_SOURCE_SIGNATURE:st.signature},false);p.deleteProperty('VENDAS_RBN_CACHE_PENDENTE');p.deleteProperty('VENDAS_RBN_ULTIMO_ERRO_CACHE');rbnClearState_('RBN_CACHE_JOB');rbnStatus_('Atualizado');
+    const result={ok:true,pending:false,mode:'incremental',fromMonth:st.fromMonth,latest:st.latest,salesCount:st.salesCount,recordCount:st.recordCount,updatedAt:updatedAt,totals:st.totals,openOrders:opened.count,durationMs:Date.now()-Date.parse(st.startedAt)};console.log('Cache publicado: '+JSON.stringify(result));return result;
+  }catch(e){rbnStatus_('Falha na atualização',e);p.setProperty('VENDAS_RBN_CACHE_PENDENTE','1');throw e;}finally{lock.releaseLock();}
+}
+function rbnPeriods_(inicio,fim){const result=[];let cursor=inicio;while(cursor<=fim){const d=new Date(cursor+'T12:00:00Z'),end=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).toISOString().slice(0,10);result.push({inicio:cursor,fim:end<fim?end:fim});const next=new Date(end+'T12:00:00Z');next.setUTCDate(next.getUTCDate()+1);cursor=next.toISOString().slice(0,10);}return result;}
+function sincronizarVendasRbn(){
+  const lock=LockService.getScriptLock();if(!lock.tryLock(1000))return {ok:true,pending:true};const p=PropertiesService.getScriptProperties();let st=null;
+  try{
+    if(rbnLoadState_('RBN_CACHE_JOB')){rbnScheduleContinuation_();return {ok:true,pending:true};}
+    const cfg=rbnConfig_();st=rbnLoadState_('RBN_SALES_JOB');
+    if(!st){const jobs=(rbnApi_(cfg,'acao=jobs').jobs||[]).filter(j=>Number(j.tentativas||0)<3).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));if(!jobs.length)return {ok:true,pendentes:0};const job=jobs[0];rbnApi_(cfg,'',{acao:'iniciar',id:job.id});st={job:job,periods:rbnPeriods_(job.periodo_inicio,job.periodo_fim),done:0,results:[]};rbnSaveState_('RBN_SALES_JOB',st);}
+    if(st.failed)throw new Error('Sincronização pausada para revisão: '+st.failed);
+    if(st.done<st.periods.length){const period=st.periods[st.done];rbnStatus_('Sincronizando '+period.inicio.slice(0,7));rbnApi_(cfg,'',{acao:'heartbeat',id:st.job.id});const result=rbnExecutarJob_(cfg,Object.assign({},st.job,{periodo_inicio:period.inicio,periodo_fim:period.fim,allowEmpty:true}));st.results.push(result);st.done++;rbnSaveState_('RBN_SALES_JOB',st);rbnApi_(cfg,'',{acao:'heartbeat',id:st.job.id});}
+    if(st.done<st.periods.length){rbnScheduleContinuation_();return {ok:true,pending:true,completedMonths:st.done,totalMonths:st.periods.length};}
+    const lines=st.results.reduce((s,r)=>s+r.exportadas,0);rbnApi_(cfg,'',{acao:'concluir',id:st.job.id,linhas:lines});p.setProperties({VENDAS_RBN_ULTIMA_SYNC:JSON.stringify({id:st.job.id,inicio:st.job.periodo_inicio,fim:st.job.periodo_fim,exportadas:lines,concluidaEm:new Date().toISOString()}),VENDAS_RBN_CACHE_PENDENTE:'1'},false);rbnClearState_('RBN_SALES_JOB');rbnStatus_('Vendas sincronizadas; preparando dashboard');rbnScheduleContinuation_();return {ok:true,pending:true};
+  }catch(e){rbnStatus_('Falha na sincronização',e);if(st){st.errors=Number(st.errors||0)+1;if(st.errors>=3)st.failed=String(e).slice(0,500);rbnSaveState_('RBN_SALES_JOB',st);if(!st.failed)rbnScheduleContinuation_();}throw e;}finally{lock.releaseLock();}
+}
+function sincronizarMetasRbn(){const lock=LockService.getScriptLock();if(!lock.tryLock(1000))return {ok:true,pending:true};try{const p=PropertiesService.getScriptProperties(),data=rbnApi_(rbnConfig_(),'acao=metas');if(!Array.isArray(data.metas)||!data.signature)throw new Error('Exportação de metas inválida.');if(p.getProperty('RBN_GOALS_SIGNATURE')===data.signature)return {ok:true,changed:false};const incoming=data.metas,keys=new Set(),months=new Set();const rows=incoming.map(v=>{const mes=String(v.mes),rca=Number(v.cod_rca),department=String(v.departamento||''),value=Number(v.meta),key=mes+'|'+rca+'|'+department;if(!/^20\d\d-\d\d$/.test(mes)||!Number.isFinite(rca)||!department||!Number.isFinite(value)||value<0||keys.has(key))throw new Error('Meta inválida ou duplicada.');keys.add(key);months.add(mes);return [mes,rca,department,value];});if(!rows.length)return {ok:true,changed:false};const sheet=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId).getSheetByName('METAS'),old=sheet.getDataRange().getValues();if(old[0].slice(0,4).join('|')!=='MES|COD_RCA|DEPARTAMENTO|META')throw new Error('Cabeçalho de metas divergente.');const output=old.slice(1).filter(v=>v[0]&&!months.has(String(v[0]))).map(v=>v.slice(0,4)).concat(rows);sheet.getRange(2,1,output.length,4).setValues(output);if(old.length>output.length+1)sheet.getRange(output.length+2,1,old.length-output.length-1,4).clearContent();SpreadsheetApp.flush();p.setProperties({RBN_GOALS_SIGNATURE:data.signature,RBN_GOALS_UPDATED_AT:new Date().toISOString(),VENDAS_RBN_CACHE_PENDENTE:'1'},false);rbnScheduleContinuation_();return {ok:true,changed:true,rows:rows.length};}finally{lock.releaseLock();}}
+function continuarAtualizacaoRbn(){ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='continuarAtualizacaoRbn').forEach(t=>ScriptApp.deleteTrigger(t));if(rbnLoadState_('RBN_SALES_JOB'))return sincronizarVendasRbn();if(rbnLoadState_('RBN_CACHE_JOB')||PropertiesService.getScriptProperties().getProperty('VENDAS_RBN_CACHE_PENDENTE')==='1')return atualizarCacheVendasRbn();return {ok:true};}
+function instalarFluxoRapidoRbn(){const wanted={sincronizarVendasRbn:1,atualizarCacheVendasRbn:1,sincronizarMetasRbn:1},seen={};ScriptApp.getProjectTriggers().forEach(t=>{const h=t.getHandlerFunction();if(wanted[h]){ScriptApp.deleteTrigger(t);seen[h]=true;}});Object.keys(wanted).forEach(h=>ScriptApp.newTrigger(h).timeBased().everyMinutes(1).create());console.log('Fluxo automático a cada minuto e continuação por etapa instalado.');}
