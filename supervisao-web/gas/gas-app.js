@@ -224,10 +224,7 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
       if(retainedFilters){state.filters=retainedFilters;syncUiFromFilters();}
       state.loadingData=false;
       state.serverUpdatedAt=m.serverUpdatedAt||null;
-      const stamp=state.serverUpdatedAt?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(state.serverUpdatedAt)):'';
-      $('#lastBaseUpdate').textContent=stamp?'Última atualização: '+stamp:'';
-      $('#lastBaseUpdate').dateTime=state.serverUpdatedAt||'';
-      if(stamp)$('#periodChip').title='Dados atualizados em '+stamp;
+      renderBaseUpdate(m.updateInfo||{updatedAt:state.serverUpdatedAt});
       beginAutomaticUpdates();
       setStatus('',false);
       queryPage();
@@ -278,11 +275,19 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
     worker.postMessage({type:'init',force,preferFresh});
   }catch(error){startFallback(error);}
 }
+function renderBaseUpdate(info={}){
+  const node=$('#lastBaseUpdate');if(!node)return;
+  const date=info.updatedAt||state.serverUpdatedAt;
+  const stamp=date?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(date)):'';
+  const status=info.updateError?' · Atualização com pendência':info.updating?' · Atualizando automaticamente…':'';
+  node.textContent=(stamp?'Última atualização: '+stamp:'')+status;node.dateTime=date||'';node.title=info.updateError||info.updateStage||'';
+}
 async function checkAutomaticUpdate(){
   if(document.hidden||state.loadingData||state.checkingForUpdates||!state.user||!state.serverUpdatedAt)return;
   state.checkingForUpdates=true;
   try{
     const info=await api('/api/info');
+    renderBaseUpdate(info);
     if(info.exists&&info.updatedAt&&info.updatedAt!==state.serverUpdatedAt)initData(false,{preserveFilters:true,background:true,preferFresh:true});
   }catch(error){console.warn('Não foi possível conferir a atualização automática:',error?.message||String(error));}
   finally{state.checkingForUpdates=false;}
