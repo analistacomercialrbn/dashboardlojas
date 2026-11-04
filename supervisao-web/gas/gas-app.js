@@ -103,6 +103,7 @@ function enterApp(){
   initData();
 }
 function renderUser(){
+  $('#usersNav')?.classList.toggle('hidden',state.user?.perfil!=='ADMIN');
   const u=state.user||{};
   $('#userCard').innerHTML=`<div class="avatar">${esc(initials(u.nome))}</div><div><div class="user-name">${esc(u.nome||u.login)}</div><div class="user-role">${esc((u.perfil||'').toLowerCase())}</div></div>`;
 }
@@ -254,7 +255,7 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
       const fallback=createInlineDataEngine(workerSource);
       state.worker=fallback;fallback.onmessage=handleMessage;
       if(!background)setStatus('Iniciando processador compatível com o Apps Script…',true);
-      fallback.postMessage({type:'init',force,preferFresh});
+      fallback.postMessage({type:'init',force,preferFresh,userScope:state.user?.login+'|'+(state.user?.accessVersion||'')});
     }catch(fallbackError){
       setStatus('',false);
       $('#content').innerHTML=`<div class="empty"><strong>Falha ao iniciar o processamento das bases.</strong><br><br>${esc(fallbackError?.message||error?.message||'Erro no processador de dados.')}</div>`;
@@ -274,7 +275,7 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
       handleMessage(e);
     };
     fallbackTimer=setTimeout(()=>{if(!firstWorkerMessage)startFallback(new Error('O processador em segundo plano não respondeu.'));},3000);
-    worker.postMessage({type:'init',force,preferFresh});
+    worker.postMessage({type:'init',force,preferFresh,userScope:state.user?.login+'|'+(state.user?.accessVersion||'')});
   }catch(error){startFallback(error);}
 }
 function renderBaseUpdate(info={}){
@@ -449,6 +450,7 @@ function updateAdvancedFilterCount(){
 }
 
 function queryPage(){
+  if(state.page==='users'){++state.requestId;destroyCharts();$('#pageTitle').textContent='Configurações · Usuários';$('#pageSubtitle').textContent='Acessos e vínculos comerciais';setStatus('',false);renderUsers();return;}
   if(!state.worker||!state.dimensions||state.loadingData)return;
   destroyCharts();
   updateHeader();
@@ -1243,3 +1245,42 @@ function downloadCoverageMap(type){
 
 
 
+
+async function renderUsers(){
+ if(state.user?.perfil!=='ADMIN')return;
+ $('#content').innerHTML='<div class="panel">Carregando usuários…</div>';
+ try{
+ const data=await api('/api/users');if(state.page!=='users')return;
+ const options=values=>values.map(x=>'<option value="'+esc(x.value)+'">'+esc(x.label)+'</option>').join('');
+ $('#content').innerHTML=`<div class="panel"><h2>Usuários do dashboard</h2><p>Somente administradores podem gerenciar acessos.</p><div style="overflow:auto"><table><thead><tr><th>Nome / login</th><th>Perfil</th><th>Situação</th><th></th></tr></thead><tbody>${data.users.map(u=>`<tr><td>${esc(u.nome)}<br><small>${esc(u.login)}</small></td><td>${esc(u.perfil)}</td><td>${u.ativo?'Ativo':'Inativo'}</td><td><button type="button" class="secondary" data-edit-user="${esc(u.login)}">Editar</button></td></tr>`).join('')}</tbody></table></div></div>
+ <div class="panel" style="margin-top:16px"><h2 id="userFormTitle">Novo usuário</h2><form id="adminUserForm" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:14px">
+ <label>Login<input name="login" required minlength="3" maxlength="100" autocomplete="off" style="width:100%;min-height:44px"></label>
+ <label>Nome<input name="nome" required maxlength="120" style="width:100%;min-height:44px"></label>
+ <label>Perfil<select name="perfil" style="width:100%;min-height:44px">${['RCA','SUPERVISOR','GERENTE','ADMIN'].map(p=>'<option>'+p+'</option>').join('')}</select></label>
+ <label id="userRcaLabel">RCA<select name="cod_rca" style="width:100%;min-height:44px"><option value="">Selecione</option>${options(data.rcas.map(r=>({value:r.code,label:r.code+' · '+r.name})))}</select></label>
+ <label id="userSupervisorLabel">Supervisão<select name="supervisor" style="width:100%;min-height:44px"><option value="">Selecione</option>${options([...new Set(data.rcas.map(r=>r.supervisor).filter(Boolean))].map(s=>({value:s,label:s})))}</select></label>
+ <label>Nova senha<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" style="width:100%;min-height:44px"><small>Obrigatória no cadastro. Na edição, deixe em branco para manter.</small></label>
+ <label><input name="ativo" type="checkbox" checked> Usuário ativo</label>
+ <div><button type="submit" class="btn">Salvar usuário</button> <button type="button" id="newUserBtn" class="secondary">Novo usuário</button></div>
+ <p id="userSaveStatus" role="status" style="grid-column:1/-1"></p></form></div>`;
+ const form=$('#adminUserForm'),field=n=>form.elements.namedItem(n);
+ const scope=()=>{$('#userRcaLabel').hidden=field('perfil').value!=='RCA';$('#userSupervisorLabel').hidden=field('perfil').value!=='SUPERVISOR';};
+ field('perfil').addEventListener('change',scope);scope();
+ $('#newUserBtn').onclick=()=>{form.reset();field('login').readOnly=false;$('#userFormTitle').textContent='Novo usuário';scope();};
+ $$('[data-edit-user]').forEach(b=>b.onclick=()=>{const u=data.users.find(x=>x.login===b.dataset.editUser);form.reset();for(const n of ['login','nome','perfil','cod_rca','supervisor'])field(n).value=u[n]??'';field('ativo').checked=u.ativo;field('login').readOnly=true;$('#userFormTitle').textContent='Editar usuário';scope();form.scrollIntoView({behavior:'smooth',block:'start'});});
+ form.onsubmit=async event=>{
+ event.preventDefault();const status=$('#userSaveStatus'),button=form.querySelector('[type=submit]');button.disabled=true;
+ try{
+ const save={login:field('login').value,nome:field('nome').value,perfil:field('perfil').value,cod_rca:field('cod_rca').value,supervisor:field('supervisor').value,ativo:field('ativo').checked};
+ const password=field('password').value;
+ if(password){
+ const salt=crypto.getRandomValues(new Uint8Array(16)),hex=bytes=>[...new Uint8Array(bytes)].map(v=>v.toString(16).padStart(2,'0')).join('');
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
+ const hash=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:100000},key,256);
+ save.credential={algorithm:'pbkdf2_sha256',iterations:100000,salt:hex(salt),hash:hex(hash)};
+ }
+ field('password').value='';await api('/api/users',{method:'POST',body:JSON.stringify({save})});await renderUsers();$('#userSaveStatus').textContent='Usuário salvo. As novas permissões serão aplicadas no próximo acesso.';
+ }catch(error){status.textContent=error.message||'Não foi possível salvar.';}finally{button.disabled=false;}
+ };
+ }catch(error){if(state.page==='users')$('#content').innerHTML='<div class="panel">'+esc(error.message)+'</div>';}
+}
