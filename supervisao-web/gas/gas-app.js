@@ -20,6 +20,8 @@ const state = {
   checkingForUpdates:false,
   page:'overview',
   filters:{uf:[],region:'Todos',city:'Todos',year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
+  dailyMode:'today',
+  dailyDate:'',
   selectedCity:'Todos',
   requestId:0,
   charts:[],
@@ -452,7 +454,7 @@ function queryPage(){
   updateHeader();
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
-  state.worker.postMessage({type:'query',requestId,page:state.page,filters:state.filters,selectedCity:state.selectedCity});
+  state.worker.postMessage({type:'query',requestId,page:state.page,filters:{...state.filters,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity});
 }
 function updateHeader(){
   const [title,sub]=PAGE_META[state.page]||PAGE_META.overview;
@@ -528,7 +530,13 @@ function renderOverview(p){
   $('#content').innerHTML=`
     
     <section class="executive-day" aria-label="Resumo comercial diário">
-      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)} · Realizado: data de faturamento · Abertos: data do pedido</p></div></div>
+      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)} · Faturamento: data de faturamento · Pedidos recebidos: data inicial</p></div></div>
+      <div class="daily-date-controls" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0">
+        <button type="button" class="secondary" data-daily-mode="today" aria-pressed="${state.dailyMode==='today'}">Hoje</button>
+        <button type="button" class="secondary" data-daily-mode="yesterday" aria-pressed="${state.dailyMode==='yesterday'}">Ontem</button>
+        <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Escolher data <input type="date" id="dailyDateChoice" aria-label="Data do movimento comercial" value="${esc(daily.date||'')}" style="min-height:44px;max-width:100%;padding:8px;border:1px solid #c7d8f2;border-radius:8px"></label>
+        <small>Esta data altera somente o resumo diário.</small>
+      </div>
       <div class="executive-day-grid">
         ${kpi('Faturamento do dia',money(daily.soldValue),`${integer(daily.soldOrders)} pedidos realizados`)}
         ${kpi('Pedidos recebidos no dia',daily.entriesAvailable?money(daily.entryValue):'—',daily.entriesAvailable?`${integer(daily.entryCount)} pedidos · faturados e não faturados`:'Entradas diárias disponíveis nos dois meses mais recentes')}
@@ -577,6 +585,8 @@ function renderOverview(p){
       <div class="panel"><div class="panel-head"><div><div class="panel-title">Composição por departamento</div><div class="panel-sub">Clique em uma linha para aplicar o departamento aos cartões e gráficos.</div></div></div><div id="depList" class="overview-departments metric-list"></div></div>
     </div>
   `;
+  $('[data-daily-mode]').forEach(button=>button.addEventListener('click',()=>{state.dailyMode=button.dataset.dailyMode;queryPage();}));
+  $('#dailyDateChoice').addEventListener('change',event=>{if(!event.target.value)return;state.dailyMode='custom';state.dailyDate=event.target.value;queryPage();});
   const monthly=p.monthly||[];
   chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{label:'Faturamento',data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.09)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]},{scales:{x:{grid:{display:false},border:{display:false}},y:{min:1000000,beginAtZero:false,grid:{color:'#E8EDF6'},border:{display:false},ticks:{callback:v=>money(v,true)}}}});
   const top=(p.rca||[]).slice(0,10);
