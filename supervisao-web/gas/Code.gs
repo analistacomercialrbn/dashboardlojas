@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/aa453cc5ab61c712034173bb98702c89d3f26515/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/0f7fbcc63e7103de17e70a34a4c014a764557dcd/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -292,9 +292,10 @@ function dashboardApi(action, payload, token) {
     }
     const user = sessionUser_(token);
     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
+    if (action === 'users') return manageUsers_(user,payload);
     if (action === 'info') return Object.assign({ ok: true }, datasetInfo_());
-    if (action === 'openOrders') return openOrdersData_();
-    if (action === 'page') return datasetPage_(payload.offset, payload.limit);
+    if (action === 'openOrders') { const out=openOrdersData_(); out.orders=out.orders.filter(row=>userAllowsRca_(user,row.rca));return out; }
+    if (action === 'page') {const out=datasetPage_(payload.offset,payload.limit);out.records=out.records.filter(row=>userAllowsRecord_(user,row));return out;}
     if (action === 'coverage') {
       if (payload.force === true) CacheService.getScriptCache().remove('DASH_COVERAGE_MATRIX_V1');
       return coverageData_();
@@ -323,7 +324,7 @@ function loginDashboard_(payload) {
     throw new Error('Usuário ou senha inválidos.');
   }
   cache.remove(throttleKey);
-  const user = { login: login, nome: String(record.nome || login), perfil: String(record.perfil || 'RCA').toUpperCase(), cod_rca: record.cod_rca == null ? null : record.cod_rca, supervisor: String(record.supervisor || '') };
+  const user = { login: login, nome: String(record.nome || login), perfil: String(record.perfil || 'RCA').toUpperCase(), cod_rca: record.cod_rca == null ? null : record.cod_rca, supervisor: String(record.supervisor || ''),accessVersion:String(record.accessVersion||'') };
   const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   cache.put('DASH_SESSION_' + token, JSON.stringify(user), AUTH.sessionTtlSeconds);
   return { ok: true, token: token, user: user };
@@ -333,17 +334,17 @@ function sessionUser_(token) {
   if (!/^[a-f0-9]{64}$/i.test(token)) return null;
   const value = CacheService.getScriptCache().get('DASH_SESSION_' + token);
   if (!value) return null;
-  try { return JSON.parse(value); } catch (err) { return null; }
+  try { const saved=JSON.parse(value),record=loadUsers_()[saved.login];if(!record||record.ativo!==true||String(record.accessVersion||'')!==String(saved.accessVersion||''))return null;return Object.assign({},saved,{perfil:record.perfil,cod_rca:record.cod_rca,supervisor:record.supervisor}); } catch (err) { return null; }
 }
 function loadUsers_() {
   const cache = CacheService.getScriptCache(), cached = cache.get('DASH_USERS_JSON');
-  if (cached) return JSON.parse(cached);
+  if (cached) return Object.assign(JSON.parse(cached),rbnLoadState_('DASH_USER_OVERRIDES')||{});
   const response = UrlFetchApp.fetch(AUTH.usersUrl, { muteHttpExceptions: true, followRedirects: true });
   if (response.getResponseCode() !== 200) throw new Error('Não foi possível validar o usuário no cadastro de acesso.');
   const users = JSON.parse(response.getContentText());
   if (!users || typeof users !== 'object') throw new Error('Cadastro de usuários inválido.');
   cache.put('DASH_USERS_JSON', JSON.stringify(users), 300);
-  return users;
+  return Object.assign(users,rbnLoadState_('DASH_USER_OVERRIDES')||{});
 }
 function verifyPassword_(password, record) {
   const algorithm = String(record.senha_algo || '').toLowerCase(), expected = String(record.senha_hash || '').toLowerCase();
@@ -354,7 +355,7 @@ function verifyPassword_(password, record) {
     if (!salt.length) return false;
     const passwordBytes = Utilities.newBlob(password).getBytes(), block = salt.concat([0, 0, 0, 1]);
     let u = Utilities.computeHmacSha256Signature(block, passwordBytes), result = u.slice();
-    for (let i = 1; i < AUTH.pbkdf2Iterations; i++) {
+    for (let i = 1; i < Number(record.iterations||AUTH.pbkdf2Iterations); i++) {
       u = Utilities.computeHmacSha256Signature(u, passwordBytes);
       for (let j = 0; j < result.length; j++) result[j] = result[j] ^ u[j];
     }
@@ -919,3 +920,46 @@ function sincronizarMetasRbn(){const lock=LockService.getScriptLock();if(!lock.t
 function continuarAtualizacaoRbn(){ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='continuarAtualizacaoRbn').forEach(t=>ScriptApp.deleteTrigger(t));if(rbnLoadState_('RBN_SALES_JOB'))return sincronizarVendasRbn();if(rbnLoadState_('RBN_CACHE_JOB')||PropertiesService.getScriptProperties().getProperty('VENDAS_RBN_CACHE_PENDENTE')==='1')return atualizarCacheVendasRbn();return {ok:true};}
 function instalarFluxoRapidoRbn(){const wanted={sincronizarVendasRbn:1,atualizarCacheVendasRbn:1,sincronizarMetasRbn:1},seen={};ScriptApp.getProjectTriggers().forEach(t=>{const h=t.getHandlerFunction();if(wanted[h]){ScriptApp.deleteTrigger(t);seen[h]=true;}});Object.keys(wanted).forEach(h=>ScriptApp.newTrigger(h).timeBased().everyMinutes(1).create());console.log('Fluxo automático a cada minuto e continuação por etapa instalado.');}
 function inicializarLayoutCacheRbn(){const p=PropertiesService.getScriptProperties(),ss=SpreadsheetApp.openById(CFG.cacheSpreadsheetId),name=p.getProperty('SNAPSHOT_SHEET_NAME'),sheet=ss.getSheetByName(name),count=Number(p.getProperty('SNAPSHOT_RECORD_COUNT')),sales=Number(p.getProperty('SNAPSHOT_SALES_COUNT')),recent=Number(p.getProperty('SNAPSHOT_RECENT_COUNT')),from=previousMonthKey_(new Date());if(p.getProperty('RBN_CACHE_LAYOUT'))return;const headRows=sheet.getRange(2,1,Math.min(10000,count),1).getValues();let head=0;for(const row of headRows){const item=JSON.parse(row[0]);if(item.type==='sale')break;head++;}if(head>=headRows.length||recent>sales)throw new Error('Estrutura do cache não reconhecida.');const history=sales-recent,edge=history?JSON.parse(sheet.getRange(1+head+history,1).getValues()[0][0]):null,next=recent?JSON.parse(sheet.getRange(2+head+history,1).getValues()[0][0]):null;if(edge&&(edge.type!=='sale'||edge.value.date.slice(0,7)>=from))throw new Error('Limite histórico divergente.');if(next&&(next.type!=='sale'||next.value.date.slice(0,7)<from))throw new Error('Limite recente divergente.');const layout={sheet:name,fromMonth:from,recordCount:count,headLength:head,historyCount:history,historyLatest:edge?edge.value.date:null};p.setProperty('RBN_CACHE_LAYOUT',JSON.stringify(layout));console.log(JSON.stringify({layout:layout,updatedAt:p.getProperty('SNAPSHOT_UPDATED_AT'),totals:p.getProperty('SNAPSHOT_RECENT_TOTALS'),goals:readAuxiliary_().goals.filter(g=>g.monthKey==='2026-11').reduce((s,g)=>s+g.value,0)}));}
+
+function userAllowsRca_(user,rca){
+ if(['ADMIN','GERENTE'].indexOf(user.perfil)>=0)return true;
+ if(user.perfil==='RCA')return String(user.cod_rca)===String(rca);
+ if(user.perfil==='SUPERVISOR'){
+  if(!user._allowed){const cache=CacheService.getScriptCache(),key='DASH_SCOPE_'+digestHex_(user.login+'|'+user.supervisor),saved=cache.get(key);const codes=saved?JSON.parse(saved):readAuxiliary_().rcas.filter(r=>norm_(r.supervisor)===norm_(user.supervisor)&&!!user.supervisor).map(r=>String(r.code));user._allowed=new Set(codes);if(!saved)cache.put(key,JSON.stringify(codes),300);}return user._allowed.has(String(rca));
+ }
+ return false;
+}
+function userAllowsRecord_(user,row){
+ if(['ADMIN','GERENTE'].indexOf(user.perfil)>=0)return true;
+ if(row[0]===4)return true;
+ const index={0:2,1:1,2:4,3:3,5:2}[row[0]];
+ return index!=null&&userAllowsRca_(user,row[index]);
+}
+function manageUsers_(actor,payload){
+ if(actor.perfil!=='ADMIN')throw new Error('Apenas o administrador pode configurar usuários.');
+ const users=loadUsers_(),aux=readAuxiliary_();
+ if(payload.save){
+  const input=payload.save,login=String(input.login||'').trim().toLowerCase();
+  if(!/^[a-z0-9][a-z0-9._@-]{2,99}$/.test(login))throw new Error('Login: use de 3 a 100 caracteres, sem espaços.');
+  const perfil=String(input.perfil||'').toUpperCase();
+  if(['ADMIN','GERENTE','SUPERVISOR','RCA'].indexOf(perfil)<0)throw new Error('Perfil inválido.');
+  const old=users[login],record=Object.assign({},old||{},{nome:String(input.nome||'').trim().slice(0,120),perfil:perfil,ativo:input.ativo===true,cod_rca:perfil==='RCA'?Number(input.cod_rca):null,supervisor:perfil==='SUPERVISOR'?String(input.supervisor||''):''});
+  if(!record.nome)throw new Error('Informe o nome.');
+  if(perfil==='RCA'&&!aux.rcas.some(r=>Number(r.code)===record.cod_rca))throw new Error('Selecione um RCA válido.');
+  if(perfil==='SUPERVISOR'&&!aux.rcas.some(r=>r.supervisor===record.supervisor&&!!record.supervisor))throw new Error('Selecione uma supervisão válida.');
+  if(login===actor.login&&(perfil!=='ADMIN'||!record.ativo))throw new Error('Você não pode remover seu próprio acesso administrativo.');
+  if(input.credential){
+   const p=input.credential;
+   if(p.algorithm!=='pbkdf2_sha256'||p.iterations!==100000||!/^[a-f0-9]{32}$/.test(p.salt)||!/^[a-f0-9]{64}$/.test(p.hash))throw new Error('Credencial inválida.');
+   record.senha_algo=p.algorithm;record.iterations=p.iterations;record.salt=p.salt;record.senha_hash=p.hash;
+  }else if(!old)throw new Error('Defina uma senha para o novo usuário.');
+  record.accessVersion=Utilities.getUuid();
+  if(login===actor.login)record.accessVersion=old.accessVersion||'';
+  const lock=LockService.getScriptLock();if(!lock.tryLock(5000))throw new Error('Aguarde a atualização em andamento e tente salvar novamente.');
+  try{const overrides=rbnLoadState_('DASH_USER_OVERRIDES')||{};overrides[login]=record;rbnSaveState_('DASH_USER_OVERRIDES',overrides);}finally{lock.releaseLock();}
+  CacheService.getScriptCache().remove('DASH_USERS_JSON');
+  console.log('Usuário atualizado: '+login+' por '+actor.login);
+ }
+ const updated=loadUsers_();
+ return {ok:true,users:Object.keys(updated).map(login=>{const r=updated[login];return {login:login,nome:r.nome,perfil:r.perfil,ativo:r.ativo===true,cod_rca:r.cod_rca,supervisor:r.supervisor};}),rcas:aux.rcas.map(r=>({code:r.code,name:r.name,supervisor:r.supervisor}))};
+}
