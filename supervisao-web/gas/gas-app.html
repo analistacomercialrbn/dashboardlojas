@@ -566,14 +566,14 @@ function dailyCommercial(filters,sales,open,today=commercialToday()){
   const selectedYear=filters.year&&filters.year!=='Todos'?Number(filters.year):null;
   const selectedMonth=filters.month&&filters.month!=='Todos'?Number(filters.month):null;
   const current=(!selectedYear||selectedYear===Number(today.slice(0,4)))&&(!selectedMonth||selectedMonth===Number(today.slice(5,7)));
-  let date=current?today:'';
-  if(!current)for(const row of [...SALES,...OPEN_ORDERS]){
-    if(selectedYear&&row.year!==selectedYear||selectedMonth&&row.month!==selectedMonth)continue;
-    const key=commercialDayKey(row.date);if(key>date)date=key;
-  }
-  const sold=sales.filter(row=>commercialDayKey(row.date)===date);
-  const pending=open.filter(row=>commercialDayKey(row.date)===date);
-  const entries=filterOpenOrders(filters,{ignoreMonth:true,source:ORDER_ENTRIES}).filter(row=>commercialDayKey(row.date)===date);
+  const mode=filters.dailyMode||'today';
+  const explicit=/^\d{4}-\d{2}-\d{2}$/.test(filters.dailyDate||'')?filters.dailyDate:'';
+  const yesterday=new Date(today+'T12:00:00Z');yesterday.setUTCDate(yesterday.getUTCDate()-1);
+  let date=mode==='custom'&&explicit?explicit:mode==='yesterday'?yesterday.toISOString().slice(0,10):today;
+  const dayFilters={...filters,year:date.slice(0,4),month:String(Number(date.slice(5,7)))};
+  const sold=filterSales(dayFilters).filter(row=>commercialDayKey(row.date)===date);
+  const pending=filterOpenOrders(dayFilters).filter(row=>commercialDayKey(row.date)===date);
+  const entries=filterOpenOrders(dayFilters,{ignoreMonth:true,source:ORDER_ENTRIES}).filter(row=>commercialDayKey(row.date)===date);
   const earliest=ORDER_ENTRIES.reduce((min,row)=>{const key=commercialDayKey(row.date).slice(0,7);return !min||key<min?key:min},'');
   const entriesAvailable=!!earliest&&date.slice(0,7)>=earliest;
   const orderKey=row=>[row.year,row.order,row.rca].join('|');
@@ -786,7 +786,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@f1692daee5efd62f513410ae35a8a71b050bd976/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@6ec0af873160146b5f3ec7c420aff7a22754b5ae/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
