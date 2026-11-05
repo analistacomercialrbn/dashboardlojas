@@ -39,7 +39,7 @@
         <button data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span> Produtos</button>
         <button data-page="cidades" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg></span> Cidades</button>
         <button data-page="metas" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></span> Metas</button>
-      <button data-page="users" class="nav-item hidden" id="usersNav">⚙ Usuários</button></nav>
+      <button data-page="users" class="nav-item hidden" id="usersNav">⚙ Usuários</button><button data-page="history" class="nav-item hidden" id="historyNav">Histórico</button></nav>
       <div class="header-account"><div id="userCard" class="user-card"></div><button id="logoutBtn" class="btn ghost small" type="button">Sair</button></div>
     </header>
 
@@ -583,6 +583,18 @@ function dailyCommercial(filters,sales,open,today=commercialToday()){
   return {date,isToday:date===today,soldValue,openValue,clients,entriesAvailable,entryValue:entries.reduce((sum,row)=>sum+Number(row.value||0),0),entryCount:new Set(entries.map(orderKey)).size,soldOrders:new Set(sold.map(orderKey)).size,openOrders:new Set(pending.map(orderKey)).size};
 }
 
+
+function macroHistoryCurrent(){
+ const groups=new Map();
+ for(const row of SALES){
+  const date=commercialDayKey(row.date),month=date.slice(0,7);
+  if(!date||date<'2024-08-01')continue;
+  if(!groups.has(month))groups.set(month,{month,value:0,minDate:date,maxDate:date,source:'WinThor / BI'});
+  const item=groups.get(month);item.value+=Number(row.value)||0;if(date<item.minDate)item.minDate=date;if(date>item.maxDate)item.maxDate=date;
+ }
+ return {monthly:[...groups.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(x=>({...x,value:Math.round(x.value*100)/100})),updatedAt:SERVER_UPDATED_AT};
+}
+
 function overview(filters){
   const rows=filterSales(filters);
   const yearRows=filterSales(filters,{ignoreMonth:true});
@@ -774,7 +786,8 @@ onmessage=async(e)=>{
     try{
       const f=msg.filters||{};
       let payload;
-      if(msg.page==='overview')payload=overview(f);
+      if(msg.page==='history')payload=macroHistoryCurrent();
+      else if(msg.page==='overview')payload=overview(f);
       else if(msg.page==='carteira')payload=carteira(f);
       else if(msg.page==='produtos')payload=produtos(f);
       else if(msg.page==='cidades')payload=cidades(f,msg.selectedCity);
@@ -786,7 +799,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ad1a49f92b7d205099e80fcec82d080230e45293/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@be77133f7e83ba11d49c511576c8f7279703f9a6/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
