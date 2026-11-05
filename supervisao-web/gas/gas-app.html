@@ -710,11 +710,12 @@ function coverageArea(filters,context){
  const yearMonths=new Set(SALES.filter(r=>r.date.getUTCFullYear()===year).map(r=>r.month));
  const oldMonths=new Set(SALES.filter(r=>r.date.getUTCFullYear()===year-1).map(r=>r.month));
  const amount=(y,m,day=null)=>scoped.filter(x=>x.date.getUTCFullYear()===y&&x.month===m&&(day===null||x.date.getUTCDate()<=day)).reduce((a,x)=>a+x.value,0);
- const monthly=Array.from({length:12},(_,i)=>{const m=i+1,valid=m<=endMonth&&yearMonths.has(m),day=m===endMonth?endDay:null;const value=valid?amount(year,m,day):null,old=oldMonths.has(m)?amount(year-1,m,day):null,prev=m===1?amount(year-1,12):amount(year,m-1);return {label:MONTHS[m],revenue:value,previous:m<=endMonth?old:null,yoy:value===null||old===null?null:variation(value,old),mom:value===null||!(m===1?oldMonths.has(12):yearMonths.has(m-1))?null:variation(value,prev)};});
+ const requiredMonths=Array.from({length:endMonth-(month||1)+1},(_,i)=>(month||1)+i),previousAvailable=requiredMonths.every(m=>oldMonths.has(m)),currentAvailable=requiredMonths.every(m=>yearMonths.has(m));
+ const monthly=Array.from({length:12},(_,i)=>{const m=i+1,valid=m<=endMonth&&yearMonths.has(m),day=m===endMonth?endDay:null;const value=valid?amount(year,m,day):null,old=oldMonths.has(m)?amount(year-1,m,day):null,prevMonth=m===1?12:m-1,prevYear=m===1?year-1:year,prevDay=day===null?null:Math.min(day,new Date(Date.UTC(prevYear,prevMonth,0)).getUTCDate()),prev=amount(prevYear,prevMonth,prevDay);return {label:MONTHS[m],revenue:value,previous:m<=endMonth?old:null,yoy:value===null||old===null?null:variation(value,old),mom:value===null||!(m===1?oldMonths.has(12):yearMonths.has(m-1))?null:variation(value,prev)};});
  const cities=[...area.values()].filter(x=>!city||selected&&key(x)===key(selected)).map(x=>{const sales=rows.filter(v=>key(v)===key(x));return {key:x.areaKey,city:x.city,uf:x.uf,revenue:sales.reduce((a,v)=>a+v.value,0),clients:new Set(sales.map(v=>v.client).filter(v=>v!=null)).size};}).sort((a,b)=>b.revenue-a.revenue);
  const products=produtosForRows(rows).slice(0,10),current=sum(rows);
  const dateText=n=>new Date(n).toLocaleDateString('pt-BR',{timeZone:'UTC'});
- return {year,cityName:selected?selected.city+' · '+selected.uf:'',period:dateText(r.start)+' a '+dateText(r.end),previousPeriod:dateText(pr.start)+' a '+dateText(pr.end),partial:endDay<new Date(Date.UTC(year,endMonth,0)).getUTCDate(),municipalities:city?(selected?1:0):area.size,current,previous:sum(before),monthly,cities,products,top3Share:current.revenue>0?products.slice(0,3).reduce((a,x)=>a+x.revenue,0)/current.revenue*100:null};
+ return {year,cityName:selected?selected.city+' · '+selected.uf:'',period:dateText(r.start)+' a '+dateText(r.end),previousPeriod:dateText(pr.start)+' a '+dateText(pr.end),previousAvailable,partial:!currentAvailable||endDay<new Date(Date.UTC(year,endMonth,0)).getUTCDate(),municipalities:city?(selected?1:0):area.size,current,previous:sum(before),monthly,cities,products,top3Share:current.revenue>0?products.slice(0,3).reduce((a,x)=>a+x.revenue,0)/current.revenue*100:null};
 }
 
 function cidades(filters, selectedCity=null){
@@ -829,7 +830,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@43b22a8edd8c1e7d81b0b26ae9556bb2d1b4f5f3/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@80e071d147f7224c35efbeec8e84e1058ffae51b/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
