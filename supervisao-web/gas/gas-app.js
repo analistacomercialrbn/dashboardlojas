@@ -135,7 +135,15 @@ function bindLogin(){
   });
 }
 function bindShell(){
+  const drawer=$('#appMenu'),toggle=$('#menuToggle'),backdrop=$('#menuBackdrop');
+  const closeMenu=()=>{drawer.hidden=true;drawer.inert=true;backdrop.hidden=true;toggle.setAttribute('aria-expanded','false');document.body.classList.remove('menu-is-open');toggle.focus();};
+  toggle.addEventListener('click',()=>{drawer.hidden=false;drawer.inert=false;backdrop.hidden=false;toggle.setAttribute('aria-expanded','true');document.body.classList.add('menu-is-open');$('#menuClose').focus();});
+  $('#menuClose').addEventListener('click',closeMenu);backdrop.addEventListener('click',closeMenu);
+  drawer.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeMenu();}if(e.key==='Tab'){const items=Array.from(drawer.querySelectorAll('button:not(.hidden)')).filter(el=>!el.disabled),first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
+
   $$('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
+    closeMenu();
+    $('#activeMenuLabel').textContent=btn.textContent.trim();
     state.page=btn.dataset.page;
     state.selectedCity='Todos';
     $$('.nav-item').forEach(b=>b.classList.toggle('active',b===btn));
