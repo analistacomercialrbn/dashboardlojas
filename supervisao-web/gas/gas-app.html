@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@da98486192a0ebb46248042b81ce360288666ccf/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@f6c272cf261825bb2ba3ca3911a019c9e751ebdc/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -687,6 +687,36 @@ function produtos(filters){
   top2.sort((a,b)=>b.total-a.total);
   return {kpis:{products:arr.length,clients:new Set(rows.map(s=>s.client).filter(x=>x!=null)).size},top,bottom,top2};
 }
+function coverageArea(filters,context){
+ const normCity=v=>{const n=norm(v);return ({ITAPAGE:'ITAPAJE',PINRETAMA:'PINDORETAMA'}[n]||n).replace(/[^A-Z0-9]/g,'');};
+ const key=row=>normCity(row.city)+'|'+row.uf;
+ const confirmed=(context.cities||[]).filter(row=>row.confirmed===true);
+ const area=new Map(confirmed.map(row=>[key(row),row]));
+ const city=context.city||'',selected=city?confirmed.find(row=>row.areaKey===city):null;
+ const inArea=row=>area.has(key(row))&&(!city||selected&&key(row)===key(selected));
+ const scope=row=>{const d=norm(row.department);return context.scope==='all'||context.scope==='health'?context.scope==='all'||d==='SAUDE ANIMAL':context.scope==='commercial'?d!=='SAUDE ANIMAL':['NUTRICAO - RUMINANTES','NUTRICAO - MONOGASTRICOS','RACOES','INGREDIENTES MINERAIS'].includes(d);};
+ const available=SALES.filter(scope),latest=SALES.reduce((a,r)=>r.date>a?r.date:a,new Date(0));
+ const year=filters.year!=='Todos'?Number(filters.year):latest.getUTCFullYear();
+ const month=filters.month!=='Todos'?Number(filters.month):null;
+ const yearLast=SALES.filter(r=>r.date.getUTCFullYear()===year).reduce((a,r)=>r.date>a?r.date:a,new Date(0));
+ const endMonth=month||Math.max(1,yearLast.getUTCMonth()+1);
+ let endDay=new Date(Date.UTC(year,endMonth,0)).getUTCDate();
+ if(yearLast.getUTCFullYear()===year&&endMonth===yearLast.getUTCMonth()+1)endDay=Math.min(endDay,yearLast.getUTCDate());
+ const range=y=>{const last=Math.min(endDay,new Date(Date.UTC(y,endMonth,0)).getUTCDate());return {start:Date.UTC(y,(month||1)-1,1),end:Date.UTC(y,endMonth-1,last,23,59,59,999)};};
+ const sum=rows=>({...metrics(rows),cities:new Set(rows.map(key)).size});
+ const scoped=available.filter(inArea),inRange=(row,r)=>row.date.getTime()>=r.start&&row.date.getTime()<=r.end;
+ const r=range(year),pr=range(year-1),rows=scoped.filter(x=>inRange(x,r)),before=scoped.filter(x=>inRange(x,pr));
+ const variation=(a,b)=>b>0?(a/b-1)*100:null;
+ const yearMonths=new Set(SALES.filter(r=>r.date.getUTCFullYear()===year).map(r=>r.month));
+ const oldMonths=new Set(SALES.filter(r=>r.date.getUTCFullYear()===year-1).map(r=>r.month));
+ const amount=(y,m,day=null)=>scoped.filter(x=>x.date.getUTCFullYear()===y&&x.month===m&&(day===null||x.date.getUTCDate()<=day)).reduce((a,x)=>a+x.value,0);
+ const monthly=Array.from({length:12},(_,i)=>{const m=i+1,valid=m<=endMonth&&yearMonths.has(m),day=m===endMonth?endDay:null;const value=valid?amount(year,m,day):null,old=oldMonths.has(m)?amount(year-1,m,day):null,prev=m===1?amount(year-1,12):amount(year,m-1);return {label:MONTHS[m],revenue:value,previous:m<=endMonth?old:null,yoy:value===null||old===null?null:variation(value,old),mom:value===null||!(m===1?oldMonths.has(12):yearMonths.has(m-1))?null:variation(value,prev)};});
+ const cities=[...area.values()].filter(x=>!city||selected&&key(x)===key(selected)).map(x=>{const sales=rows.filter(v=>key(v)===key(x));return {key:x.areaKey,city:x.city,uf:x.uf,revenue:sales.reduce((a,v)=>a+v.value,0),clients:new Set(sales.map(v=>v.client).filter(v=>v!=null)).size};}).sort((a,b)=>b.revenue-a.revenue);
+ const products=produtosForRows(rows).slice(0,10),current=sum(rows);
+ const dateText=n=>new Date(n).toLocaleDateString('pt-BR',{timeZone:'UTC'});
+ return {year,cityName:selected?selected.city+' · '+selected.uf:'',period:dateText(r.start)+' a '+dateText(r.end),previousPeriod:dateText(pr.start)+' a '+dateText(pr.end),partial:endDay<new Date(Date.UTC(year,endMonth,0)).getUTCDate(),municipalities:city?(selected?1:0):area.size,current,previous:sum(before),monthly,cities,products,top3Share:current.revenue>0?products.slice(0,3).reduce((a,x)=>a+x.revenue,0)/current.revenue*100:null};
+}
+
 function cidades(filters, selectedCity=null){
   const rows=filterSales(filters);
   const cityMap=new Map();
@@ -790,7 +820,7 @@ onmessage=async(e)=>{
       else if(msg.page==='overview')payload=overview(f);
       else if(msg.page==='carteira')payload=carteira(f);
       else if(msg.page==='produtos')payload=produtos(f);
-      else if(msg.page==='cidades')payload=cidades(f,msg.selectedCity);
+      else if(msg.page==='cidades')payload=msg.coverageContext?{area:coverageArea(f,msg.coverageContext)}:cidades(f,msg.selectedCity);
       else if(msg.page==='metas')payload=metasPage(f);
       else if(msg.page==='pedidos')payload=ordersPage(f);
       else payload={};
@@ -799,7 +829,8 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@be77133f7e83ba11d49c511576c8f7279703f9a6/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@43b22a8edd8c1e7d81b0b26ae9556bb2d1b4f5f3/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
+
 
