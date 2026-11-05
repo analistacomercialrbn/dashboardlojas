@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/e2593b99fc8b2be1c785f76be7f67cc8955eafc2/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/0475477af864fe2d86e8ab3c5b916924d6aecc1c/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -293,6 +293,7 @@ function dashboardApi(action, payload, token) {
     const user = sessionUser_(token);
     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
     if (action === 'history') return recoveredMacroHistory_(user);
+    if (action === 'historyGeo') return recoveredGeoHistory_(user);
     if (action === 'users') return manageUsers_(user,payload);
     if (action === 'info') return Object.assign({ ok: true }, datasetInfo_());
     if (action === 'openOrders') { const out=openOrdersData_(); out.orders=out.orders.filter(row=>userAllowsRca_(user,row.rca));return out; }
@@ -976,4 +977,17 @@ function recoveredMacroHistory_(user){
  data.monthly.forEach(row=>{if(!/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(row.month)||row.month<'2017-06'||row.month>='2024-08'||typeof row.value!=='number'||!isFinite(row.value)||seen.has(row.month))throw new Error('Mês inválido ou duplicado no histórico.');seen.add(row.month);});
  const out={ok:true,monthly:data.monthly.map(r=>({month:r.month,value:r.value,minDate:r.minDate,maxDate:r.maxDate})),source:'Shop Control recuperado',cutoff:data.cutoff};
  cache.put(key,JSON.stringify(out),21600);return out;
+}
+
+
+function recoveredGeoHistory_(user){
+ if(['ADMIN','GERENTE'].indexOf(user.perfil)<0)throw new Error('O histórico geográfico consolidado exige perfil gerencial.');
+ const count=Number(SCRIPT_PROPS.getProperty('RECOVERED_GEO_V1_COUNT')||0);
+ if(!count)return {ok:true,monthly:[],available:false};
+ if(count<1||count>40)throw new Error('Histórico geográfico inválido.');
+ let packed='';for(let i=0;i<count;i++){const part=SCRIPT_PROPS.getProperty('RECOVERED_GEO_V1_'+i);if(!part)throw new Error('Resumo geográfico incompleto.');packed+=part;}
+ const bytes=Utilities.base64Decode(packed),data=JSON.parse(Utilities.ungzip(Utilities.newBlob(bytes,'application/gzip')).getDataAsString('UTF-8'));
+ if(!Array.isArray(data)||data.length!==86)throw new Error('Períodos geográficos inválidos.');
+ const seen=new Set();data.forEach(r=>{if(!Array.isArray(r)||!/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(r[0])||r[0]<'2017-06'||r[0]>='2024-08'||seen.has(r[0])||!Array.isArray(r[1])||!Number.isFinite(r[2]))throw new Error('Mês geográfico inválido.');seen.add(r[0]);r[1].forEach(c=>{if(!Array.isArray(c)||typeof c[0]!=='string'||!/^[A-Z]{2}$/.test(c[1])||!Number.isFinite(c[2]))throw new Error('Município histórico inválido.');});});
+ return {ok:true,available:true,monthly:data.map(r=>({month:r[0],cities:r[1],unlocated:r[2]})),source:'Shop Control recuperado',cutoff:'2024-08-01'};
 }
