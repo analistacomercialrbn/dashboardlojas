@@ -33,6 +33,9 @@ const state = {
   coverageDrawId:0,
   lastPayload:null,
   cityView:'sales',
+  areaPayload:null,
+  areaCity:'',
+  areaScope:'nutrition',
   coverage:null,
   coverageGeo:{},
   coverageSelection:null,
@@ -461,7 +464,7 @@ function queryPage(){
   updateHeader();
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
-  state.worker.postMessage({type:'query',requestId,page:state.page,filters:{...state.filters,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity});
+  state.worker.postMessage({type:'query',requestId,page:state.page,filters:{...state.filters,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
   if(state.page==='history'){$('#pageTitle').textContent='Histórico macro';$('#pageSubtitle').textContent='Evolução mensal e anual · valores por origem';$('#periodChip').textContent='Desde jun/2017';return;}
@@ -471,14 +474,15 @@ function updateHeader(){
   $('#periodChip').textContent=`${m} • ${state.filters.year}`;
 }
 function destroyCharts(){
-  for(const c of state.charts){try{c.destroy()}catch{}}
+  document.querySelectorAll('.chart-motion-controls').forEach(el=>el.remove());
+  for(const c of state.charts){try{c.$motionCleanup?.();c.destroy()}catch{}}
   state.charts=[];
 }
 function chart(canvas,type,data,options={}){
   const horizontal=options.indexAxis==='y';
   const moneyTick=value=>money(value,true);
-  const c=new Chart(canvas,{type,data,options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:horizontal,color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(horizontal?{callback:moneyTick}:{})}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(!horizontal?{callback:moneyTick}:{})}}},...options}});
-  state.charts.push(c);return c;
+  const c=new Chart(canvas,{type,data,options:{responsive:true,maintainAspectRatio:false,animation:chartMotionOptions(),plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:horizontal,color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(horizontal?{callback:moneyTick}:{})}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(!horizontal?{callback:moneyTick}:{})}}},...options}});
+  state.charts.push(c);installChartMotion(c);return c;
 }
 function toggleCrossFilter(key,value){
   const selected=normalizeMulti(state.filters[key]);
@@ -723,7 +727,7 @@ function renderCidadesSales(p){
     </div>
   `;
   $('#content').insertAdjacentHTML('afterbegin','<div class="city-view-switch" role="group" aria-label="Visualização de cidades"><button type="button" class="active" data-city-view="sales">Faturamento</button><button type="button" data-city-view="coverage">Cobertura territorial</button></div>');
-  $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;renderCidades(state.lastPayload||p)}));
+  $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;queryPage()}));
   const max=cities[0]?.revenue||1;
   $('#cityList').innerHTML=cities.slice(0,100).map(c=>`<div class="city-row ${selected?.key===c.key?'active':''}" data-city="${esc(c.key)}"><div><strong>${esc(c.city)} - ${esc(c.uf)}</strong><div class="progress" style="margin-top:5px;width:150px"><i style="width:${Math.max(2,c.revenue/max*100)}%"></i></div></div><span>${money(c.revenue,true)}</span></div>`).join('');
   $$('.city-row').forEach(row=>row.addEventListener('click',()=>{state.selectedCity=row.dataset.city;queryPage()}));
@@ -870,8 +874,8 @@ function renderMetas(p){
   const c=new Chart($('#metaMonthly'),{type:'bar',data:{labels:monthly.map(x=>x.label),datasets:[
     {label:'Meta',data:monthly.map(x=>x.meta),backgroundColor:'#DDE2EF',borderRadius:6},
     {label:'Faturamento',data:monthly.map(x=>x.revenue),backgroundColor:'#1E2655',borderRadius:6}
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(ctx.raw)}`}}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{callback:v=>money(v,true)}}}}});
-  state.charts.push(c);
+  ]},options:{responsive:true,maintainAspectRatio:false,animation:chartMotionOptions(),plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(ctx.raw)}`}}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{callback:v=>money(v,true)}}}}});
+  state.charts.push(c);installChartMotion(c);
   const max=p.supervisors?.[0]?.meta||1;
   $('#metaSup').innerHTML=(p.supervisors||[]).map(x=>`<div class="metric-line"><div><div class="name">${esc(x.name)}</div><div class="progress"><i style="width:${x.meta/max*100}%"></i></div></div><div class="value">${money(x.meta,true)}</div></div>`).join('');
 }
@@ -925,11 +929,12 @@ function coverageRowMap(rows,department){
   rows.forEach(row=>map.set(aliasCity(row.city)+'|'+row.uf,row));
   return map;
 }
-async function renderCoverageView(){
+async function renderCoverageView(p={}){
+  if(p.area)state.areaPayload=p.area;
   const cities=state.coverage?.cities||[],f=state.coverageFilters;
   $('#content').innerHTML=
     '<div class="city-view-switch" role="group" aria-label="Visualização de cidades"><button type="button" data-city-view="sales">Faturamento</button><button type="button" class="active" data-city-view="coverage">Cobertura territorial</button></div>'+
-    '<div class="coverage-heading"><div><h2>Distribuição de cobertura comercial</h2><p>As cores representam o RCA responsável pela linha selecionada. Áreas em revisão ficam destacadas.</p></div><div class="coverage-downloads"><button id="coverageRefresh" class="btn secondary small">Atualizar matriz</button><button id="coveragePng" class="btn primary small">Baixar PNG</button><button id="coverageSvg" class="btn secondary small">Baixar SVG</button></div></div>'+
+    '<div class="coverage-heading"><div><h2>Análise de área e cobertura</h2><p>Explore o território de cada RCA e acompanhe as vendas dos municípios da área.</p></div><div class="coverage-downloads"><button id="coverageRefresh" class="btn secondary small">Atualizar matriz</button><button id="coveragePng" class="btn primary small">Baixar PNG</button><button id="coverageSvg" class="btn secondary small">Baixar SVG</button></div></div>'+
     '<div class="coverage-controls panel">'+
       '<label>Linha comercial<select id="coverageDepartment">'+COVERAGE_DEPARTMENTS.map(x=>'<option value="'+esc(x.value)+'" '+(f.department===x.value?'selected':'')+'>'+esc(x.value)+'</option>').join('')+'</select></label>'+
       '<label>Estado<div id="coverageUf" class="multi-select"></div></label>'+
@@ -938,27 +943,31 @@ async function renderCoverageView(){
     '</div>'+
     '<div id="coverageLoad" class="coverage-load '+(state.coverage?'hidden':'')+'">Carregando matriz de cobertura…</div>'+
     '<div id="coverageError" class="coverage-error hidden"></div>'+
+    '<div class="panel area-scope-panel"><label>Indicadores da área<select id="areaScope"><option value="nutrition">Linha Nutrição</option><option value="commercial">Comercial, exceto Saúde</option><option value="health">Saúde Animal</option><option value="all">Todos os departamentos</option></select></label><p>O RCA define o território pela matriz atual. Os indicadores somam as vendas das cidades, realizadas por qualquer vendedor autorizado no seu acesso. Ano e mês seguem o período do topo.</p></div>'+
     '<div id="coverageStats" class="coverage-stats"></div>'+
     '<div class="grid coverage-layout"><div class="panel coverage-map-panel"><div class="panel-title-row"><div><h2>Mapa por município</h2><div class="panel-sub">Clique em um município para conferir responsável e rota.</div></div><span id="coverageBaseDate" class="badge"></span></div><div id="coverageMap"></div></div>'+
     '<div class="panel coverage-side"><div class="panel-title-row"><div><h2>Legenda da cobertura</h2><div class="panel-sub">Cada cor identifica um RCA nesta linha.</div></div></div><div id="coverageLegend" class="coverage-legend"></div><div class="coverage-detail" id="coverageDetail"></div></div></div>'+
+    '<div id="areaAnalysis"></div>'+
     '<div class="coverage-footnote">Fonte: matriz de cobertura comercial no Google Drive. Cidades sem responsável ou com situação diferente de “Conferido” são exibidas como pendentes.</div>';
-  $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;renderCidades(state.lastPayload||{})}));
+  $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;queryPage()}));
+  $('#areaScope').value=state.areaScope;
+  $('#areaScope').addEventListener('change',e=>{state.areaScope=e.target.value;queryPage()});
   fillMultiSelect($('#coverageUf'),[...new Set(cities.map(x=>x.uf))].sort().map(x=>({value:x,label:x})),f.uf,()=>{
     f.uf=selectedMulti('coverageUf');
     state.coverageSelection=null;
-    renderCoverageResults();
+    state.areaCity='';queryPage();
   });
-  $('#coverageDepartment').addEventListener('change',e=>{f.department=e.target.value;f.rca='Todos';state.coverageSelection=null;renderCoverageView()});
-  $('#coverageRca').addEventListener('change',e=>{f.rca=e.target.value;state.coverageSelection=null;renderCoverageView()});
-  $('#coverageStatus').addEventListener('change',e=>{f.status=e.target.value;state.coverageSelection=null;renderCoverageView()});
-  $('#coverageRefresh').addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Atualizando…';try{state.coverage=await api('/api/coverage',{method:'POST',body:JSON.stringify({force:true})});state.coverageSelection=null;renderCoverageView()}catch(error){const box=$('#coverageError');if(box){box.textContent='Não foi possível atualizar a matriz: '+(error?.message||String(error));box.classList.remove('hidden')}}finally{if(button.isConnected){button.disabled=false;button.textContent='Atualizar matriz'}}});
+  $('#coverageDepartment').addEventListener('change',e=>{f.department=e.target.value;f.rca='Todos';state.coverageSelection=null;state.areaCity='';queryPage()});
+  $('#coverageRca').addEventListener('change',e=>{f.rca=e.target.value;state.coverageSelection=null;state.areaCity='';queryPage()});
+  $('#coverageStatus').addEventListener('change',e=>{f.status=e.target.value;state.coverageSelection=null;state.areaCity='';queryPage()});
+  $('#coverageRefresh').addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Atualizando…';try{state.coverage=await api('/api/coverage',{method:'POST',body:JSON.stringify({force:true})});state.coverageSelection=null;state.areaCity='';queryPage()}catch(error){const box=$('#coverageError');if(box){box.textContent='Não foi possível atualizar a matriz: '+(error?.message||String(error));box.classList.remove('hidden')}}finally{if(button.isConnected){button.disabled=false;button.textContent='Atualizar matriz'}}});
   $('#coveragePng').addEventListener('click',()=>downloadCoverageMap('png'));
   $('#coverageSvg').addEventListener('click',()=>downloadCoverageMap('svg'));
   if(!state.coverage){
     api('/api/coverage').then(data=>{
       state.coverage=data;
       $('#coverageLoad')?.classList.add('hidden');
-      renderCoverageView();
+      queryPage();
     }).catch(error=>{
       const box=$('#coverageError');
       if(box){box.textContent='Não foi possível ler a matriz de cobertura: '+(error?.message||String(error));box.classList.remove('hidden')}
@@ -991,7 +1000,9 @@ function renderCoverageResults(){
   });
   const legend=[...counts.entries()].sort((a,b)=>a[1].name.startsWith('Em revisão')?1:b[1].name.startsWith('Em revisão')?-1:a[1].name.localeCompare(b[1].name,'pt-BR'));
   $('#coverageLegend').innerHTML=legend.map(([key,item])=>'<div class="coverage-legend-row"><span class="coverage-swatch" style="background:'+ (key==='__pending__'?'#E4A33A':palette.get(key)||'#9AA3B5')+'"></span><strong>'+esc(item.name)+'</strong><span>'+integer(item.count)+'</span></div>').join('')||'<div class="empty">Nenhuma cidade neste recorte.</div>';
+  Array.from(document.querySelectorAll('#coverageLegend .coverage-legend-row')).forEach((el,index)=>{const key=legend[index][0];el.tabIndex=0;el.setAttribute('role','button');el.setAttribute('aria-label','Filtrar território: '+legend[index][1].name);const pick=()=>{if(key==='__pending__')f.status=f.status==='Pendentes'?'Todas':'Pendentes';else{f.rca=f.rca===key?'Todos':key;f.status='Todas'}state.areaCity='';state.coverageSelection=null;queryPage()};el.onclick=pick;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick()}};});
   renderCoverageDetail();
+  renderAreaAnalysis(state.areaPayload);
   loadCoverageMap(allowed,palette,def);
 }
 function renderCoverageDetail(){
@@ -1059,7 +1070,7 @@ async function loadCoverageMap(rows,palette,definition){
         const labelIcon=L.divIcon({className:'coverage-city-label-icon',html:'<span style="display:block;transform:translate(-50%,-50%);white-space:nowrap;background:rgba(255,255,255,.86);border:1px solid rgba(30,38,85,.28);border-radius:3px;padding:1px 3px;color:#1E2655;font:700 9px/1.1 Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none">'+esc(row.city||name)+'</span>',iconAnchor:[0,0]});
         L.marker(leafletLayer.getBounds().getCenter(),{icon:labelIcon,interactive:false,keyboard:false}).addTo(cityLabels);
       }
-      if(row)leafletLayer.on('click',()=>{state.coverageSelection=row;renderCoverageDetail()});
+      if(row&&visible)leafletLayer.on('click',()=>{state.coverageSelection=row;state.areaCity=aliasCity(row.city)+'|'+row.uf;queryPage()});
     }
   }).addTo(state.map);
   const syncCityLabels=()=>{
@@ -1069,7 +1080,7 @@ async function loadCoverageMap(rows,palette,definition){
     else if(!show&&state.map.hasLayer(cityLabels))state.map.removeLayer(cityLabels);
   };
   state.map.on('zoomend',syncCityLabels);
-  try{state.map.fitBounds(layer.getBounds(),{padding:[12,12]})}catch{}
+  try{const focus=features.filter(item=>byCity.has(aliasCity(item.feature.properties?.name||item.feature.properties?.NOME||'')+'|'+item.uf));const bounds=focus.length?L.geoJSON({type:'FeatureCollection',features:focus.map(x=>x.feature)}).getBounds():layer.getBounds();state.map.fitBounds(bounds,{padding:[20,20],maxZoom:9})}catch{}
   syncCityLabels();
 }
 function coveragePath(geometry,project){
@@ -1334,4 +1345,35 @@ async function renderMacroHistory(payload){
  $('#macroYear').addEventListener('change',e=>pick(e.target.value));
  Array.from(document.querySelectorAll('[data-macro-year]')).forEach(b=>b.addEventListener('click',()=>pick(b.dataset.macroYear)));
  }catch(error){if(state.page==='history')$('#content').innerHTML='<div class="panel">'+esc(error.message)+'</div>';}
+}
+
+
+function chartMotionOptions(){return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?false:{duration:700,easing:'easeOutQuart',delay:ctx=>ctx.type==='data'?Math.min(300,ctx.dataIndex*28):0};}
+function installChartMotion(c){
+ const holder=c.canvas.parentElement;if(!holder)return;
+ c.canvas.setAttribute('role','img');c.canvas.setAttribute('aria-label','Gráfico: '+c.data.datasets.map(d=>d.label||'Valores').join(', ')+'. Use Reproduzir leitura para consultar os valores.');
+ const controls=document.createElement('div');controls.className='chart-motion-controls';
+ controls.innerHTML='<button type="button" data-replay>Rever animação</button><button type="button" data-play aria-pressed="false">Reproduzir leitura</button><output aria-live="off">Leitura sequencial dos valores</output>';
+ holder.after(controls);let timer=null,index=-1;
+ const stop=()=>{if(timer)clearInterval(timer);timer=null;const b=controls.querySelector('[data-play]');b.textContent='Reproduzir leitura';b.setAttribute('aria-pressed','false');};
+ const show=i=>{if(!c.canvas.isConnected||!c.ctx){stop();return;}index=i;const elements=c.data.datasets.flatMap((d,di)=>d.data[i]!=null&&!c.getDatasetMeta(di).hidden?[{datasetIndex:di,index:i}]:[]);c.setActiveElements(elements);c.update('none');controls.querySelector('output').textContent=String(c.data.labels[i])+': '+elements.map(e=>{const d=c.data.datasets[e.datasetIndex],v=d.data[i];return (d.label?d.label+' ':'')+(c.$valueFormat?c.$valueFormat(v):/portfolioMovementChart|inactiveChart/.test(c.canvas.id)?integer(v):money(v,true));}).join(' · ');};
+ controls.querySelector('[data-replay]').onclick=()=>{stop();c.reset();c.update();};
+ controls.querySelector('[data-play]').onclick=()=>{if(timer){stop();return;}if(!c.data.labels.length)return;controls.querySelector('[data-play]').textContent='Pausar leitura';controls.querySelector('[data-play]').setAttribute('aria-pressed','true');show((index+1)%c.data.labels.length);timer=setInterval(()=>{if(document.hidden){stop();return;}show((index+1)%c.data.labels.length);},2200);};
+ c.canvas.addEventListener('pointerdown',stop);const cleanup=()=>stop();c.$motionCleanup=cleanup;
+}
+function renderAreaAnalysis(p){
+ const root=$('#areaAnalysis');if(!root)return;
+ for(const c of [...state.charts])if(c.canvas?.id?.startsWith('area')){c.$motionCleanup?.();c.destroy();state.charts=state.charts.filter(x=>x!==c);}
+ if(!p){root.innerHTML='<div class="panel">Preparando indicadores do território…</div>';return;}
+ const change=(a,b)=>b>0?pct((a/b-1)*100):'Sem base';
+ const current=p.current||{},previous=p.previous||{},monthly=p.monthly||[];
+ root.innerHTML=`<section class="panel area-analysis-heading"><div class="panel-title-row"><div><h2>${esc(p.cityName||'Resultado do território')}</h2><p class="panel-sub">${esc(p.period)} · comparação com ${esc(p.previousPeriod)}${p.partial?' · período parcial':''}</p></div>${state.areaCity?'<button class="btn secondary" id="areaAllCities">Voltar à área</button>':''}</div><div class="grid kpi-grid four">${kpi('Faturamento da área',money(current.revenue,true),change(current.revenue,previous.revenue)+' vs. período anterior')}${kpi('Clientes com compra',integer(current.clients),change(current.clients,previous.clients)+' vs. ano anterior')}${kpi('Produtos vendidos',integer(current.products),change(current.products,previous.products)+' vs. ano anterior')}${kpi('Cidades com venda',integer(current.cities),integer(p.municipalities)+' municípios conferidos na área')}</div><details><summary>Critérios desta análise</summary><p>Resultado geográfico: vendas fechadas por data de faturamento nos municípios com atribuição conferida na matriz atual. A mesma área é aplicada aos dois anos; não representa a produtividade individual do RCA nem o território histórico. Áreas em revisão ficam fora dos indicadores. Respeita os dados permitidos ao usuário. Filtros gerais de vendedor, supervisor e departamento não alteram esta análise; use a linha e o escopo acima. Comparações são limitadas à última data de faturamento disponível no ano selecionado. Ausência de registros na base aparece como “Sem base”.</p></details></section>
+ <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Evolução do faturamento da área</h2><p class="panel-sub">Mesmo território nos dois anos. A leitura animada destaca um mês por vez.</p><div class="chart-wrap"><canvas id="areaMonthly"></canvas></div></section><section class="panel"><h2>Variação mensal</h2><label>Comparação<select id="areaComparison"><option value="yoy">Mesmo mês do ano anterior</option><option value="mom">Mês anterior</option></select></label><div class="chart-wrap"><canvas id="areaGrowth"></canvas></div></section></div>
+ <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Cidades do território</h2><p class="panel-sub">Clique para detalhar a cidade. ${integer(p.municipalities)} cidades conferidas; ${integer(current.cities)} com venda no período.</p><div class="area-table-scroll"><table><thead><tr><th>Cidade</th><th>Faturamento</th><th>Clientes</th></tr></thead><tbody>${(p.cities||[]).map(x=>`<tr><td><button class="area-city-pick" data-area-city="${esc(x.key)}">${esc(x.city)} · ${esc(x.uf)}</button></td><td>${money(x.revenue,true)}</td><td>${integer(x.clients)}</td></tr>`).join('')||'<tr><td colspan="3">Sem cidades com registros no período.</td></tr>'}</tbody></table></div></section><section class="panel"><h2>Produtos da área</h2><p class="panel-sub">Principais produtos por faturamento · concentração nos três primeiros: ${pct(p.top3Share)}</p><div class="chart-wrap tall"><canvas id="areaProducts"></canvas></div></section></div>`;
+ const rev=chart($('#areaMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{label:String(p.year),data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.08)',fill:true,tension:.25},{label:String(p.year-1),data:monthly.map(x=>x.previous),borderColor:'#91ADD8',borderDash:[5,4],tension:.25}]},{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
+ let growth;
+ const draw=()=>{if(growth){growth.$motionCleanup?.();const old=growth.canvas.parentElement.nextElementSibling;if(old?.classList.contains('chart-motion-controls'))old.remove();growth.destroy();state.charts=state.charts.filter(c=>c!==growth);}const mode=$('#areaComparison').value;growth=chart($('#areaGrowth'),'bar',{labels:monthly.map(x=>x.label),datasets:[{label:'Variação',data:monthly.map(x=>x[mode]),backgroundColor:monthly.map(x=>x[mode]<0?'#B85B58':'#365C9D'),borderRadius:5}]},{plugins:{tooltip:{callbacks:{label:ctx=>pct(ctx.raw)}}},scales:{y:{ticks:{callback:v=>pct(v)}}}});growth.$valueFormat=pct;};draw();$('#areaComparison').onchange=draw;
+ const products=p.products||[];chart($('#areaProducts'),'bar',{labels:products.map(x=>x.name),datasets:[{label:'Faturamento',data:products.map(x=>x.revenue),backgroundColor:'#365C9D',borderRadius:5}]},{indexAxis:'y'});
+ $('#areaAllCities')?.addEventListener('click',()=>{state.areaCity='';state.coverageSelection=null;queryPage()});
+ Array.from(root.querySelectorAll('[data-area-city]')).forEach(b=>b.onclick=()=>{state.areaCity=b.dataset.areaCity;state.coverageSelection=(state.coverage?.cities||[]).find(r=>aliasCity(r.city)+'|'+r.uf===state.areaCity)||null;queryPage()});
 }
