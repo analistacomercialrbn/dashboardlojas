@@ -587,7 +587,7 @@ function renderOverview(p){
       <div class="panel"><div class="panel-head"><div><div class="panel-title">Composição por departamento</div><div class="panel-sub">Clique em uma linha para aplicar o departamento aos cartões e gráficos.</div></div></div><div id="depList" class="overview-departments metric-list"></div></div>
     </div>
   `;
-  $('[data-daily-mode]').forEach(button=>button.addEventListener('click',()=>{state.dailyMode=button.dataset.dailyMode;queryPage();}));
+  Array.from(document.querySelectorAll('[data-daily-mode]')).forEach(button=>button.addEventListener('click',()=>{state.dailyMode=button.dataset.dailyMode;queryPage();}));
   $('#dailyDateChoice').addEventListener('change',event=>{if(!event.target.value)return;state.dailyMode='custom';state.dailyDate=event.target.value;queryPage();});
   const monthly=p.monthly||[];
   chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{label:'Faturamento',data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.09)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]},{scales:{x:{grid:{display:false},border:{display:false}},y:{min:1000000,beginAtZero:false,grid:{color:'#E8EDF6'},border:{display:false},ticks:{callback:v=>money(v,true)}}}});
