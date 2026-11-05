@@ -513,7 +513,7 @@ if(typeof Chart!=='undefined'&&!Chart.registry.plugins.get('barValueLabels')){
         const value=dataset.data[index];if(value==null||!Number.isFinite(Number(value)))return;
         const label=money(Number(value),true),width=ctx.measureText(label).width;
         const inside=bar.x+width+12>area.right;
-        ctx.textAlign=inside?'right':'left';ctx.fillStyle=inside?'#FFFFFF':'#334155';
+        ctx.textAlign=inside?'right':'left';ctx.fillStyle=chartInstance.canvas.closest('.feature-panel')?(inside?'#0c2142':'#deedff'):(inside?'#FFFFFF':'#334155');
         ctx.fillText(label,inside?bar.x-7:bar.x+7,bar.y);
       });
     });ctx.restore();
@@ -531,6 +531,7 @@ function insight(i){
 function sectionHeading(title,sub=''){return `<div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div>`}
 
 function renderPage(page,payload){
+  if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')renderMacroHistory(payload);
   else if(page==='overview')renderOverview(payload);
   else if(page==='carteira')renderCarteira(payload);
@@ -538,6 +539,7 @@ function renderPage(page,payload){
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
   else if(page==='pedidos')renderOrders(payload);
+  if(page!=='history'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
 }
 
 function renderOverview(p){
@@ -773,7 +775,7 @@ async function renderCityMap(cities,selectedKey){
           const name=f.properties?.name||f.properties?.NOME||'';
           const c=cityMap.get(`${aliasCity(name)}|${uf}`);
           const selected=c&&c.key===selectedKey;
-          return {color:selected?'#112B63':'#B8C6D8',weight:selected?2.8:.75,fillColor:selected?'#1D2A68':c?colorAt(c.revenue):'#F2F5FA',fillOpacity:selected?0.96:c?0.9:0.55};
+          return {color:selected?'#F2D49B':'#28476c',weight:selected?2.8:.75,fillColor:c?colorAt(c.revenue):'#243b60',fillOpacity:selected?1:(c?.95:.8)};
         },
         onEachFeature:(f,l)=>{
           const name=f.properties?.name||f.properties?.NOME||'';
@@ -1013,6 +1015,7 @@ function renderCoverageResults(){
   Array.from(document.querySelectorAll('#coverageLegend .coverage-legend-row')).forEach((el,index)=>{const key=legend[index][0];el.tabIndex=0;el.setAttribute('role','button');el.setAttribute('aria-label','Filtrar território: '+legend[index][1].name);const pick=()=>{if(key==='__pending__')f.status=f.status==='Pendentes'?'Todas':'Pendentes';else{f.rca=f.rca===key?'Todos':key;f.status='Todas'}state.areaCity='';state.coverageSelection=null;queryPage()};el.onclick=pick;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick()}};});
   renderCoverageDetail();
   renderAreaAnalysis(state.areaPayload);
+  applyPageLook('coverage',{rows:allowed});
   loadCoverageMap(allowed,palette,def);
 }
 function renderCoverageDetail(){
@@ -1291,6 +1294,7 @@ async function renderUsers(){
  <label><input name="ativo" type="checkbox" checked> Usuário ativo</label>
  <div><button type="submit" class="btn">Salvar usuário</button> <button type="button" id="newUserBtn" class="secondary">Novo usuário</button></div>
  <p id="userSaveStatus" role="status" style="grid-column:1/-1"></p></form></div>`;
+ applyPageLook('users',data);
  const form=$('#adminUserForm'),field=n=>form.elements.namedItem(n);
  const scope=()=>{$('#userRcaLabel').hidden=field('perfil').value!=='RCA';$('#userSupervisorLabel').hidden=field('perfil').value!=='SUPERVISOR';};
  field('perfil').addEventListener('change',scope);scope();
@@ -1447,7 +1451,7 @@ function renderAreaAnalysis(p){
  const change=(a,b)=>p.previousAvailable===false?'Sem base completa':b>0?pct((a/b-1)*100):'Sem base';
  const current=p.current||{},previous=p.previous||{},monthly=p.monthly||[];
  root.innerHTML=`<section class="panel area-analysis-heading"><div class="panel-title-row"><div><h2>${esc(p.cityName||'Resultado do território')}</h2><p class="panel-sub">${esc(p.period)} · comparação com ${esc(p.previousPeriod)}${p.partial?' · período parcial':''}</p></div>${state.areaCity?'<button class="btn secondary" id="areaAllCities">Voltar à área</button>':''}</div><div class="grid kpi-grid four">${kpi('Faturamento da área',money(current.revenue,true),change(current.revenue,previous.revenue)+' vs. ano anterior')}${kpi('Clientes com compra',integer(current.clients),change(current.clients,previous.clients)+' vs. ano anterior')}${kpi('Produtos vendidos',integer(current.products),change(current.products,previous.products)+' vs. ano anterior')}${kpi('Cidades com venda',integer(current.cities),integer(p.municipalities)+' municípios conferidos na área')}</div><details><summary>Critérios desta análise</summary><p>Resultado geográfico: vendas fechadas por data de faturamento nos municípios com atribuição conferida na matriz atual. A mesma área é aplicada aos dois anos; não representa a produtividade individual do RCA nem o território histórico. Áreas em revisão ficam fora dos indicadores. Respeita os dados permitidos ao usuário. Filtros gerais de vendedor, supervisor e departamento não alteram esta análise; use a linha e o escopo acima. Comparações são limitadas à última data de faturamento disponível no ano selecionado. Comparações anuais são omitidas quando faltam meses na base do ano anterior. Ausência de registros na base aparece como “Sem base”.</p></details></section>
- <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Evolução do faturamento da área</h2><p class="panel-sub">Mesmo território nos dois anos. Compare o mesmo território nos dois anos.</p><div class="chart-wrap"><canvas id="areaMonthly"></canvas></div></section><section class="panel"><h2>Variação mensal</h2><label>Comparação<select id="areaComparison"><option value="yoy">Mesmo mês do ano anterior</option><option value="mom">Mês anterior</option></select></label><div class="chart-wrap"><canvas id="areaGrowth"></canvas></div></section></div>
+ <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Evolução do faturamento da área</h2><p class="panel-sub">Compare o mesmo território nos dois anos.</p><div class="chart-wrap"><canvas id="areaMonthly"></canvas></div></section><section class="panel"><h2>Variação mensal</h2><label>Comparação<select id="areaComparison"><option value="yoy">Mesmo mês do ano anterior</option><option value="mom">Mês anterior</option></select></label><div class="chart-wrap"><canvas id="areaGrowth"></canvas></div></section></div>
  <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Cidades do território</h2><p class="panel-sub">Clique para detalhar a cidade. ${integer(p.municipalities)} cidades conferidas; ${integer(current.cities)} com venda no período.</p><div class="area-table-scroll"><table><thead><tr><th>Cidade</th><th>Faturamento</th><th>Clientes</th></tr></thead><tbody>${(p.cities||[]).map(x=>`<tr><td><button class="area-city-pick" data-area-city="${esc(x.key)}">${esc(x.city)} · ${esc(x.uf)}</button></td><td>${money(x.revenue,true)}</td><td>${integer(x.clients)}</td></tr>`).join('')||'<tr><td colspan="3">Sem cidades com registros no período.</td></tr>'}</tbody></table></div></section><section class="panel"><h2>Produtos da área</h2><p class="panel-sub">Principais produtos por faturamento · concentração nos três primeiros: ${pct(p.top3Share)}</p><div class="chart-wrap tall"><canvas id="areaProducts"></canvas></div></section></div>`;
  const rev=chart($('#areaMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{label:String(p.year),data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.08)',fill:true,tension:.25},{label:String(p.year-1),data:monthly.map(x=>x.previous),borderColor:'#91ADD8',borderDash:[5,4],tension:.25}]},{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
  let growth;
@@ -1457,3 +1461,49 @@ function renderAreaAnalysis(p){
  Array.from(root.querySelectorAll('[data-area-city]')).forEach(b=>b.onclick=()=>{state.areaCity=b.dataset.areaCity;state.coverageSelection=(state.coverage?.cities||[]).find(r=>aliasCity(r.city)+'|'+r.uf===state.areaCity)||null;queryPage()});
 }
 
+
+
+function pageLookHero(kicker,title,description,facts){
+ return `<section class="page-summary-hero"><div class="page-summary-copy"><span class="history-eyebrow">${esc(kicker)}</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><div class="page-summary-facts">${facts.map(f=>'<div><span>'+esc(f[0])+'</span><strong>'+esc(f[1])+'</strong><small>'+esc(f[2]||'')+'</small></div>').join('')}</div></section>`;
+}
+function applyPageLook(page,p={}){
+ const root=$('#content');if(!root||page==='history')return;
+ root.classList.add('visual-page');root.dataset.presentation=page;
+ const k=p.kpis||{},cities=p.cities||[],coverage=p.rows||[];
+ const totalOpen=p.totalOpenValue??(Number(p.openValue||0)+Number(p.blockedValue||0));
+ const definitions={
+  carteira:['RELACIONAMENTO E CARTEIRA','Clientes e oportunidades de recuperação.','Clientes, frequência de compra e oportunidades de recuperação.',[['Faturamento no recorte',money(k.revenue,true),'Vendas pela data de faturamento'],['Clientes com compra',integer(k.clients),'Positivados no período']]],
+  produtos:['MIX E PRODUTOS','Desempenho e composição do mix.','Explore os produtos de maior resultado e a concentração por RCA.',[['Produtos faturados',integer(k.products),'SKUs com venda no recorte'],['Clientes compradores',integer(k.clients),'Clientes distintos com compra']]],
+  pedidos:['CARTEIRA DE PEDIDOS','Posição e previsão dos pedidos.','Acompanhe posições, clientes e itens para orientar o fechamento.',[['Carteira total',money(totalOpen,true),'Inclui pedidos bloqueados'],['Pedidos em aberto',integer(p.totalOpenCount??p.orders?.length),'Todos os status do recorte']]],
+  cidades:['INTELIGÊNCIA TERRITORIAL',p.selected?p.selected.city+' em perspectiva.':'Faturamento por território.','Explore o faturamento de cada cidade e aprofunde produtos e clientes.',[['Faturamento da área',money(p.selected?.revenue??cities.reduce((a,x)=>a+x.revenue,0),true),p.selected?p.selected.city+' · '+p.selected.uf:'Área e período selecionados'],['Cidades com venda',integer(cities.filter(c=>c.revenue>0).length),'Municípios atendidos no recorte']]],
+  metas:['PLANEJAMENTO COMERCIAL','Acompanhamento de realizado e meta.','Compare o realizado com as metas cadastradas ao longo do ano.',[['Meta do ano',money(p.totalMeta,true),'Planejamento no ano selecionado'],['Faturamento no ano',money(p.totalRevenue,true),p.totalMeta?pct(p.totalRevenue/p.totalMeta*100)+' da meta':'Sem meta cadastrada']]],
+  coverage:['COBERTURA E ANÁLISE DE ÁREA','Cobertura e resultados por área.','Conecte a distribuição comercial aos resultados dos municípios.',[['Municípios no recorte',integer(coverage.length),'Linha e área selecionadas'],['Municípios conferidos',integer(coverage.filter(r=>!coveragePending(r,state.coverageFilters.department)).length),'Atribuição comercial validada']]],
+  users:['ADMINISTRAÇÃO','Usuários e vínculos comerciais.','Gerencie os perfis e seus vínculos com a operação comercial.',[['Usuários cadastrados',integer(p.users?.length),'Contas do dashboard'],['Acessos ativos',integer((p.users||[]).filter(u=>u.ativo).length),'Contas habilitadas']]]
+ };
+ if(page==='overview'){
+  const hero=root.querySelector('.overview-hero');if(hero&&!hero.classList.contains('overview-summary-hero')){
+   hero.classList.add('overview-summary-hero');const revenue=hero.querySelector('.overview-revenue');revenue.insertAdjacentHTML('afterbegin','<span class="history-eyebrow">REBANHO · VISÃO EXECUTIVA</span><h2 class="overview-summary-title">Resultado comercial do período.</h2>');root.prepend(hero);root.querySelector('.executive-period-heading')?.remove();
+  }
+ }else if(definitions[page]&&!root.querySelector(':scope > .page-summary-hero')){
+  const config=definitions[page];const switcher=root.querySelector(':scope > .city-view-switch');if(switcher)switcher.insertAdjacentHTML('afterend',pageLookHero(...config));else root.insertAdjacentHTML('afterbegin',pageLookHero(...config));
+  const grid=root.querySelector(':scope > .kpi-grid');const count={carteira:1,produtos:2,cidades:2,metas:2,pedidos:1}[page]||0;
+  if(grid&&count){for(let i=0;i<count;i++)grid.firstElementChild?.remove();grid.classList.add('summary-metrics');grid.style.setProperty('--summary-columns',String(grid.children.length));}
+  if(page==='pedidos')root.querySelector(':scope > .section-heading')?.remove();
+  if(page==='metas')root.querySelector('.readonly-banner')?.remove();
+  if(page==='coverage'){root.querySelector('.coverage-heading>div:first-child')?.remove();const stats=root.querySelector('#coverageStats');if(stats){stats.firstElementChild?.remove();stats.firstElementChild?.remove();}}
+ }
+ const featureSelectors={overview:'.overview-analysis>.panel:first-child',carteira:'.carteira-movement-panel',produtos:'.equal-col>.panel:first-child',cidades:'.city-layout>.panel:first-child',metas:'.two-col>.panel:first-child',pedidos:'.order-status-panel',coverage:'.coverage-map-panel,.coverage-side',users:':scope>.panel:first-of-type'};
+ root.querySelectorAll(featureSelectors[page]||'.__none').forEach(panel=>panel.classList.add('feature-panel'));
+ root.querySelectorAll('.panel,.table-wrap').forEach(panel=>panel.classList.add('presentation-panel'));
+ for(const c of state.charts){
+  if(!c.canvas?.closest('.feature-panel')||c.$panelLookApplied)continue;c.$panelLookApplied=true;
+  for(const axis of Object.values(c.options.scales||{})){if(axis.ticks)axis.ticks.color='#a9bfdc';if(axis.grid)axis.grid.color='#2b4466';if(axis.border)axis.border.display=false;}
+  if(c.options.plugins?.legend?.labels)c.options.plugins.legend.labels.color='#c2d5ef';
+  c.data.datasets.forEach((dataset,i)=>{
+   if(c.canvas.id==='portfolioMovementChart')return;
+   const base=i===0?'#93c4fa':'#5178a8';if(c.config.type==='line'){dataset.borderColor=base;dataset.pointBackgroundColor=base;}
+   dataset.backgroundColor=context=>{const {ctx,chartArea:a}=context.chart;if(!a)return base;const horizontal=c.options.indexAxis==='y',g=horizontal?ctx.createLinearGradient(a.left,0,a.right,0):ctx.createLinearGradient(0,a.bottom,0,a.top);g.addColorStop(0,c.config.type==='line'?'rgba(99,163,236,0.01)':i===0?'#345f98':'#344e70');g.addColorStop(1,c.config.type==='line'?'rgba(108,178,255,.28)':base);return g;};
+  });c.update('none');
+ }
+ if(state.map&&['cidades','coverage'].includes(page))requestAnimationFrame(()=>state.map?.invalidateSize());
+}
