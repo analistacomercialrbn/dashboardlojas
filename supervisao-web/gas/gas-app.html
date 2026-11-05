@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@f6c272cf261825bb2ba3ca3911a019c9e751ebdc/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@95b4052705f5cd1dad8a9ca338ca04d1b81886b7/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -585,14 +585,16 @@ function dailyCommercial(filters,sales,open,today=commercialToday()){
 
 
 function macroHistoryCurrent(){
- const groups=new Map();
+ const groups=new Map(),geography=new Map();
  for(const row of SALES){
   const date=commercialDayKey(row.date),month=date.slice(0,7);
   if(!date||date<'2024-08-01')continue;
   if(!groups.has(month))groups.set(month,{month,value:0,minDate:date,maxDate:date,source:'WinThor / BI'});
   const item=groups.get(month);item.value+=Number(row.value)||0;if(date<item.minDate)item.minDate=date;if(date>item.maxDate)item.maxDate=date;
+  if(!geography.has(month))geography.set(month,{month,cities:new Map(),unlocated:0});const geo=geography.get(month);
+  if(row.city&&row.uf){const key=norm(row.city)+'|'+row.uf;if(!geo.cities.has(key))geo.cities.set(key,[row.city,row.uf,0]);geo.cities.get(key)[2]+=Number(row.value)||0;}else geo.unlocated+=Number(row.value)||0;
  }
- return {monthly:[...groups.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(x=>({...x,value:Math.round(x.value*100)/100})),updatedAt:SERVER_UPDATED_AT};
+ return {monthly:[...groups.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(x=>({...x,value:Math.round(x.value*100)/100})),geoMonthly:[...geography.values()].map(x=>({month:x.month,cities:[...x.cities.values()].map(c=>[c[0],c[1],Math.round(c[2]*100)/100]),unlocated:Math.round(x.unlocated*100)/100})),updatedAt:SERVER_UPDATED_AT};
 }
 
 function overview(filters){
@@ -830,8 +832,9 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@80e071d147f7224c35efbeec8e84e1058ffae51b/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c3b247ab68c6344ca21bab7a8260a54fa6accc15/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
+
 
 
