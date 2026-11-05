@@ -135,6 +135,7 @@ function bindLogin(){
   });
 }
 function bindShell(){
+  installTableSorting();
   const drawer=$('#appMenu'),toggle=$('#menuToggle'),backdrop=$('#menuBackdrop');
   const closeMenu=()=>{drawer.hidden=true;drawer.inert=true;backdrop.hidden=true;toggle.setAttribute('aria-expanded','false');document.body.classList.remove('menu-is-open');toggle.focus();};
   toggle.addEventListener('click',()=>{drawer.hidden=false;drawer.inert=false;backdrop.hidden=false;toggle.setAttribute('aria-expanded','true');document.body.classList.add('menu-is-open');$('#menuClose').focus();});
@@ -474,6 +475,7 @@ function updateAdvancedFilterCount(){
 }
 
 function queryPage(){
+  mountCoverageFilters(state.page==='cidades'&&state.cityView==='coverage');
   $('.filterbar')?.classList.toggle('hidden',state.page==='history');
   if(state.page==='users'){++state.requestId;destroyCharts();$('#pageTitle').textContent='Configurações · Usuários';$('#pageSubtitle').textContent='Acessos e vínculos comerciais';setStatus('',false);renderUsers();return;}
   if(!state.worker||!state.dimensions||state.loadingData)return;
@@ -539,6 +541,7 @@ function insight(i){
 function sectionHeading(title,sub=''){return `<div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div>`}
 
 function renderPage(page,payload){
+  mountCoverageFilters(page==='cidades'&&state.cityView==='coverage');
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')renderMacroHistory(payload);
   else if(page==='overview')renderOverview(payload);
@@ -563,12 +566,12 @@ function renderOverview(p){
   $('#content').innerHTML=`
     
     <section class="executive-day" aria-label="Resumo comercial diário">
-      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)} · Faturamento: data de faturamento · Pedidos recebidos: data inicial</p></div></div>
+      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)}</p><details class="daily-help"><summary aria-label="Critérios do resumo diário">ⓘ</summary><p>Faturamento pela data de faturamento. Pedidos recebidos pela data inicial, faturados ou não. A data abaixo altera somente este resumo.</p></details></div></div>
       <div class="daily-date-controls" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0">
         <button type="button" class="secondary" data-daily-mode="today" aria-pressed="${state.dailyMode==='today'}">Hoje</button>
         <button type="button" class="secondary" data-daily-mode="yesterday" aria-pressed="${state.dailyMode==='yesterday'}">Ontem</button>
         <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Escolher data <input type="date" id="dailyDateChoice" aria-label="Data do movimento comercial" value="${esc(daily.date||'')}" style="min-height:44px;max-width:100%;padding:8px;border:1px solid #c7d8f2;border-radius:8px"></label>
-        <small>Esta data altera somente o resumo diário.</small>
+        
       </div>
       <div class="executive-day-grid">
         ${kpi('Faturamento do dia',money(daily.soldValue),`${integer(daily.soldOrders)} pedidos realizados`)}
@@ -614,7 +617,7 @@ function renderOverview(p){
     </div>
     <div class="section-heading"><div><h2>Quem movimenta o resultado</h2><p>Distribuição do faturamento por RCA e departamento.</p></div></div>
     <div class="overview-bottom">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Desempenho por RCA</div><div class="panel-sub">Clique em um RCA para filtrar os cartões e os demais gráficos. As barras claras indicam a meta.</div></div></div><div class="chart-wrap short"><canvas id="overviewRca"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Desempenho por RCA</div><div class="panel-sub">Clique em um RCA para filtrar os cartões e os demais gráficos. O risco vertical indica a meta de cada RCA.</div></div></div><div class="chart-wrap short"><canvas id="overviewRca"></canvas></div></div>
       <div class="panel"><div class="panel-head"><div><div class="panel-title">Composição por departamento</div><div class="panel-sub">Clique em uma linha para aplicar o departamento aos cartões e gráficos.</div></div></div><div id="depList" class="overview-departments metric-list"></div></div>
     </div>
   `;
@@ -626,12 +629,12 @@ function renderOverview(p){
   const selectedRcas=new Set(normalizeMulti(state.filters.rca));
   const rcaChart=chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[
     {label:'Faturamento',data:top.map(x=>x.revenue),backgroundColor:top.map(x=>selectedRcas.size&&!selectedRcas.has(String(x.key))?'#BDD0EE':'#1D2A68'),borderRadius:7,barThickness:10},
-    {label:'Meta',data:top.map(x=>x.meta||0),backgroundColor:'#C7D8F2',borderRadius:7,barThickness:10,showValueLabels:false}
-  ]},{indexAxis:'y',onClick:(_event,elements)=>{if(elements?.length)toggleCrossFilter('rca',top[elements[0].index].key)},plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:9}}},barValueLabels:{display:true},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(ctx.raw,true)}`}}},scales:{x:{afterDataLimits:axis=>{axis.max=axis.max*1.18},grid:{color:'#E8EDF6'},ticks:{callback:v=>money(v,true)}},y:{grid:{display:false},ticks:{autoSkip:false,font:{size:9}}}}});
+    {type:'scatter',label:'Meta',data:top.map((x,i)=>({x:x.meta||0,y:i})),pointStyle:'line',pointRotation:90,pointRadius:10,pointHoverRadius:12,borderColor:'#56759f',backgroundColor:'#56759f',showValueLabels:false}
+  ]},{indexAxis:'y',onClick:(_event,elements)=>{if(elements?.length)toggleCrossFilter('rca',top[elements[0].index].key)},plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:9}}},barValueLabels:{display:true},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(typeof ctx.raw==='object'?ctx.raw.x:ctx.raw,true)}`}}},scales:{x:{afterDataLimits:axis=>{axis.max=axis.max*1.18},grid:{color:'#E8EDF6'},ticks:{callback:v=>money(v,true)}},y:{grid:{display:false},ticks:{autoSkip:false,font:{size:9}}}}});
   rcaChart.canvas.style.cursor='pointer';
   const total=(p.departments||[]).reduce((a,x)=>a+x.revenue,0)||1;
   const selectedDepartments=new Set(normalizeMulti(state.filters.department));
-  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<button type="button" class="metric-row department-filter ${selectedDepartments.has(String(x.key))?'selected':''}" data-department="${esc(x.key)}"><span><span class="metric-name">${esc(x.key||'Sem departamento')}</span><span class="progress"><i style="width:${Math.min(100,x.revenue/total*100)}%"></i></span></span><span class="metric-value">${money(x.revenue,true)} · ${pct(x.revenue/total*100)}<small>${x.meta?`Meta ${money(x.meta,true)}`:'Meta não cadastrada'}</small></span></button>`).join('')||'<div class="empty">Sem departamento neste recorte.</div>';
+  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<button type="button" class="metric-row department-filter ${selectedDepartments.has(String(x.key))?'selected':''}" data-department="${esc(x.key)}"><span><span class="metric-name">${esc(x.key||'Sem departamento')}</span><span class="progress ${x.meta>0?'':'hidden'}"><i style="width:${x.meta>0?Math.max(0,Math.min(100,x.revenue/x.meta*100)):0}%"></i></span></span><span class="metric-value">${money(x.revenue,true)} · ${x.meta>0?pct(x.revenue/x.meta*100)+' da meta':'Sem meta'}<small>${x.meta?`Meta ${money(x.meta,true)}`:'Meta não cadastrada'}</small></span></button>`).join('')||'<div class="empty">Sem departamento neste recorte.</div>';
   $$('.department-filter').forEach(button=>button.addEventListener('click',()=>toggleCrossFilter('department',button.dataset.department)));
 }
 function renderCarteira(p){
@@ -642,32 +645,33 @@ function renderCarteira(p){
     <div class="grid kpi-grid">
       ${kpi('Positivados',integer(k.clients),'Compraram no período')}
       ${kpi('Novos',integer(k.newClients),'Primeira compra no período')}
-      ${kpi('Inativos • curto',integer(k.short),'3 a 6 meses sem comprar')}
-      ${kpi('Inativos • longo',integer(k.long),'6 a 12 meses sem comprar')}
+      ${kpi('Inativos • curto',integer(k.short),'90 a 179 dias no fechamento anterior')}
+      ${kpi('Inativos • longo',integer(k.long),'180 dias ou mais no fechamento anterior')}
       ${kpi('Mix por cliente',dec(k.mix),'Produtos distintos por cliente')}
       ${kpi('Produtos ativos no recorte',integer(k.products),'Itens faturados')}
     </div>
 
     <div class="panel carteira-movement-panel">
-      <div class="panel-title-row"><div><h2>Movimento da carteira</h2><div class="panel-sub">Positivados, novos e inativados no mesmo recorte. A barra de inativados é composta por curto + longo prazo.</div></div></div>
+      <div class="panel-title-row"><div><h2>Movimento da carteira</h2><div class="panel-sub">Positivados e novos: período selecionado. Inativos: fechamento do mês anterior. Clique nas faixas para filtrar a lista.</div></div></div>
       <div class="chart-wrap short"><canvas id="portfolioMovementChart"></canvas></div>
     </div>
 
     <div class="grid two-col carteira-secondary">
-      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Faixas exclusivas: curto de 3 a 6 meses e longo de 6 a 12 meses.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Clique em uma faixa ou RCA para filtrar a lista; as seleções se combinam.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
       <div class="panel"><div class="panel-title-row"><div><h2>Leitura da carteira</h2><div class="panel-sub">Data de corte: ${fmtDate(k.cutoff)}</div></div></div>
         <div class="metric-list">
           <div class="metric-line"><div class="name">Relação curto / novos</div><div class="value">${ratio}</div></div>
           <div class="metric-line"><div class="name">Inativos totais</div><div class="value">${integer(inactiveTotal)}</div></div>
           <div class="metric-line"><div class="name">Clientes ativos no período</div><div class="value">${integer(k.clients)}</div></div>
         </div>
-        <div class="small-note" style="margin-top:18px">As faixas não se sobrepõem: curto prazo considera de 3 a 6 meses sem compra e longo prazo de 6 a 12 meses. A relação curto / novos é mostrada em vezes (x), não em percentual.</div>
+        <div class="small-note" style="margin-top:18px">As faixas não se sobrepõem: curto prazo considera de 90 a 179 dias sem compra e longo prazo 180 dias ou mais, no fechamento do mês anterior. A relação curto / novos é mostrada em vezes (x), não em percentual.</div>
       </div>
     </div>
     ${sectionHeading('Clientes inativos para ação','Ordenados pelo maior faturamento dos 12 meses anteriores à data de corte.')}
-    <div class="table-wrap"><table><thead><tr><th>Cliente</th><th>RCA</th><th>Última compra</th><th class="align-right">Dias</th><th class="align-right">Fat. 12m</th><th>Faixa</th></tr></thead><tbody id="inactiveTable"></tbody></table></div>
+    <div id="inactiveSelections" class="inactive-selections"></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>RCA</th><th>Última compra</th><th class="align-right">Dias</th><th class="align-right">Fat. 12m</th><th>Faixa</th></tr></thead><tbody id="inactiveTable"></tbody></table></div>
   `;
 
+  const pickInactive=(rca,band)=>{state.inactivePick=state.inactivePick||{};if(rca!==undefined)state.inactivePick.rca=state.inactivePick.rca===String(rca)?'':String(rca);if(band!==undefined)state.inactivePick.band=state.inactivePick.band===band?'':band;drawInactiveList(p);};
   chart($('#portfolioMovementChart'),'bar',{
     labels:['Positivados','Novos','Inativados'],
     datasets:[
@@ -677,8 +681,9 @@ function renderCarteira(p){
       {label:'Inativos • longo',data:[null,null,k.long],backgroundColor:'#D89B35',borderRadius:8,stack:'carteira'}
     ]
   },{
+    onClick:(_e,els)=>{if(els.length&&els[0].datasetIndex>=2)pickInactive(undefined,els[0].datasetIndex===2?'short':'long');},
     plugins:{
-      legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},
+      legend:{display:true,position:'top',align:'start',onClick:(e,item)=>{if(item.datasetIndex>=2)pickInactive(undefined,item.datasetIndex===2?'short':'long');},labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},
       tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:true,callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}
     },
     scales:{
@@ -688,11 +693,12 @@ function renderCarteira(p){
   });
 
   const rows=(p.byRca||[]).slice(0,18).reverse();
-  chart($('#inactiveChart'),'bar',{labels:rows.map(x=>x.name),datasets:[
+  const inactiveChart=chart($('#inactiveChart'),'bar',{labels:rows.map(x=>x.name),datasets:[
     {label:'Longo prazo',data:rows.map(x=>x.long),backgroundColor:'#D89B35',borderRadius:6},
     {label:'Curto prazo',data:rows.map(x=>x.short),backgroundColor:'#C94A55',borderRadius:6}
-  ]},{indexAxis:'y',plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}},scales:{x:{grid:{color:'#EEF0F5'},ticks:{callback:v=>integer(v)}}}});
-  $('#inactiveTable').innerHTML=(p.inactive||[]).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.rcaName)}</td><td>${fmtDate(x.last)}</td><td class="align-right">${integer(x.days)}</td><td class="align-right">${money(x.revenue12)}</td><td><span class="badge ${x.isShort?'red':'amber'}">${x.isShort?'Curto':'Longo'}</span></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Nenhum cliente nesta faixa.</td></tr>';
+  ]},{indexAxis:'y',onClick:(_e,els)=>{if(els.length){const x=els[0];state.inactivePick={rca:String(rows[x.index].rca),band:x.datasetIndex===0?'long':'short'};drawInactiveList(p);}},plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}},scales:{x:{grid:{color:'#EEF0F5'},ticks:{callback:v=>integer(v)}}}});
+  inactiveChart.canvas.addEventListener('click',event=>{const box=inactiveChart.canvas.getBoundingClientRect(),x=(event.clientX-box.left)*inactiveChart.width/box.width,y=(event.clientY-box.top)*inactiveChart.height/box.height;if(x>=inactiveChart.chartArea.left)return;const scale=inactiveChart.scales.y,index=Math.round(scale.getValueForPixel(y));if(rows[index])pickInactive(rows[index].rca,undefined);});
+  drawInactiveList(p);
 }
 
 function renderProdutos(p){
@@ -935,9 +941,13 @@ function coveragePending(row,department){
 }
 function coverageFilteredRows(){
   const rows=state.coverage?.cities||[],f=state.coverageFilters;
+  f.uf=normalizeMulti(state.filters.uf);
   return rows.filter(row=>{
     const selectedUfs=normalizeMulti(f.uf);if(selectedUfs.length&&!selectedUfs.includes(row.uf))return false;
     if(f.rca!=='Todos'&&coverageRcaKey(coverageAssignment(row,f.department))!==f.rca)return false;
+    if(state.filters.city!=='Todos'&&aliasCity(state.filters.city)!==aliasCity(row.city))return false;
+    const region=(state.dimensions?.geography||[]).find(g=>g.uf===row.uf&&aliasCity(g.city)===aliasCity(row.city))?.region;
+    if(state.filters.region!=='Todos'&&normalize(region)!==normalize(state.filters.region))return false;
     const pending=coveragePending(row,f.department);
     if(f.status==='Conferidas'&&pending)return false;
     if(f.status==='Pendentes'&&!pending)return false;
@@ -957,7 +967,7 @@ async function renderCoverageView(p={}){
     '<div class="coverage-heading"><div><h2>Análise de área e cobertura</h2><p>Explore o território de cada RCA e acompanhe as vendas dos municípios da área.</p></div><div class="coverage-downloads"><button id="coverageRefresh" class="btn secondary small">Atualizar matriz</button><button id="coveragePng" class="btn primary small">Baixar PNG</button><button id="coverageSvg" class="btn secondary small">Baixar SVG</button></div></div>'+
     '<div class="coverage-controls panel">'+
       '<label>Linha comercial<select id="coverageDepartment">'+COVERAGE_DEPARTMENTS.map(x=>'<option value="'+esc(x.value)+'" '+(f.department===x.value?'selected':'')+'>'+esc(x.value)+'</option>').join('')+'</select></label>'+
-      '<label>Estado<div id="coverageUf" class="multi-select"></div></label>'+
+
       '<label>RCA<select id="coverageRca"><option value="Todos">Todos os RCAs</option></select></label>'+
       '<label>Situação<select id="coverageStatus"><option value="Todas" '+(f.status==='Todas'?'selected':'')+'>Todas</option><option value="Conferidas" '+(f.status==='Conferidas'?'selected':'')+'>Conferidas</option><option value="Pendentes" '+(f.status==='Pendentes'?'selected':'')+'>Pendentes</option></select></label>'+
     '</div>'+
@@ -972,11 +982,6 @@ async function renderCoverageView(p={}){
   $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;queryPage()}));
   $('#areaScope').value=state.areaScope;
   $('#areaScope').addEventListener('change',e=>{state.areaScope=e.target.value;queryPage()});
-  fillMultiSelect($('#coverageUf'),[...new Set(cities.map(x=>x.uf))].sort().map(x=>({value:x,label:x})),f.uf,()=>{
-    f.uf=selectedMulti('coverageUf');
-    state.coverageSelection=null;
-    state.areaCity='';queryPage();
-  });
   $('#coverageDepartment').addEventListener('change',e=>{f.department=e.target.value;f.rca='Todos';state.coverageSelection=null;state.areaCity='';queryPage()});
   $('#coverageRca').addEventListener('change',e=>{f.rca=e.target.value;state.coverageSelection=null;state.areaCity='';queryPage()});
   $('#coverageStatus').addEventListener('change',e=>{f.status=e.target.value;state.coverageSelection=null;state.areaCity='';queryPage()});
@@ -995,6 +1000,7 @@ async function renderCoverageView(p={}){
     });
     return;
   }
+  mountCoverageFilters(true);
   renderCoverageResults();
 }
 function renderCoverageResults(){
@@ -1514,4 +1520,38 @@ function applyPageLook(page,p={}){
   });c.update('none');
  }
  if(state.map&&['cidades','coverage'].includes(page))requestAnimationFrame(()=>state.map?.invalidateSize());
+}
+
+function drawInactiveList(p){
+ const pick=state.inactivePick||{},all=p.inactive||[],rows=all.filter(x=>(!pick.rca||String(x.rca)===pick.rca)&&(!pick.band||(pick.band==='short'?x.isShort:x.isLong)));
+ $('#inactiveTable').innerHTML=rows.map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.rcaName)}</td><td>${fmtDate(x.last)}</td><td class="align-right">${integer(x.days)}</td><td class="align-right">${money(x.revenue12)}</td><td><span class="badge ${x.isShort?'red':'amber'}">${x.isShort?'Curto':'Longo'}</span></td></tr>`).join('')||'<tr><td colspan="6">Nenhum cliente nesta seleção.</td></tr>';
+ const name=all.find(x=>String(x.rca)===pick.rca)?.rcaName||pick.rca;
+ $('#inactiveSelections').innerHTML=`<span>${integer(rows.length)} clientes · fechamento ${fmtDate(p.kpis?.cutoff)}</span><div>${pick.rca?'<button data-clear-inactive="rca">'+esc(name)+' ×</button>':''}${pick.band?'<button data-clear-inactive="band">'+(pick.band==='short'?'Curto prazo':'Longo prazo')+' ×</button>':''}<button data-band="short" aria-pressed="${pick.band==='short'}">Curto prazo</button><button data-band="long" aria-pressed="${pick.band==='long'}">Longo prazo</button></div>`;
+ $$('[data-clear-inactive]').forEach(b=>b.onclick=()=>{state.inactivePick[b.dataset.clearInactive]='';drawInactiveList(p)});
+ $$('[data-band]').forEach(b=>b.onclick=()=>{state.inactivePick=state.inactivePick||{};state.inactivePick.band=state.inactivePick.band===b.dataset.band?'':b.dataset.band;drawInactiveList(p)});
+ installTableSorting();
+}
+function mountCoverageFilters(active){
+ const bar=$('.filterbar');if(!bar)return;
+ bar.classList.toggle('coverage-context',active);
+ let root=$('#coverageShared');
+ if(!active){state.coverageEntered=false;root?.remove();return;}
+ if(!root){root=document.createElement('div');root.id='coverageShared';root.className='coverage-shared';bar.append(root);}
+ else if($('#coverageDepartment')&&!root.contains($('#coverageDepartment')))root.replaceChildren();
+ const controls=$('#content .coverage-controls'),scope=$('#content .area-scope-panel');
+ if(controls)root.append(controls);if(scope)root.append(scope);
+ const globalRca=normalizeMulti(state.filters.rca);
+ if(!state.coverageEntered){state.coverageEntered=true;const selected=(state.dimensions?.rcas||[]).find(r=>globalRca.includes(String(r.code)));if(selected){const match=coverageRcaOptions(state.coverage?.cities||[],state.coverageFilters.department).find(r=>coverageRcaKey(r.label)===coverageRcaKey(selected.name));if(match)state.coverageFilters.rca=match.key;}}
+}
+function installTableSorting(){
+ const root=$('#appView');if(!root)return;
+ const enhance=()=>root.querySelectorAll('table').forEach(table=>{table.querySelectorAll('thead th').forEach((th,index)=>{
+ if(th.dataset.sortReady)return;th.dataset.sortReady='1';const label=th.textContent.trim();if(!label)return;
+ const button=document.createElement('button');button.type='button';button.className='table-sort';button.textContent=label+' ↕';button.setAttribute('aria-label','Ordenar por '+label);th.replaceChildren(button);
+ button.onclick=()=>{const asc=th.getAttribute('aria-sort')!=='ascending';table.querySelectorAll('th[aria-sort]').forEach(x=>x.removeAttribute('aria-sort'));th.setAttribute('aria-sort',asc?'ascending':'descending');table.querySelectorAll('.table-sort').forEach(x=>x.textContent=x.textContent.replace(/[↑↓]$/,'↕'));button.textContent=label+(asc?' ↑':' ↓');
+ const value=cell=>{const t=(cell?.textContent||'').trim();const date=t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(date)return Number(date[3]+date[2]+date[1]);if(/^(?:R\$\s*)?[+-]?[\d.,\s]+(?:%|x|\s*mil|\s*mi)?$/.test(t)){let n=Number(t.replace(/R\$|%|x|mil|mi|\s/g,'').replace(/\./g,'').replace(',','.'));if(/\bmil\b/.test(t))n*=1000;else if(/\bmi\b/.test(t))n*=1000000;return n;}return t;};
+ for(const body of table.tBodies){const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=value(a.cells[index]),y=value(b.cells[index]);return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y),'pt-BR',{numeric:true,sensitivity:'base'}))*(asc?1:-1)});rows.forEach(row=>body.append(row));}
+ };
+ });});
+ enhance();if(!root.dataset.sortObserved){root.dataset.sortObserved='1';let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;enhance()})}).observe(root,{childList:true,subtree:true});}
 }
