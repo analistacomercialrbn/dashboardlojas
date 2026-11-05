@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ff9365e993f60c2c51904ce4d6c7039f93e33e91/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@366c5b6495b09042eb5dd8a3730adc097e0431ac/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -28,21 +28,22 @@
   </div>
 
   <div id="appView" class="app-shell hidden">
-    <header class="app-header">
+    <header class="app-header"><button type="button" id="menuToggle" class="menu-toggle" aria-label="Abrir menu" aria-controls="appMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       <a class="brand-lockup" href="#" aria-label="Rebanho — Supervisão Comercial">
         <img class="brand-logo" src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@d5fb43eaa176dbc3a68d0487c42153be84833d26/supervisao-web/assets/rebanho-horizontal-azul.png" alt="Rebanho" />
       </a>
-      <nav class="nav" aria-label="Seções do dashboard">
-        <button data-page="overview" class="nav-item active"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7"/><path d="M5 9v12h14V9"/><path d="M9 21v-7h6v7"/></svg></span> Visão geral</button>
-        <button data-page="pedidos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M3 5h18v14H3z"/><path d="M7 9h10M7 13h7M7 17h4"/></svg></span> Pedidos &amp; Previsão</button>
-        <button data-page="carteira" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Carteira</button>
-        <button data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span> Produtos</button>
-        <button data-page="cidades" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg></span> Cidades</button>
-        <button data-page="metas" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></span> Metas</button>
-      <button data-page="users" class="nav-item hidden" id="usersNav">⚙ Usuários</button><button data-page="history" class="nav-item hidden" id="historyNav">Histórico</button></nav>
-      <div class="header-account"><div id="userCard" class="user-card"></div><button id="logoutBtn" class="btn ghost small" type="button">Sair</button></div>
-    </header>
 
+      <span id="activeMenuLabel" class="active-menu-label">Visão geral</span><div class="header-account"><div id="userCard" class="user-card"></div><button id="logoutBtn" class="btn ghost small" type="button">Sair</button></div>
+    </header>
+<div id="menuBackdrop" class="menu-backdrop" hidden></div><aside id="appMenu" class="app-menu" role="dialog" aria-modal="true" aria-label="Menu de navegação" hidden inert><div class="menu-heading"><div><small>REBANHO</small><strong>Inteligência comercial</strong></div><button id="menuClose" type="button" class="menu-close" aria-label="Fechar menu">×</button></div><p class="menu-caption">PAINEL COMERCIAL</p><nav class="nav" aria-label="Seções do dashboard"><button type="button" data-page="overview" class="nav-item active"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span><b>Visão geral</b></button>
+<button type="button" data-page="pedidos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 4H5v17h14V4h-3"/><rect x="8" y="2" width="8" height="5" rx="2"/><path d="M8 11h8M8 15h5"/></svg></span><b>Pedidos &amp; Previsão</b></button>
+<button type="button" data-page="carteira" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="3"/><path d="M8 6V3h8v3M3 12h18M10 12v3h4v-3"/></svg></span><b>Carteira</b></button>
+<button type="button" data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7Z"/><path d="m3 7 9 5 9-5M12 12v10M7 4.8l9 5"/></svg></span><b>Produtos</b></button>
+<button type="button" data-page="cidades" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg></span><b>Cidades</b></button>
+<button type="button" data-page="metas" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4"/><path d="m11 13 9-10M16 3h4v4"/></svg></span><b>Metas</b></button>
+<button type="button" data-page="history" class="nav-item hidden" id="historyNav"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2 8M3 4v7h7M12 7v5l3 2"/></svg></span><b>Histórico</b></button>
+<button type="button" data-page="users" class="nav-item hidden" id="usersNav"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg></span><b>Usuários</b></button>
+</nav><div class="menu-footer">Dashboard de Supervisão</div></aside>
     <main class="main">
       <header class="topbar">
         <div>
@@ -832,9 +833,10 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@3db846bbca80e9ee7a366a3ea61568858aff7e0e/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@2e3146640070a305d0ed5bd0e874ef5952d8a536/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
+
 
 
 
