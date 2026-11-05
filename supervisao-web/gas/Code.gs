@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/0475477af864fe2d86e8ab3c5b916924d6aecc1c/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/78cbfe38d7752be817600ba4f9b23765e9c7da50/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -991,3 +991,4 @@ function recoveredGeoHistory_(user){
  const seen=new Set();data.forEach(r=>{if(!Array.isArray(r)||!/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(r[0])||r[0]<'2017-06'||r[0]>='2024-08'||seen.has(r[0])||!Array.isArray(r[1])||!Number.isFinite(r[2]))throw new Error('Mês geográfico inválido.');seen.add(r[0]);r[1].forEach(c=>{if(!Array.isArray(c)||typeof c[0]!=='string'||!/^[A-Z]{2}$/.test(c[1])||!Number.isFinite(c[2]))throw new Error('Município histórico inválido.');});});
  return {ok:true,available:true,monthly:data.map(r=>({month:r[0],cities:r[1],unlocated:r[2]})),source:'Shop Control recuperado',cutoff:'2024-08-01'};
 }
+
