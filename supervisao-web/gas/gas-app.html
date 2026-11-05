@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@4796c57d3046bf4ff343ba143fde50eac4f01710/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ca306da3cb43f1f31b7530ca0be7be6547657b49/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -60,23 +60,26 @@
 
       <div class="filterbar">
         <div class="filterbar-top">
-          <div class="filter-intro"><span class="filter-icon">⌕</span><div><strong>Explore sua operação</strong><small>Comece pela área e refine o recorte</small></div></div>
+          <div class="filter-intro"><span class="filter-icon">⌕</span><div><strong>Período da análise</strong><small>Comece pela área e refine o recorte</small></div></div>
           <div class="filterbar-main">
+          <div class="filter-group period"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
+          <div class="filter-group period"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
+            <button id="toggleAdvancedFilters" class="filter-refine" type="button" aria-expanded="false" aria-controls="advancedFilters"><span>＋</span> Mais filtros <b id="advancedFilterCount" class="filter-count hidden"></b></button>
+            <button id="clearFilters" class="filter-clear" type="button">Limpar</button>
+          </div>
+        </div>
+        <div id="advancedFilters" class="filter-advanced hidden">
             <div class="filter-group geo"><label>Estado</label><div id="filterUf" class="multi-select"></div></div>
             <span class="filter-connector" aria-hidden="true">›</span>
             <div class="filter-group geo"><label for="filterRegion">Região</label><select id="filterRegion"></select></div>
             <span class="filter-connector" aria-hidden="true">›</span>
             <div class="filter-group geo"><label for="filterCity">Cidade</label><select id="filterCity"></select></div>
-            <button id="toggleAdvancedFilters" class="filter-refine" type="button" aria-expanded="false" aria-controls="advancedFilters"><span>＋</span> Equipe e período <b id="advancedFilterCount" class="filter-count hidden"></b></button>
-            <button id="clearFilters" class="filter-clear" type="button">Limpar</button>
-          </div>
-        </div>
-        <div id="advancedFilters" class="filter-advanced hidden">
+
           <div class="filter-group grow"><label>Supervisor</label><div id="filterSupervisor" class="multi-select"></div></div>
           <div class="filter-group grow"><label>RCA</label><div id="filterRca" class="multi-select"></div></div>
           <div class="filter-group grow"><label>Departamento</label><div id="filterDepartment" class="multi-select"></div></div>
-          <div class="filter-group period"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
-          <div class="filter-group period"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
+
+
           <div class="filter-advanced-hint"><span>⌁</span> As escolhas de equipe permitem selecionar mais de uma opção.</div>
         </div>
       </div>
@@ -254,7 +257,7 @@ function buildHistory(){
   for(const s of SALES){
     if(s.client==null) continue;
     if(!CLIENT_HISTORY.has(s.client)) CLIENT_HISTORY.set(s.client,[]);
-    CLIENT_HISTORY.get(s.client).push({date:s.date, value:s.value, rca:s.rca, department:s.department});
+    CLIENT_HISTORY.get(s.client).push({date:s.date, value:s.value, rca:s.rca, department:s.department,city:s.city,uf:s.uf,region:s.region});
   }
   for(const arr of CLIENT_HISTORY.values()) arr.sort((a,b)=>a.date-b.date);
 }
@@ -619,7 +622,8 @@ function ordersPage(filters){
 function carteira(filters){
   const rows=filterSales(filters);
   const k=metrics(rows);
-  const cutoff=rows.length?new Date(Math.max(...rows.map(s=>s.date.getTime()))):LATEST_DATE;
+  const ref=LATEST_DATE||new Date(),year=filters.year&&filters.year!=='Todos'?Number(filters.year):ref.getFullYear(),month=filters.month&&filters.month!=='Todos'?Number(filters.month):ref.getMonth()+1;
+  const cutoff=new Date(Date.UTC(year,month-1,0,23,59,59,999));
   if(!cutoff)return {kpis:{...k,newClients:0,short:0,long:0},byRca:[],inactive:[]};
   const lim3=new Date(cutoff);lim3.setMonth(lim3.getMonth()-3);
   const lim6=new Date(cutoff);lim6.setMonth(lim6.getMonth()-6);
@@ -641,10 +645,15 @@ function carteira(filters){
       if(h.date>=lim12 && h.date<=cutoff)rev12+=h.value;
     }
     if(!last)continue;
-    const isShort=last<=lim3 && last>lim6;
-    const isLong=last<=lim6 && last>=lim12;
+    const location=[...hist].reverse().find(h=>h.date<=cutoff);
+    if(multi(filters.uf).length&&!multi(filters.uf).includes(String(location?.uf||'')))continue;
+    if(filters.region&&filters.region!=='Todos'&&norm(location?.region)!==norm(filters.region))continue;
+    if(filters.city&&filters.city!=='Todos'&&norm(location?.city)!==norm(filters.city))continue;
+    const days=Math.floor((Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth(),cutoff.getUTCDate())-Date.UTC(last.getUTCFullYear(),last.getUTCMonth(),last.getUTCDate()))/86400000);
+    const isShort=days>=90&&days<180;
+    const isLong=days>=180;
     if(!isShort && !isLong)continue;
-    const days=Math.floor((cutoff-last)/86400000);
+
     if(isShort)short++;if(isLong)long++;
     const rr=RCA_BY_CODE.get(owner)||{};
     if(!by.has(owner))by.set(owner,{rca:owner,name:rr.name||String(owner),short:0,long:0});
@@ -662,7 +671,7 @@ function carteira(filters){
     newClients++;
   }
   inactive.sort((a,b)=>b.revenue12-a.revenue12);
-  return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),inactive:inactive.slice(0,120)};
+  return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),inactive:inactive};
 }
 function produtos(filters){
   const rows=filterSales(filters);
@@ -833,7 +842,7 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@2e3146640070a305d0ed5bd0e874ef5952d8a536/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@011128fe41fbe0da0c22d22a06025d8201aa88cd/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
