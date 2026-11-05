@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/78daa215f261e0b8b567f2079f277d4dd5aabff9/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/904fd48ea02c72b1b8fc7f6a4df4924ff7f888d4/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
