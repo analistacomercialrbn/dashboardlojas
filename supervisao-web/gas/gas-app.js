@@ -25,6 +25,15 @@ const state = {
   dailyDate:'',
   historyYear:null,
   historySource:null,
+  historyGeo:null,
+  historyScene:0,
+  historyMode:'year',
+  historyUf:'CE',
+  historyPlaying:true,
+  historyTimer:null,
+  historyObserver:null,
+  historyEpoch:0,
+  historyMapEpoch:0,
   selectedCity:'Todos',
   requestId:0,
   charts:[],
@@ -474,6 +483,7 @@ function updateHeader(){
   $('#periodChip').textContent=`${m} • ${state.filters.year}`;
 }
 function destroyCharts(){
+  stopHistoryMotion();++state.historyEpoch;
   document.querySelectorAll('.chart-motion-controls').forEach(el=>el.remove());
   for(const c of state.charts){try{c.$motionCleanup?.();c.destroy()}catch{}}
   state.charts=[];
@@ -743,7 +753,7 @@ async function renderCityMap(cities,selectedKey){
   if(state.map){try{state.map.remove()}catch{}state.map=null}
   const el=$('#cityMap'); if(!el)return;
   state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10,scrollWheelZoom:false}).setView([-8.5,-40.5],5);
-  const codes={MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29'};
+  const codes={RO:'11',AC:'12',AM:'13',RR:'14',PA:'15',AP:'16',TO:'17',MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29',MG:'31',ES:'32',RJ:'33',SP:'35',PR:'41',SC:'42',RS:'43',MS:'50',MT:'51',GO:'52',DF:'53'};
   const cityMap=new Map(cities.map(c=>[`${aliasCity(c.city)}|${c.uf}`,c]));
   const sortedValues=cities.map(c=>Number(c.revenue)||0).sort((a,b)=>a-b);
   const max=Math.max(1,...sortedValues);
@@ -1022,7 +1032,7 @@ function renderCoverageDetail(){
 }
 function coverageGeoFor(uf){
   if(state.coverageGeo[uf])return Promise.resolve(state.coverageGeo[uf]);
-  const codes={MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29'};
+  const codes={RO:'11',AC:'12',AM:'13',RR:'14',PA:'15',AP:'16',TO:'17',MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29',MG:'31',ES:'32',RJ:'33',SP:'35',PR:'41',SC:'42',RS:'43',MS:'50',MT:'51',GO:'52',DF:'53'};
   if(!codes[uf])return Promise.reject(new Error('Estado sem geometria cadastrada: '+uf));
   return fetch('https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-'+codes[uf]+'-mun.json')
     .then(res=>{if(!res.ok)throw new Error('Falha ao carregar o mapa de '+uf);return res.json()})
@@ -1317,49 +1327,117 @@ function mergeMacroHistory(historical,current){
  }
  return [...months.values()].sort((a,b)=>a.month.localeCompare(b.month));
 }
+function stopHistoryMotion(){
+ if(state.historyTimer)clearInterval(state.historyTimer);state.historyTimer=null;
+ state.historyObserver?.disconnect();state.historyObserver=null;
+}
+function historyCityKey(city,uf){return aliasCity(city).replace(/[^A-Z0-9]/g,'')+'|'+String(uf||'').toUpperCase();}
+function historyPercent(now,before){return before>0?(now/before-1)*100:null;}
+function historyMonthLabel(key){return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(key.slice(5,7))-1]+'/'+key.slice(0,4);}
+function buildHistoryExperience(rows,geoRows){
+ const byMonth=new Map(rows.map(r=>[r.month,r])),latest=rows.at(-1)?.month;
+ const complete=r=>!!r&&r.month!=='2017-06'&&!(r.month===latest&&Number(r.maxDate.slice(8,10))<new Date(Number(r.month.slice(0,4)),Number(r.month.slice(5,7)),0).getDate());
+ const years=[...new Set(rows.map(r=>r.month.slice(0,4)))].map(year=>{
+  const months=rows.filter(r=>r.month.startsWith(year)),comp=months.filter(complete),previous=comp.map(r=>byMonth.get(String(Number(year)-1)+r.month.slice(4)));
+  const comparable=comp.length>0&&previous.every((r,i)=>complete(r)&&r.source===comp[i].source),value=months.reduce((a,r)=>a+r.value,0),compValue=comp.reduce((a,r)=>a+r.value,0),oldValue=previous.reduce((a,r)=>a+(r?.value||0),0);
+  return {year,months,value,comp,comparable,growth:comparable?historyPercent(compValue,oldValue):null,period:comp.length?historyMonthLabel(comp[0].month)+' a '+historyMonthLabel(comp.at(-1).month):'Sem período completo',partial:months.length!==12||months.some(r=>!complete(r)),sources:[...new Set(months.map(r=>r.source))]};
+ });
+ const geo=new Map();for(const r of geoRows){if(geo.has(r.month))throw new Error('Sobreposição no histórico geográfico.');const cities=new Map();for(const [city,uf,value] of r.cities||[]){const key=historyCityKey(city,uf),item=cities.get(key)||{key,city,uf,value:0};item.value+=Number(value)||0;cities.set(key,item);}geo.set(r.month,{...r,cities});}
+ const aggregate=months=>{const result=new Map();let unlocated=0;for(const m of months){const g=geo.get(m);if(!g)continue;unlocated+=g.unlocated||0;for(const [key,r] of g.cities){const item=result.get(key)||{...r,value:0};item.value+=r.value;result.set(key,item);}}return {cities:result,unlocated};};
+ const annual=years.map(y=>{const months=y.comp.map(r=>r.month),previous=months.map(m=>String(Number(y.year)-1)+m.slice(4));return {key:y.year,label:y.year,period:y.period,source:y.sources.join(' + '),current:aggregate(months),previous:aggregate(previous),comparable:y.comparable,partial:y.partial,comparison:'Mesmo conjunto de meses do ano anterior'};}).filter(f=>f.current.cities.size);
+ const monthly=rows.map(r=>{const d=new Date(r.month+'-01T12:00:00Z');d.setUTCMonth(d.getUTCMonth()-1);const key=d.toISOString().slice(0,7),prev=byMonth.get(key);return {key:r.month,label:historyMonthLabel(r.month),period:historyMonthLabel(r.month),source:r.source,current:aggregate([r.month]),previous:aggregate([key]),comparable:complete(r)&&complete(prev)&&r.source===prev.source,partial:!complete(r),comparison:'Mês anterior: '+historyMonthLabel(key)};}).filter(f=>f.current.cities.size);
+ return {rows,byMonth,years,complete,frames:{year:annual,month:monthly}};
+}
 async function renderMacroHistory(payload){
  if(!['ADMIN','GERENTE'].includes(state.user?.perfil))return;
- $('#content').innerHTML='<div class="panel">Carregando histórico macro…</div>';
+ stopHistoryMotion();const epoch=++state.historyEpoch;
+ $('#content').innerHTML='<div class="panel">Preparando evolução comercial…</div>';
  try{
- if(!state.historySource)state.historySource=await api('/api/history');
- if(state.page!=='history')return;
- const rows=mergeMacroHistory(state.historySource.monthly,payload.monthly||[]),groups=new Map();
- rows.forEach(r=>{const year=r.month.slice(0,4);if(!groups.has(year))groups.set(year,{year,value:0,months:[],sources:new Set()});const g=groups.get(year);g.value+=r.value;g.months.push(r);g.sources.add(r.source);});
- const years=[...groups.values()],selected=String(state.historyYear||years.at(-1)?.year),year=groups.get(selected)||years.at(-1),monthNames=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
- state.historyYear=year?.year;
- const period=g=>{const first=g.months[0].minDate,last=g.months.at(-1).maxDate;return first.split('-').reverse().join('/')+' a '+last.split('-').reverse().join('/');};
- const complete=g=>g.months.length===12&&g.months[0].minDate.slice(5,7)==='01'&&g.months.at(-1).maxDate.slice(5)>='12-28';
- const chosen=year.months,byMonth=new Map(chosen.map(r=>[Number(r.month.slice(5)),r]));
- $('#content').innerHTML=`<section class="panel"><div class="panel-title-row"><div><h2>Evolução comercial da Rebanho</h2><p class="panel-sub">Visão macro da empresa. Selecione um ano no gráfico ou na tabela para detalhar os meses.</p></div></div>
- <div class="kpi-grid">${kpi('Ano selecionado',year.year,complete(year)?'12 meses com registros':'Cobertura parcial — não equivale ao ano completo')}${kpi('Valor no ano selecionado',money(year.value),period(year))}</div>
- <p>Histórico recuperado: jun/2017 a jul/2024. WinThor/BI: a partir de ago/2024.</p>
- <div style="position:relative;height:300px"><canvas id="macroAnnual"></canvas></div></section>
- <section class="panel" style="margin-top:16px"><div class="panel-title-row"><h2>Valores mensais · ${esc(year.year)}</h2><label>Ano <select id="macroYear" style="min-height:44px">${years.map(g=>'<option value="'+g.year+'" '+(g.year===year.year?'selected':'')+'>'+g.year+'</option>').join('')}</select></label></div>
- <div style="position:relative;height:280px"><canvas id="macroMonthly"></canvas></div>
- <div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Mês</th><th style="text-align:right">Valor de vendas</th><th style="text-align:left">Origem</th></tr></thead><tbody>${monthNames.map((name,i)=>{const r=byMonth.get(i+1);return '<tr><td style="padding:10px">'+name+'</td><td style="text-align:right">'+(r?money(r.value):'Sem dados')+'</td><td>'+esc(r?.source||'—')+'</td></tr>';}).join('')}</tbody></table></div></section>
- <section class="panel" style="margin-top:16px"><h2>Resumo anual</h2><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>Ano</th><th>Valor de vendas</th><th>Período com registros</th><th>Origem</th></tr></thead><tbody>${years.map(g=>'<tr><td style="padding:10px"><button class="secondary" data-macro-year="'+g.year+'">'+g.year+'</button></td><td>'+money(g.value)+'</td><td>'+period(g)+(complete(g)?'':' · parcial')+'</td><td>'+esc([...g.sources].join(' + '))+'</td></tr>').join('')}</tbody></table></div>
- <p class="panel-sub">O Shop Control registra valores de venda recuperados, incluindo lançamentos negativos, sem conciliação contábil confirmada. O WinThor/BI utiliza data de faturamento. Códigos antigos, vendedores e departamentos não são conciliados nesta visão. Não são calculados clientes, margem, ticket, metas ou produtividade histórica. Meses ausentes aparecem como “Sem dados”.</p></section>`;
- const pick=value=>{state.historyYear=String(value);destroyCharts();renderMacroHistory(payload);};
- chart($('#macroAnnual'),'bar',{labels:years.map(g=>g.year),datasets:[{label:'Valor de vendas',data:years.map(g=>Math.round(g.value*100)/100),backgroundColor:years.map(g=>g.year===year.year?'#1D2A68':'#9DB9E4'),borderRadius:6}]},{onClick:(_e,els)=>{if(els?.length)pick(years[els[0].index].year)},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
- chart($('#macroMonthly'),'bar',{labels:monthNames,datasets:[{label:'Valor de vendas',data:monthNames.map((_,i)=>byMonth.get(i+1)?.value??null),backgroundColor:'#365C9D',borderRadius:5}]},{scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
- $('#macroYear').addEventListener('change',e=>pick(e.target.value));
- Array.from(document.querySelectorAll('[data-macro-year]')).forEach(b=>b.addEventListener('click',()=>pick(b.dataset.macroYear)));
- }catch(error){if(state.page==='history')$('#content').innerHTML='<div class="panel">'+esc(error.message)+'</div>';}
+ const [source,geoSource]=await Promise.all([state.historySource?Promise.resolve(state.historySource):api('/api/history'),state.historyGeo?Promise.resolve(state.historyGeo):api('/api/historyGeo')]);
+ state.historySource=source;state.historyGeo=geoSource;
+ if(state.page!=='history'||epoch!==state.historyEpoch)return;
+ const rows=mergeMacroHistory(source.monthly,payload.monthly||[]),model=buildHistoryExperience(rows,[...(geoSource.monthly||[]),...(payload.geoMonthly||[])]);
+ const year=model.years.find(g=>g.year===String(state.historyYear))||model.years.at(-1);if(!year)throw new Error('Sem histórico disponível.');state.historyYear=year.year;
+ const peak=year.months.reduce((a,r)=>!a||r.value>a.value?r:a,null),total=rows.reduce((a,r)=>a+r.value,0),completeYears=model.years.filter(y=>!y.partial),record=completeYears.reduce((a,y)=>!a||y.value>a.value?y:a,null);
+ $('#content').innerHTML=`<section class="history-hero"><div class="history-hero-copy"><span class="history-eyebrow">REBANHO · EVOLUÇÃO COMERCIAL</span><h2>Uma trajetória em movimento.</h2><p>Explore os resultados no tempo e veja como as vendas se distribuem pelo território.</p></div><div class="history-hero-facts"><div><span>Vendas registradas desde 2017</span><strong>${money(total,true)}</strong><small>Somatório dos períodos disponíveis</small></div><div><span>Maior ano completo</span><strong>${esc(record?.year||'—')}</strong><small>${record?money(record.value,true):'Sem base completa'}</small></div></div></section>
+ <section class="panel history-year-panel"><div class="history-section-head"><div><span class="history-eyebrow">PANORAMA ANUAL</span><h2>O ritmo de crescimento da Rebanho</h2><p class="panel-sub">Clique em um ano para explorar seus meses. Anos parciais são identificados no gráfico.</p></div><label>Ano em análise<select id="macroYear">${model.years.map(y=>`<option value="${y.year}" ${y.year===year.year?'selected':''}>${y.year}${y.partial?' · parcial':''}</option>`).join('')}</select></label></div>
+ <div class="history-kpis">${kpi('Vendas em '+year.year,money(year.value,true),year.partial?'Período com cobertura parcial':'12 meses com registros')}${kpi('Variação comparável',year.growth===null?'Sem base':pct(year.growth),year.growth===null?'Fontes ou períodos não equivalentes':year.period+' vs. mesmos meses do ano anterior')}${kpi('Melhor mês do ano',peak?historyMonthLabel(peak.month):'—',peak?money(peak.value,true):'')}${kpi('Meses com registros',integer(year.months.length),year.sources.join(' + '))}</div>
+ <div class="chart-wrap history-chart"><canvas id="macroAnnual"></canvas></div></section>
+ <section class="history-map-shell" id="historyMapShell"><div class="history-map-head"><div><span class="history-eyebrow">EVOLUÇÃO TERRITORIAL</span><h2>O crescimento ganha espaço.</h2><p>Azul mais escuro representa maior valor de vendas. As setas mostram crescimento ou queda frente ao período anterior.</p></div><div class="history-map-options"><label>Território<select id="historyUf"></select></label><div class="history-segment" role="group" aria-label="Passo da linha do tempo"><button data-history-mode="year" aria-pressed="${state.historyMode==='year'}">Ano a ano</button><button data-history-mode="month" aria-pressed="${state.historyMode==='month'}">Mês a mês</button></div></div></div>
+ <div id="historyMapLoading" class="history-map-loading">Preparando municípios…</div><div class="history-map-body"><div class="history-map-stage"><div class="history-time-stamp"><strong id="historyFrameLabel">—</strong><span id="historyFramePeriod"></span></div><svg id="historyEvolutionMap" viewBox="0 0 900 650" role="group" aria-label="Evolução geográfica das vendas"></svg><div class="history-map-legend"><span>Menor valor</span><i></i><span>Maior valor</span></div><div id="historyCityFocus" class="history-city-focus">Toque em um município para ver seu resultado.</div></div><aside class="history-map-aside"><span class="history-eyebrow">VENDAS LOCALIZADAS NO MAPA</span><strong id="historyAreaValue" class="history-area-value">—</strong><span id="historyAreaGrowth" class="history-area-growth"></span><p id="historyComparisonCaption"></p><h3>Cidades em destaque</h3><div id="historyMovingRanks" class="history-moving-ranks"></div></aside></div>
+ <div class="history-timeline"><button id="historyToggle" class="history-play" aria-label="Pausar evolução" title="Pausar evolução">Ⅱ</button><label class="history-scrubber">Período<input id="historyScrubber" type="range" min="0" max="1" value="0" step="1"><span id="historyTimelineEnds"></span></label><output id="historyTimelineValue"></output></div><p class="history-map-note" id="historyMapMethod"></p></section>
+ <div class="grid equal-col history-details-grid"><section class="panel"><div class="history-section-head"><div><span class="history-eyebrow">${year.year}</span><h2>Vendas mês a mês</h2></div></div><div class="chart-wrap"><canvas id="macroMonthly"></canvas></div><p class="panel-sub">Linha clara: mesmo mês do ano anterior, quando houver fonte e cobertura equivalentes.</p></section><section class="panel"><span class="history-eyebrow">SAZONALIDADE</span><h2>Onde o crescimento se concentra</h2><p class="panel-sub">Variação de cada mês sobre o mesmo mês do ano anterior. Células neutras indicam ausência de comparação válida.</p><div class="history-heatmap-scroll"><div id="historyHeatmap" class="history-heatmap"></div></div></section></div>
+ <details class="panel history-data-detail"><summary>Consultar valores anuais e critérios</summary><div class="table-wrap"><table><thead><tr><th>Ano</th><th>Vendas registradas</th><th>Variação comparável</th><th>Cobertura / origem</th></tr></thead><tbody>${model.years.map(y=>`<tr><td><button class="history-year-link" data-macro-year="${y.year}">${y.year}</button></td><td>${money(y.value)}</td><td>${y.growth===null?'Sem base comparável':pct(y.growth)}</td><td>${y.months.length} meses${y.partial?' · parcial':''} · ${esc(y.sources.join(' + '))}</td></tr>`).join('')}</tbody></table></div><p>Shop Control recuperado: jun/2017 a jul/2024, valores de venda incluindo negativos, sem conciliação contábil confirmada. WinThor/BI: desde ago/2024 por data de faturamento. Não calculamos variações entre fontes diferentes. No mapa anual usamos os meses completos disponíveis e comparamos o mesmo conjunto de meses; a visão mensal não compara meses parciais. As áreas representam municípios de venda e não a atuação histórica de vendedores ou RCAs. Valores sem município identificado permanecem no total geral, sem distribuição fictícia no mapa.</p></details>`;
+ const pick=value=>{state.historyYear=String(value);destroyCharts();renderMacroHistory(payload);};$('#macroYear').onchange=e=>pick(e.target.value);Array.from(document.querySelectorAll('[data-macro-year]')).forEach(b=>b.onclick=()=>pick(b.dataset.macroYear));
+ chart($('#macroAnnual'),'bar',{labels:model.years.map(y=>y.year+(y.partial?' *':'')),datasets:[{label:'Vendas registradas',data:model.years.map(y=>y.value),backgroundColor:model.years.map(y=>y.year===year.year?'#1D2A68':'#84A7DA'),borderRadius:8,barPercentage:.62}]},{onClick:(_e,els)=>{if(els.length)pick(model.years[els[0].index].year)},plugins:{tooltip:{callbacks:{afterLabel:ctx=>{const y=model.years[ctx.dataIndex];return (y.partial?'Cobertura parcial. ':'')+(y.growth===null?'Sem comparação entre fontes distintas':pct(y.growth)+' · '+y.period);}}}},scales:{x:{grid:{display:false},ticks:{font:{size:12}}},y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
+ const monthNames=Array.from({length:12},(_,i)=>historyMonthLabel(year.year+'-'+String(i+1).padStart(2,'0')).split('/')[0]);
+ const yr=Number(year.year),point=i=>model.byMonth.get(year.year+'-'+String(i+1).padStart(2,'0'));
+ chart($('#macroMonthly'),'line',{labels:monthNames,datasets:[{label:year.year,data:monthNames.map((_,i)=>point(i)?.value??null),borderColor:'#265EA8',backgroundColor:'rgba(50,115,208,.14)',fill:true,tension:.3},{label:String(yr-1),data:monthNames.map((_,i)=>{const r=point(i),old=model.byMonth.get(String(yr-1)+'-'+String(i+1).padStart(2,'0'));return r&&old&&r.source===old.source&&model.complete(r)&&model.complete(old)?old.value:null;}),borderColor:'#94AED1',borderDash:[5,5],tension:.3}]},{plugins:{legend:{display:true}},scales:{y:{ticks:{callback:v=>money(v,true)}}}});
+ $('#historyHeatmap').innerHTML='<span></span>'+monthNames.map(m=>'<span class="heat-month">'+m+'</span>').join('')+model.years.map(y=>'<button class="heat-year" data-heat-year="'+y.year+'">'+y.year+'</button>'+monthNames.map((name,i)=>{const row=model.byMonth.get(y.year+'-'+String(i+1).padStart(2,'0')),old=model.byMonth.get(String(Number(y.year)-1)+'-'+String(i+1).padStart(2,'0'));const v=row&&old&&model.complete(row)&&model.complete(old)&&row.source===old.source?historyPercent(row.value,old.value):null;const color=v===null?'#edf1f7':v<0?'rgba(184,80,91,'+(.15+Math.min(Math.abs(v),100)/100*.65)+')':'rgba(45,107,182,'+(.15+Math.min(v,100)/100*.7)+')';const label=v===null?'—':Math.round(v)+'%';return '<span class="heat-cell" style="background:'+color+';color:'+(v!==null&&Math.abs(v)>40?'#fff':'#29456c')+'" title="'+name+'/'+y.year+': '+(v===null?'sem base comparável':pct(v))+'">'+label+'</span>';}).join('')).join('');
+ Array.from(document.querySelectorAll('[data-heat-year]')).forEach(b=>b.onclick=()=>pick(b.dataset.heatYear));
+ await mountHistoryMap(model,epoch);
+ }catch(error){if(state.page==='history'&&epoch===state.historyEpoch)$('#content').innerHTML='<div class="panel">'+esc(error.message)+'</div>';}
+}
+async function mountHistoryMap(model,epoch){
+ const mapEpoch=++state.historyMapEpoch;
+ const supported={RO:'11',AC:'12',AM:'13',RR:'14',PA:'15',AP:'16',TO:'17',MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29',MG:'31',ES:'32',RJ:'33',SP:'35',PR:'41',SC:'42',RS:'43',MS:'50',MT:'51',GO:'52',DF:'53'};
+ const ufs=[...new Set([...model.frames.year,...model.frames.month].flatMap(f=>[...f.current.cities.values()].map(c=>c.uf)))].filter(uf=>supported[uf]).sort();
+ if(!ufs.length){$('#historyMapLoading').textContent='Sem municípios identificados para o mapa.';return;}
+ if(!ufs.includes(state.historyUf))state.historyUf=ufs[0];
+ const select=$('#historyUf');select.innerHTML=ufs.map(uf=>'<option '+(uf===state.historyUf?'selected':'')+'>'+uf+'</option>').join('');
+ const remount=()=>{stopHistoryMotion();state.historyScene=0;state.historyPlaying=true;mountHistoryMap(model,epoch);};select.onchange=e=>{state.historyUf=e.target.value;remount();};
+ Array.from(document.querySelectorAll('[data-history-mode]')).forEach(b=>b.onclick=()=>{state.historyMode=b.dataset.historyMode;remount();});
+ Array.from(document.querySelectorAll('[data-history-mode]')).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.historyMode===state.historyMode)));
+ $('#historyMapLoading').hidden=false;
+ let geo;try{geo=await coverageGeoFor(state.historyUf);}catch(error){if(state.page==='history'&&epoch===state.historyEpoch)$('#historyMapLoading').textContent='Mapa indisponível para '+state.historyUf+'. Os totais históricos continuam disponíveis.';return;}
+ if(state.page!=='history'||epoch!==state.historyEpoch||mapEpoch!==state.historyMapEpoch)return;
+ $('#historyMapLoading').hidden=true;
+ const features=geo.features||[],svg=$('#historyEvolutionMap'),byKey=new Map(),points=[];
+ for(const feature of features){const polygons=feature.geometry?.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry?.type==='MultiPolygon'?feature.geometry.coordinates:[];for(const poly of polygons)for(const ring of poly)for(const p of ring)points.push(p);}
+ if(!points.length)return;
+ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const [x,y] of points){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
+ const cos=Math.cos((minY+maxY)/2*Math.PI/180),scale=Math.min(760/((maxX-minX)*cos),540/(maxY-minY)),offsetX=(900-(maxX-minX)*cos*scale)/2,offsetY=(650-(maxY-minY)*scale)/2;
+ const project=(x,y)=>[offsetX+(x-minX)*cos*scale,offsetY+(maxY-y)*scale];
+ const shapes=features.map(f=>{const name=f.properties?.name||f.properties?.NOME||'',key=historyCityKey(name,state.historyUf),polys=f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates;let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity;for(const poly of polys)for(const ring of poly)for(const p of ring){a=Math.min(a,p[0]);c=Math.max(c,p[0]);b=Math.min(b,p[1]);d=Math.max(d,p[1]);}byKey.set(key,{feature:f,name,point:project((a+c)/2,(b+d)/2)});return '<path data-geo-city="'+esc(key)+'" d="'+coveragePath(f.geometry,project)+'" tabindex="0" role="button" aria-label="'+esc(name)+'" fill="#243b60"><title>'+esc(name)+'</title></path>';}).join('');
+ svg.innerHTML='<defs><filter id="histArrowGlow"><feGaussianBlur stdDeviation="2"/></filter></defs><g class="history-geography">'+shapes+'</g><g id="historyMapArrows" class="history-map-arrows" aria-hidden="true"></g>';
+ const paths=new Map(Array.from(svg.querySelectorAll('[data-geo-city]')).map(p=>[p.dataset.geoCity,p]));
+ const frames=model.frames[state.historyMode],rankKeys=new Set(),maxValue=Math.max(1,...frames.flatMap(f=>[...f.current.cities.values()].filter(c=>byKey.has(c.key)).map(c=>c.value)));
+ frames.forEach(f=>[...f.current.cities.values()].filter(c=>byKey.has(c.key)).sort((a,b)=>b.value-a.value).slice(0,8).forEach(c=>rankKeys.add(c.key)));
+ const rankRoot=$('#historyMovingRanks');rankRoot.innerHTML=[...rankKeys].map(key=>'<div class="history-rank-row" data-rank-city="'+esc(key)+'"><span class="history-rank-name"></span><strong></strong><div class="history-rank-track"><i></i></div><small></small></div>').join('');
+ const ranks=new Map(Array.from(rankRoot.querySelectorAll('[data-rank-city]')).map(el=>[el.dataset.rankCity,el]));let selectedKey='';
+ const pctText=v=>v===null?'Sem base':(v>=0?'↑ ':'↓ ')+pct(Math.abs(v));
+ const frameCity=(f,key)=>({now:f.current.cities.get(key)?.value||0,before:f.previous.cities.get(key)?.value||0});
+ const focus=()=>{const f=frames[state.historyScene],r=frameCity(f,selectedKey),v=f.comparable?historyPercent(r.now,r.before):null;$('#historyCityFocus').innerHTML=selectedKey?'<strong>'+esc(byKey.get(selectedKey)?.name||selectedKey)+'</strong><span>'+money(r.now)+' <small>'+pctText(v)+'</small></span>':'Toque em um município para ver seu resultado.';};
+ const draw=()=>{
+  const f=frames[state.historyScene];if(!f||!svg.isConnected)return;
+  const current=[...f.current.cities.values()].filter(c=>byKey.has(c.key)),prev=[...f.previous.cities.values()].filter(c=>byKey.has(c.key)),sum=current.reduce((a,c)=>a+c.value,0),before=prev.reduce((a,c)=>a+c.value,0),growth=f.comparable?historyPercent(sum,before):null;
+  $('#historyFrameLabel').textContent=f.label;$('#historyFramePeriod').textContent=f.period+(f.partial?' · parcial':'');$('#historyAreaValue').textContent=money(sum,true);$('#historyAreaGrowth').textContent=pctText(growth);$('#historyAreaGrowth').classList.toggle('decline',growth!==null&&growth<0);$('#historyComparisonCaption').textContent=f.comparison+(f.comparable?'':' · sem base equivalente');$('#historyTimelineValue').textContent=f.label;$('#historyScrubber').value=String(state.historyScene);
+  for(const [key,path]of paths){const r=frameCity(f,key),positive=Math.max(0,r.now),t=Math.sqrt(positive/maxValue),light=88-t*59;path.setAttribute('fill',r.now<0?'#9d6478':r.now===0?'#243b60':'hsl(215 68% '+light+'%)');path.classList.toggle('is-selected',key===selectedKey);const v=f.comparable?historyPercent(r.now,r.before):null;const label=byKey.get(key).name+' · '+money(r.now)+' · '+pctText(v);path.setAttribute('aria-label',label);path.querySelector('title').textContent=label;}
+  const ordered=current.filter(c=>c.value>0).sort((a,b)=>b.value-a.value).slice(0,8),order=new Map(ordered.map((c,i)=>[c.key,i]));
+  for(const [key,el]of ranks){const index=order.get(key),row=f.current.cities.get(key),v=f.comparable?historyPercent(row?.value||0,f.previous.cities.get(key)?.value||0):null;el.style.opacity=index===undefined||(window.innerWidth<700&&index>=6)?'0':'1';el.style.transform='translateY('+((index??9)*48)+'px)';el.style.pointerEvents=index===undefined?'none':'auto';el.querySelector('.history-rank-name').textContent=row?.city||byKey.get(key)?.name||key;el.querySelector('strong').textContent=money(row?.value||0,true);el.querySelector('i').style.width=Math.max(0,(row?.value||0)/maxValue*100)+'%';el.querySelector('small').textContent=pctText(v);}
+  const changes=[...byKey.keys()].map(key=>{const r=frameCity(f,key),v=f.comparable?historyPercent(r.now,r.before):null;return {key,...r,v};}).filter(c=>c.v!==null&&c.v!==0).sort((a,b)=>Math.abs(b.now-b.before)-Math.abs(a.now-a.before)).slice(0,6);
+  $('#historyMapArrows').innerHTML=changes.map((c,i)=>{const p=byKey.get(c.key).point,up=c.v>0,color=up?'#9df0d3':'#ffc0b9';return '<g transform="translate('+p[0].toFixed(1)+' '+p[1].toFixed(1)+')"><g class="history-arrow-motion '+(up?'up':'down')+'" style="animation-delay:'+i*65+'ms"><rect x="-33" y="-19" width="66" height="24" rx="12" fill="#081a3b" fill-opacity=".9"/><text text-anchor="middle" y="-3" fill="'+color+'" font-size="13" font-weight="700">'+(up?'↑':'↓')+' '+Math.abs(c.v).toFixed(0)+'%</text></g></g>';}).join('');
+  const missing=[...f.current.cities.values()].filter(c=>c.uf===state.historyUf&&!byKey.has(c.key)).reduce((a,c)=>a+c.value,0);
+  $('#historyMapMethod').textContent=f.source+' · '+state.historyUf+'. Escala de cor fixa em todos os períodos desta visualização. Setas: variação de vendas, sem atribuição a vendedores. '+(state.historyMode==='year'?'Meses completos disponíveis em cada ano. ':'Meses parciais não geram percentuais. ')+(missing?'Sem correspondência municipal nesta UF: '+money(missing)+'. ':'')+(f.current.unlocated?'Sem localização na base geral deste período: '+money(f.current.unlocated)+'. ':'')+'Nas trocas de fonte não calculamos variação.';
+  focus();
+ };
+ const pause=()=>{state.historyPlaying=false;if(state.historyTimer)clearInterval(state.historyTimer);state.historyTimer=null;$('#historyToggle').textContent='▶';$('#historyToggle').setAttribute('aria-label','Reproduzir evolução');};
+ const start=()=>{if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return;state.historyPlaying=true;$('#historyToggle').textContent='Ⅱ';$('#historyToggle').setAttribute('aria-label','Pausar evolução');if(state.historyTimer)clearInterval(state.historyTimer);state.historyTimer=setInterval(()=>{if(document.hidden)return;if(state.page!=='history'||epoch!==state.historyEpoch||!svg.isConnected){stopHistoryMotion();return;}if(state.historyScene>=frames.length-1){pause();return;}state.historyScene++;draw();},state.historyMode==='year'?2500:1600);};
+ state.historyScene=Math.min(Math.max(0,state.historyScene),frames.length-1);$('#historyScrubber').max=String(frames.length-1);$('#historyTimelineEnds').textContent=frames[0].label+' — '+frames.at(-1).label;
+ $('#historyScrubber').oninput=e=>{pause();state.historyScene=Number(e.target.value);draw();};$('#historyToggle').onclick=()=>{if(state.historyPlaying){pause();return;}if(state.historyScene===frames.length-1)state.historyScene=0;draw();start();};
+ for(const [key,path]of paths){const pick=()=>{pause();selectedKey=selectedKey===key?'':key;draw();};path.onclick=pick;path.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}};}
+ draw();if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){pause();return;}
+ if(state.historyPlaying){state.historyObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){start();state.historyObserver?.disconnect();state.historyObserver=null;}},{threshold:.3});state.historyObserver.observe($('#historyMapShell'));}else pause();
 }
 
-
-function chartMotionOptions(){return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?false:{duration:700,easing:'easeOutQuart',delay:ctx=>ctx.type==='data'?Math.min(300,ctx.dataIndex*28):0};}
+function chartMotionOptions(){return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?false:{duration:1100,easing:'easeOutCubic',delay:ctx=>ctx.type==='data'?Math.min(400,ctx.dataIndex*35):0};}
 function installChartMotion(c){
- const holder=c.canvas.parentElement;if(!holder)return;
- c.canvas.setAttribute('role','img');c.canvas.setAttribute('aria-label','Gráfico: '+c.data.datasets.map(d=>d.label||'Valores').join(', ')+'. Use Reproduzir leitura para consultar os valores.');
- const controls=document.createElement('div');controls.className='chart-motion-controls';
- controls.innerHTML='<button type="button" data-replay>Rever animação</button><button type="button" data-play aria-pressed="false">Reproduzir leitura</button><output aria-live="off">Leitura sequencial dos valores</output>';
- holder.after(controls);let timer=null,index=-1;
- const stop=()=>{if(timer)clearInterval(timer);timer=null;const b=controls.querySelector('[data-play]');b.textContent='Reproduzir leitura';b.setAttribute('aria-pressed','false');};
- const show=i=>{if(!c.canvas.isConnected||!c.ctx){stop();return;}index=i;const elements=c.data.datasets.flatMap((d,di)=>d.data[i]!=null&&!c.getDatasetMeta(di).hidden?[{datasetIndex:di,index:i}]:[]);c.setActiveElements(elements);c.update('none');controls.querySelector('output').textContent=String(c.data.labels[i])+': '+elements.map(e=>{const d=c.data.datasets[e.datasetIndex],v=d.data[i];return (d.label?d.label+' ':'')+(c.$valueFormat?c.$valueFormat(v):/portfolioMovementChart|inactiveChart/.test(c.canvas.id)?integer(v):money(v,true));}).join(' · ');};
- controls.querySelector('[data-replay]').onclick=()=>{stop();c.reset();c.update();};
- controls.querySelector('[data-play]').onclick=()=>{if(timer){stop();return;}if(!c.data.labels.length)return;controls.querySelector('[data-play]').textContent='Pausar leitura';controls.querySelector('[data-play]').setAttribute('aria-pressed','true');show((index+1)%c.data.labels.length);timer=setInterval(()=>{if(document.hidden){stop();return;}show((index+1)%c.data.labels.length);},2200);};
- c.canvas.addEventListener('pointerdown',stop);const cleanup=()=>stop();c.$motionCleanup=cleanup;
+ c.canvas.setAttribute('role','img');c.canvas.setAttribute('aria-label','Gráfico de '+c.data.datasets.map(d=>d.label||'valores').join(', '));
+ if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return;
+ const isLine=c.config.type==='line',horizontal=c.options.indexAxis==='y';
+ c.data.datasets.forEach(d=>{if(isLine){d.pointRadius=2;d.pointHoverRadius=6;d.borderWidth=3;}if(!Array.isArray(d.backgroundColor)&&!d.borderDash){const base=typeof d.backgroundColor==='string'&&/^#[0-9a-f]{6}$/i.test(d.backgroundColor)?d.backgroundColor:'#254E96';d.backgroundColor=context=>{const {ctx,chartArea:a}=context.chart;if(!a)return base;const g=horizontal?ctx.createLinearGradient(a.left,0,a.right,0):ctx.createLinearGradient(0,a.bottom,0,a.top);g.addColorStop(0,isLine?'rgba(48,105,196,0.01)':base+'66');g.addColorStop(1,isLine?'rgba(48,105,196,0.22)':base);return g;};}});
+ c.update('none');
+ if(typeof IntersectionObserver==='function'){const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){c.reset();c.update();observer.disconnect();}},{threshold:.2});observer.observe(c.canvas);c.$motionCleanup=()=>observer.disconnect();}
 }
 function renderAreaAnalysis(p){
  const root=$('#areaAnalysis');if(!root)return;
@@ -1368,7 +1446,7 @@ function renderAreaAnalysis(p){
  const change=(a,b)=>p.previousAvailable===false?'Sem base completa':b>0?pct((a/b-1)*100):'Sem base';
  const current=p.current||{},previous=p.previous||{},monthly=p.monthly||[];
  root.innerHTML=`<section class="panel area-analysis-heading"><div class="panel-title-row"><div><h2>${esc(p.cityName||'Resultado do território')}</h2><p class="panel-sub">${esc(p.period)} · comparação com ${esc(p.previousPeriod)}${p.partial?' · período parcial':''}</p></div>${state.areaCity?'<button class="btn secondary" id="areaAllCities">Voltar à área</button>':''}</div><div class="grid kpi-grid four">${kpi('Faturamento da área',money(current.revenue,true),change(current.revenue,previous.revenue)+' vs. ano anterior')}${kpi('Clientes com compra',integer(current.clients),change(current.clients,previous.clients)+' vs. ano anterior')}${kpi('Produtos vendidos',integer(current.products),change(current.products,previous.products)+' vs. ano anterior')}${kpi('Cidades com venda',integer(current.cities),integer(p.municipalities)+' municípios conferidos na área')}</div><details><summary>Critérios desta análise</summary><p>Resultado geográfico: vendas fechadas por data de faturamento nos municípios com atribuição conferida na matriz atual. A mesma área é aplicada aos dois anos; não representa a produtividade individual do RCA nem o território histórico. Áreas em revisão ficam fora dos indicadores. Respeita os dados permitidos ao usuário. Filtros gerais de vendedor, supervisor e departamento não alteram esta análise; use a linha e o escopo acima. Comparações são limitadas à última data de faturamento disponível no ano selecionado. Comparações anuais são omitidas quando faltam meses na base do ano anterior. Ausência de registros na base aparece como “Sem base”.</p></details></section>
- <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Evolução do faturamento da área</h2><p class="panel-sub">Mesmo território nos dois anos. A leitura animada destaca um mês por vez.</p><div class="chart-wrap"><canvas id="areaMonthly"></canvas></div></section><section class="panel"><h2>Variação mensal</h2><label>Comparação<select id="areaComparison"><option value="yoy">Mesmo mês do ano anterior</option><option value="mom">Mês anterior</option></select></label><div class="chart-wrap"><canvas id="areaGrowth"></canvas></div></section></div>
+ <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Evolução do faturamento da área</h2><p class="panel-sub">Mesmo território nos dois anos. Compare o mesmo território nos dois anos.</p><div class="chart-wrap"><canvas id="areaMonthly"></canvas></div></section><section class="panel"><h2>Variação mensal</h2><label>Comparação<select id="areaComparison"><option value="yoy">Mesmo mês do ano anterior</option><option value="mom">Mês anterior</option></select></label><div class="chart-wrap"><canvas id="areaGrowth"></canvas></div></section></div>
  <div class="grid equal-col area-analysis-grid"><section class="panel"><h2>Cidades do território</h2><p class="panel-sub">Clique para detalhar a cidade. ${integer(p.municipalities)} cidades conferidas; ${integer(current.cities)} com venda no período.</p><div class="area-table-scroll"><table><thead><tr><th>Cidade</th><th>Faturamento</th><th>Clientes</th></tr></thead><tbody>${(p.cities||[]).map(x=>`<tr><td><button class="area-city-pick" data-area-city="${esc(x.key)}">${esc(x.city)} · ${esc(x.uf)}</button></td><td>${money(x.revenue,true)}</td><td>${integer(x.clients)}</td></tr>`).join('')||'<tr><td colspan="3">Sem cidades com registros no período.</td></tr>'}</tbody></table></div></section><section class="panel"><h2>Produtos da área</h2><p class="panel-sub">Principais produtos por faturamento · concentração nos três primeiros: ${pct(p.top3Share)}</p><div class="chart-wrap tall"><canvas id="areaProducts"></canvas></div></section></div>`;
  const rev=chart($('#areaMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{label:String(p.year),data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.08)',fill:true,tension:.25},{label:String(p.year-1),data:monthly.map(x=>x.previous),borderColor:'#91ADD8',borderDash:[5,4],tension:.25}]},{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
  let growth;
@@ -1377,3 +1455,4 @@ function renderAreaAnalysis(p){
  $('#areaAllCities')?.addEventListener('click',()=>{state.areaCity='';state.coverageSelection=null;queryPage()});
  Array.from(root.querySelectorAll('[data-area-city]')).forEach(b=>b.onclick=()=>{state.areaCity=b.dataset.areaCity;state.coverageSelection=(state.coverage?.cities||[]).find(r=>aliasCity(r.city)+'|'+r.uf===state.areaCity)||null;queryPage()});
 }
+
