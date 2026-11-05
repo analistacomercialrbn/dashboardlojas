@@ -2,6 +2,7 @@ const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 
 const PAGE_META = {
+  history:['Histórico macro','Evolução mensal e anual · valores por origem'],
   overview: ['Visão Geral','Resumo executivo • faturamento, meta, ritmo e pontos de atenção'],
   carteira: ['Carteira','Saúde da carteira • novos, inativos, recuperação e oportunidades'],
   produtos: ['Mix e Produtos','Produtos • mix, concentração, desempenho e venda cruzada'],
@@ -22,6 +23,8 @@ const state = {
   filters:{uf:[],region:'Todos',city:'Todos',year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
   dailyMode:'today',
   dailyDate:'',
+  historyYear:null,
+  historySource:null,
   selectedCity:'Todos',
   requestId:0,
   charts:[],
@@ -103,6 +106,7 @@ function enterApp(){
   initData();
 }
 function renderUser(){
+  $('#historyNav')?.classList.toggle('hidden',!['ADMIN','GERENTE'].includes(state.user?.perfil));
   $('#usersNav')?.classList.toggle('hidden',state.user?.perfil!=='ADMIN');
   const u=state.user||{};
   $('#userCard').innerHTML=`<div class="avatar">${esc(initials(u.nome))}</div><div><div class="user-name">${esc(u.nome||u.login)}</div><div class="user-role">${esc((u.perfil||'').toLowerCase())}</div></div>`;
@@ -450,6 +454,7 @@ function updateAdvancedFilterCount(){
 }
 
 function queryPage(){
+  $('.filterbar')?.classList.toggle('hidden',state.page==='history');
   if(state.page==='users'){++state.requestId;destroyCharts();$('#pageTitle').textContent='Configurações · Usuários';$('#pageSubtitle').textContent='Acessos e vínculos comerciais';setStatus('',false);renderUsers();return;}
   if(!state.worker||!state.dimensions||state.loadingData)return;
   destroyCharts();
@@ -459,6 +464,7 @@ function queryPage(){
   state.worker.postMessage({type:'query',requestId,page:state.page,filters:{...state.filters,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity});
 }
 function updateHeader(){
+  if(state.page==='history'){$('#pageTitle').textContent='Histórico macro';$('#pageSubtitle').textContent='Evolução mensal e anual · valores por origem';$('#periodChip').textContent='Desde jun/2017';return;}
   const [title,sub]=PAGE_META[state.page]||PAGE_META.overview;
   $('#pageTitle').textContent=title;$('#pageSubtitle').textContent=sub;
   const m=state.filters.month==='Todos'?'Todos os meses':['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(state.filters.month)-1];
@@ -511,7 +517,8 @@ function insight(i){
 function sectionHeading(title,sub=''){return `<div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div>`}
 
 function renderPage(page,payload){
-  if(page==='overview')renderOverview(payload);
+  if(page==='history')renderMacroHistory(payload);
+  else if(page==='overview')renderOverview(payload);
   else if(page==='carteira')renderCarteira(payload);
   else if(page==='produtos')renderProdutos(payload);
   else if(page==='cidades')renderCidades(payload);
@@ -1283,4 +1290,48 @@ async function renderUsers(){
  }catch(error){status.textContent=error.message||'Não foi possível salvar.';}finally{button.disabled=false;}
  };
  }catch(error){if(state.page==='users')$('#content').innerHTML='<div class="panel">'+esc(error.message)+'</div>';}
+}
+
+function mergeMacroHistory(historical,current){
+ const months=new Map();
+ for(const row of historical){
+  if(row.month>='2024-08')throw new Error('Histórico recuperado ultrapassa julho de 2024.');
+  if(months.has(row.month))throw new Error('Mês duplicado no histórico recuperado.');
+  months.set(row.month,{...row,source:'Shop Control recuperado'});
+ }
+ for(const row of current){
+  if(row.month<'2024-08')continue;
+  if(months.has(row.month))throw new Error('Sobreposição entre as fontes.');
+  months.set(row.month,{...row,source:'WinThor / BI'});
+ }
+ return [...months.values()].sort((a,b)=>a.month.localeCompare(b.month));
+}
+async function renderMacroHistory(payload){
+ if(!['ADMIN','GERENTE'].includes(state.user?.perfil))return;
+ $('#content').innerHTML='<div class="panel">Carregando histórico macro…</div>';
+ try{
+ if(!state.historySource)state.historySource=await api('/api/history');
+ if(state.page!=='history')return;
+ const rows=mergeMacroHistory(state.historySource.monthly,payload.monthly||[]),groups=new Map();
+ rows.forEach(r=>{const year=r.month.slice(0,4);if(!groups.has(year))groups.set(year,{year,value:0,months:[],sources:new Set()});const g=groups.get(year);g.value+=r.value;g.months.push(r);g.sources.add(r.source);});
+ const years=[...groups.values()],selected=String(state.historyYear||years.at(-1)?.year),year=groups.get(selected)||years.at(-1),monthNames=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+ state.historyYear=year?.year;
+ const period=g=>{const first=g.months[0].minDate,last=g.months.at(-1).maxDate;return first.split('-').reverse().join('/')+' a '+last.split('-').reverse().join('/');};
+ const complete=g=>g.months.length===12&&g.months[0].minDate.slice(5,7)==='01'&&g.months.at(-1).maxDate.slice(5)>='12-28';
+ const chosen=year.months,byMonth=new Map(chosen.map(r=>[Number(r.month.slice(5)),r]));
+ $('#content').innerHTML=`<section class="panel"><div class="panel-title-row"><div><h2>Evolução comercial da Rebanho</h2><p class="panel-sub">Visão macro da empresa. Selecione um ano no gráfico ou na tabela para detalhar os meses.</p></div></div>
+ <div class="kpi-grid">${kpi('Ano selecionado',year.year,complete(year)?'12 meses com registros':'Cobertura parcial — não equivale ao ano completo')}${kpi('Valor no ano selecionado',money(year.value),period(year))}</div>
+ <p>Histórico recuperado: jun/2017 a jul/2024. WinThor/BI: a partir de ago/2024.</p>
+ <div style="position:relative;height:300px"><canvas id="macroAnnual"></canvas></div></section>
+ <section class="panel" style="margin-top:16px"><div class="panel-title-row"><h2>Valores mensais · ${esc(year.year)}</h2><label>Ano <select id="macroYear" style="min-height:44px">${years.map(g=>'<option value="'+g.year+'" '+(g.year===year.year?'selected':'')+'>'+g.year+'</option>').join('')}</select></label></div>
+ <div style="position:relative;height:280px"><canvas id="macroMonthly"></canvas></div>
+ <div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Mês</th><th style="text-align:right">Valor de vendas</th><th style="text-align:left">Origem</th></tr></thead><tbody>${monthNames.map((name,i)=>{const r=byMonth.get(i+1);return '<tr><td style="padding:10px">'+name+'</td><td style="text-align:right">'+(r?money(r.value):'Sem dados')+'</td><td>'+esc(r?.source||'—')+'</td></tr>';}).join('')}</tbody></table></div></section>
+ <section class="panel" style="margin-top:16px"><h2>Resumo anual</h2><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>Ano</th><th>Valor de vendas</th><th>Período com registros</th><th>Origem</th></tr></thead><tbody>${years.map(g=>'<tr><td style="padding:10px"><button class="secondary" data-macro-year="'+g.year+'">'+g.year+'</button></td><td>'+money(g.value)+'</td><td>'+period(g)+(complete(g)?'':' · parcial')+'</td><td>'+esc([...g.sources].join(' + '))+'</td></tr>').join('')}</tbody></table></div>
+ <p class="panel-sub">O Shop Control registra valores de venda recuperados, incluindo lançamentos negativos, sem conciliação contábil confirmada. O WinThor/BI utiliza data de faturamento. Códigos antigos, vendedores e departamentos não são conciliados nesta visão. Não são calculados clientes, margem, ticket, metas ou produtividade histórica. Meses ausentes aparecem como “Sem dados”.</p></section>`;
+ const pick=value=>{state.historyYear=String(value);destroyCharts();renderMacroHistory(payload);};
+ chart($('#macroAnnual'),'bar',{labels:years.map(g=>g.year),datasets:[{label:'Valor de vendas',data:years.map(g=>Math.round(g.value*100)/100),backgroundColor:years.map(g=>g.year===year.year?'#1D2A68':'#9DB9E4'),borderRadius:6}]},{onClick:(_e,els)=>{if(els?.length)pick(years[els[0].index].year)},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
+ chart($('#macroMonthly'),'bar',{labels:monthNames,datasets:[{label:'Valor de vendas',data:monthNames.map((_,i)=>byMonth.get(i+1)?.value??null),backgroundColor:'#365C9D',borderRadius:5}]},{scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
+ $('#macroYear').addEventListener('change',e=>pick(e.target.value));
+ Array.from(document.querySelectorAll('[data-macro-year]')).forEach(b=>b.addEventListener('click',()=>pick(b.dataset.macroYear)));
+ }catch(error){if(state.page==='history')$('#content').innerHTML='<div class="panel">'+esc(error.message)+'</div>';}
 }
