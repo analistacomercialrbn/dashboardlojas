@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/3ef6b05638e2d7d46a5837951d0af3765d430f80/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/78daa215f261e0b8b567f2079f277d4dd5aabff9/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -292,6 +292,7 @@ function dashboardApi(action, payload, token) {
     }
     const user = sessionUser_(token);
     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
+    if (action === 'history') return recoveredMacroHistory_(user);
     if (action === 'users') return manageUsers_(user,payload);
     if (action === 'info') return Object.assign({ ok: true }, datasetInfo_());
     if (action === 'openOrders') { const out=openOrdersData_(); out.orders=out.orders.filter(row=>userAllowsRca_(user,row.rca));return out; }
@@ -962,4 +963,17 @@ function manageUsers_(actor,payload){
  }
  const updated=loadUsers_();
  return {ok:true,users:Object.keys(updated).map(login=>{const r=updated[login];return {login:login,nome:r.nome,perfil:r.perfil,ativo:r.ativo===true,cod_rca:r.cod_rca,supervisor:r.supervisor};}),rcas:aux.rcas.map(r=>({code:r.code,name:r.name,supervisor:r.supervisor}))};
+}
+
+function recoveredMacroHistory_(user){
+ if(['ADMIN','GERENTE'].indexOf(user.perfil)<0)throw new Error('O histórico macro não possui vínculo com RCA ou supervisão.');
+ const cache=CacheService.getScriptCache(),key='DASH_RECOVERED_MACRO_V1',saved=cache.get(key);
+ if(saved)return JSON.parse(saved);
+ const packed=SCRIPT_PROPS.getProperty('RECOVERED_MACRO_MONTHS_V1');if(!packed)throw new Error('Histórico recuperado ainda não foi inicializado.');
+ const data={cutoff:'2024-08-01',monthly:JSON.parse(packed).map(r=>({month:r[0],value:r[1],minDate:r[2],maxDate:r[3]}))};
+ if(data.cutoff!=='2024-08-01'||!Array.isArray(data.monthly)||data.monthly.length!==86)throw new Error('Histórico macro inválido.');
+ const seen=new Set();
+ data.monthly.forEach(row=>{if(!/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(row.month)||row.month<'2017-06'||row.month>='2024-08'||typeof row.value!=='number'||!isFinite(row.value)||seen.has(row.month))throw new Error('Mês inválido ou duplicado no histórico.');seen.add(row.month);});
+ const out={ok:true,monthly:data.monthly.map(r=>({month:r.month,value:r.value,minDate:r.minDate,maxDate:r.maxDate})),source:'Shop Control recuperado',cutoff:data.cutoff};
+ cache.put(key,JSON.stringify(out),21600);return out;
 }
