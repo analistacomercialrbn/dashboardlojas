@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/860750cbf3a0689d550208f44732c6342202ad01/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/e4dba9c2ba219431e42e90594b5211412767ff38/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -1085,7 +1085,7 @@ function logRecords_(values,kind,tz,regionValues){
   const deliveredDate=D('DATA ENTREGA'),sla=T('STATUS SLA'),status=T('STATUS TRANSPORTADORA')||sla||'Sem status',forecast=D('PRAZO INTERNO REBANHO')||D('PREVISÃO TRANSPORTADORA'),today=Utilities.formatDate(new Date(),tz||'America/Fortaleza','yyyy-MM-dd');
   const onTime=!!deliveredDate&&/NO PRAZO/.test(logNorm_(sla)),late=!!deliveredDate&&/FORA|ATRAS/.test(logNorm_(sla)),overdue=!deliveredDate&&!!forecast&&forecast<today;
   const loc=logCity_(T('CIDADE'));loc.uf=T('UF')||loc.uf;
-  return [{id:T('CHAVE')||'tr_'+(i+2),invoice:T('NF'),client:T('CLIENTE'),...loc,cityLabel:T('CIDADE'),date:D('EMISSÃO')||D('DATA COLETA')||deliveredDate,issued:D('EMISSÃO'),collected:D('DATA COLETA'),forecast,deliveredDate,delivered:!!deliveredDate,weight:N('PESO'),volumes:N('VOLUMES'),freight:N('FRETE TOTAL'),goods:N('VALOR MERCADORIA'),status,sla,delay:N('DIAS ATRASO'),onTime,late,overdue,carrier:T('TRANSPORTADORA'),manualOccurrence:T('OCORRÊNCIA'),notes:T('PROBLEMA / OBSERVAÇÃO'),problem:T('OCORRÊNCIA')||T('PROBLEMA / OBSERVAÇÃO'),category:T('CATEGORIA OCORRÊNCIA'),responsible:T('RESPONSÁVEL OCORRÊNCIA'),follow:T('FOLLOW UP / OCORRÊNCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),cargoType:T('TIPO DE CARGA'),seller:T('RCA'),occurrence:logProblem_(T('OCORRÊNCIA'))||logProblem_(T('PROBLEMA / OBSERVAÇÃO'))}];
+  return [{id:T('CHAVE')||'tr_'+(i+2),invoice:T('NF'),client:T('CLIENTE'),...loc,cityLabel:T('CIDADE'),date:D('EMISSÃO')||D('DATA COLETA')||deliveredDate,issued:D('EMISSÃO'),collected:D('DATA COLETA'),forecast,deliveredDate,delivered:!!deliveredDate,weight:N('PESO'),volumes:N('VOLUMES'),freight:N('FRETE TOTAL'),goods:N('VALOR MERCADORIA'),status,sla,delay:N('DIAS ATRASO'),onTime,late,overdue,carrier:T('TRANSPORTADORA'),manualOccurrence:T('OCORRÊNCIA'),notes:T('PROBLEMA / OBSERVAÇÃO'),problem:T('OCORRÊNCIA')||T('PROBLEMA / OBSERVAÇÃO')||T('CATEGORIA OCORRÊNCIA'),category:T('CATEGORIA OCORRÊNCIA'),responsible:T('RESPONSÁVEL OCORRÊNCIA'),follow:T('FOLLOW UP / OCORRÊNCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),cargoType:T('TIPO DE CARGA'),seller:T('RCA'),occurrence:logProblem_(T('OCORRÊNCIA'))||logProblem_(T('PROBLEMA / OBSERVAÇÃO'))||logProblem_(T('CATEGORIA OCORRÊNCIA'))}];
  });
 }
 function logisticsApi_(user,payload){
@@ -1106,7 +1106,7 @@ function logisticsApi_(user,payload){
  if(kind==='sources')return {ok:true,ids,reference:LOGISTICS_SOURCES.reference,readOnly:true};
  if(!['operations','formations','transport','schedule'].includes(kind))throw new Error('Fonte logística inválida.');
  // Consulta somente planilhas, usando as permissões que o módulo comercial já possui.
- const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S5_'+digestHex_(id+'|'+kind).slice(0,24);
+ const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S6_'+digestHex_(id+'|'+kind).slice(0,24);
  let meta=cache.get(base+'_M');meta=meta?JSON.parse(meta):null;let rows=null;
  if(meta&&p.force!==true){const keys=Array.from({length:meta.parts},(_,i)=>base+'_'+i),saved=cache.getAll(keys);if(keys.every(k=>saved[k]!=null)){try{rows=JSON.parse(keys.map(k=>saved[k]).join(''));}catch(e){rows=null;}}}
  if(!rows){
@@ -1168,7 +1168,7 @@ function transportEdit_(user,p,id){
   const fields=SAC_FIELDS.map(([name,label],i)=>{const rule=rules[i];let options=null;
    if(rule){const type=String(rule.getCriteriaType()),args=rule.getCriteriaValues();if(type==='VALUE_IN_LIST')options=args[0].map(String);else if(type==='VALUE_IN_RANGE')options=args[0].getDisplayValues().flat().filter(Boolean);else throw new Error('Validação não suportada no campo '+label+'.');}
    return {name,label,value:values[i],options,readOnly:!!formulas[i]};});
-  if(p.action==='editRead')return {ok:true,key,version,fields,invoice:row.invoice,client:row.client,carrier:row.carrier};
+  if(p.action==='editRead')return {ok:true,key,version,fields,invoice:row.invoice,client:row.client,carrier:row.carrier,record:row};
   if(p.action!=='editSave')throw new Error('Ação de edição inválida.');
   if(p.version!==version)throw new Error('A nota foi alterada na planilha. Feche e abra novamente para revisar os valores atuais.');
   const input=p.values;if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!SAC_FIELDS.some(f=>f[0]===k)))throw new Error('Campos de gravação inválidos.');
@@ -1179,7 +1179,8 @@ function transportEdit_(user,p,id){
   const safe=next.map((v,i)=>formulas[i]||(/^[=+@-]/.test(v)?"'"+v:v));range.setValues([safe]);SpreadsheetApp.flush();
   const verified=range.getDisplayValues()[0];if(!next.every((v,i)=>formulas[i]||verified[i]===v))throw new Error('Revise a planilha: não foi possível confirmar todos os campos gravados.');
   const audit=rbnLoadState_('LOG_SAC_AUDIT')||[];audit.unshift({at:new Date().toISOString(),by:user.login,key,fields:fields.filter((f,i)=>next[i]!==values[i]).map(f=>f.name)});while(audit.length>100||JSON.stringify(audit).length>30000)audit.pop();rbnSaveState_('LOG_SAC_AUDIT',audit);
-  const base='LOG_S5_'+digestHex_(id+'|transport').slice(0,24);CacheService.getScriptCache().remove(base+'_M');
+  const base='LOG_S6_'+digestHex_(id+'|transport').slice(0,24);CacheService.getScriptCache().remove(base+'_M');
   return {ok:true,message:'Campos salvos na planilha de transportadoras.',updatedAt:new Date().toISOString()};
  }finally{lock.releaseLock();}
 }
+
