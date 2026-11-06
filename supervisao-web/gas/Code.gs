@@ -1064,6 +1064,11 @@ function logNumber_(v){if(v==null||v==='')return null;if(typeof v==='number')ret
 function logDate_(v,tz){if(v==null||v==='')return '';const clean=x=>{if(!/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(x))return '';const d=new Date(x+'T12:00:00Z');return !isNaN(d)&&d.toISOString().slice(0,10)===x?x:'';};if(v instanceof Date)return isNaN(v)?'':clean(Utilities.formatDate(v,tz||'America/Fortaleza','yyyy-MM-dd'));if(typeof v==='number'){if(v<30000||v>70000)return '';return clean(new Date(Date.UTC(1899,11,30)+v*86400000).toISOString().slice(0,10));}const s=String(v).trim();if(/^\d{4}-\d{2}-\d{2}/.test(s))return clean(s.slice(0,10));const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);return m?clean((m[3].length===2?'20'+m[3]:m[3])+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0')):'';}
 function logProblem_(v){const t=logNorm_(v);return !!t&&!['SEM OCORRENCIAS','SEM OCORRENCIA','NENHUMA','NAO','N/A','-','OK'].includes(t);}
 function logCity_(v){const s=logText_(v),m=logNorm_(s).match(/\s*[-/]\s*([A-Z]{2})$/);return {city:logNorm_(s).replace(/\s*[-/]\s*[A-Z]{2}$/,''),uf:m?m[1]:''};}
+// Identidade estável para linhas legadas sem CHAVE; não depende da posição da linha.
+function transportRowKey_(cells){
+ const parts=cells.slice(0,7).map(logText_);
+ return parts[0]||'trf_'+digestHex_(JSON.stringify(parts.slice(1)));
+}
 function logRecords_(values,kind,tz,regionValues){
  const header=kind==='operations'?1:kind==='formations'?3:0;
  const names=(values[header]||[]).map(logNorm_),idx=n=>names.indexOf(logNorm_(n));
@@ -1085,7 +1090,7 @@ function logRecords_(values,kind,tz,regionValues){
   const deliveredDate=D('DATA ENTREGA'),sla=T('STATUS SLA'),status=T('STATUS TRANSPORTADORA')||sla||'Sem status',forecast=D('PRAZO INTERNO REBANHO')||D('PREVISÃO TRANSPORTADORA'),today=Utilities.formatDate(new Date(),tz||'America/Fortaleza','yyyy-MM-dd');
   const onTime=!!deliveredDate&&/NO PRAZO/.test(logNorm_(sla)),late=!!deliveredDate&&/FORA|ATRAS/.test(logNorm_(sla)),overdue=!deliveredDate&&!!forecast&&forecast<today;
   const loc=logCity_(T('CIDADE'));loc.uf=T('UF')||loc.uf;
-  return [{id:T('CHAVE')||'tr_'+(i+2),invoice:T('NF'),client:T('CLIENTE'),...loc,cityLabel:T('CIDADE'),date:D('EMISSÃO')||D('DATA COLETA')||deliveredDate,issued:D('EMISSÃO'),collected:D('DATA COLETA'),forecast,deliveredDate,delivered:!!deliveredDate,weight:N('PESO'),volumes:N('VOLUMES'),freight:N('FRETE TOTAL'),goods:N('VALOR MERCADORIA'),status,sla,delay:N('DIAS ATRASO'),onTime,late,overdue,carrier:T('TRANSPORTADORA'),manualOccurrence:T('OCORRÊNCIA'),notes:T('PROBLEMA / OBSERVAÇÃO'),problem:T('OCORRÊNCIA')||T('PROBLEMA / OBSERVAÇÃO')||T('CATEGORIA OCORRÊNCIA'),category:T('CATEGORIA OCORRÊNCIA'),responsible:T('RESPONSÁVEL OCORRÊNCIA'),follow:T('FOLLOW UP / OCORRÊNCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),cargoType:T('TIPO DE CARGA'),seller:T('RCA'),occurrence:logProblem_(T('OCORRÊNCIA'))||logProblem_(T('PROBLEMA / OBSERVAÇÃO'))||logProblem_(T('CATEGORIA OCORRÊNCIA'))}];
+  return [{id:transportRowKey_([T('CHAVE'),T('NF'),T('TRANSPORTADORA'),T('CLIENTE'),T('CNPJ/CPF'),T('CIDADE'),T('UF')]),invoice:T('NF'),client:T('CLIENTE'),...loc,cityLabel:T('CIDADE'),date:D('EMISSÃO')||D('DATA COLETA')||deliveredDate,issued:D('EMISSÃO'),collected:D('DATA COLETA'),forecast,deliveredDate,delivered:!!deliveredDate,weight:N('PESO'),volumes:N('VOLUMES'),freight:N('FRETE TOTAL'),goods:N('VALOR MERCADORIA'),status,sla,delay:N('DIAS ATRASO'),onTime,late,overdue,carrier:T('TRANSPORTADORA'),manualOccurrence:T('OCORRÊNCIA'),notes:T('PROBLEMA / OBSERVAÇÃO'),problem:T('OCORRÊNCIA')||T('PROBLEMA / OBSERVAÇÃO')||T('CATEGORIA OCORRÊNCIA'),category:T('CATEGORIA OCORRÊNCIA'),responsible:T('RESPONSÁVEL OCORRÊNCIA'),follow:T('FOLLOW UP / OCORRÊNCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),cargoType:T('TIPO DE CARGA'),seller:T('RCA'),occurrence:logProblem_(T('OCORRÊNCIA'))||logProblem_(T('PROBLEMA / OBSERVAÇÃO'))||logProblem_(T('CATEGORIA OCORRÊNCIA'))}];
  });
 }
 function logisticsApi_(user,payload){
@@ -1106,7 +1111,7 @@ function logisticsApi_(user,payload){
  if(kind==='sources')return {ok:true,ids,reference:LOGISTICS_SOURCES.reference,readOnly:true};
  if(!['operations','formations','transport','schedule'].includes(kind))throw new Error('Fonte logística inválida.');
  // Consulta somente planilhas, usando as permissões que o módulo comercial já possui.
- const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S6_'+digestHex_(id+'|'+kind).slice(0,24);
+ const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S7_'+digestHex_(id+'|'+kind).slice(0,24);
  let meta=cache.get(base+'_M');meta=meta?JSON.parse(meta):null;let rows=null;
  if(meta&&p.force!==true){const keys=Array.from({length:meta.parts},(_,i)=>base+'_'+i),saved=cache.getAll(keys);if(keys.every(k=>saved[k]!=null)){try{rows=JSON.parse(keys.map(k=>saved[k]).join(''));}catch(e){rows=null;}}}
  if(!rows){
@@ -1158,9 +1163,10 @@ function transportEdit_(user,p,id){
  const key=String(p.key||'');if(!key||key.length>200)throw new Error('Identificador da nota inválido.');
  const lock=LockService.getScriptLock();if(!lock.tryLock(10000))throw new Error('Outra gravação está em andamento. Tente novamente.');
  try{
-  const hits=sh.getRange(2,1,Math.max(1,sh.getLastRow()-1),1).createTextFinder(key).matchEntireCell(true).useRegularExpression(false).findAll();
+  const identities=sh.getRange(2,1,Math.max(1,sh.getLastRow()-1),7).getDisplayValues();
+  const hits=identities.flatMap((cells,i)=>transportRowKey_(cells)===key?[i+2]:[]);
   if(hits.length!==1)throw new Error('Nota ausente ou chave duplicada. Atualize a tela antes de editar.');
-  const n=hits[0].getRow(),head=sh.getRange(1,1,1,36).getDisplayValues()[0],raw=sh.getRange(n,1,1,36).getValues()[0],row=logRecords_([head,raw],'transport',sh.getParent().getSpreadsheetTimeZone(),[])[0];
+  const n=hits[0],head=sh.getRange(1,1,1,36).getDisplayValues()[0],raw=sh.getRange(n,1,1,36).getValues()[0],row=logRecords_([head,raw],'transport',sh.getParent().getSpreadsheetTimeZone(),[])[0];
   if(!row||!logisticsRowAllowed_(user,row,'transport'))throw new Error('Esta nota está fora do seu recorte de acesso.');
   const range=sh.getRange(n,28,1,8),values=range.getDisplayValues()[0],formulas=range.getFormulas()[0],rules=range.getDataValidations()[0];
   if(SAC_FIELDS.some((f,i)=>logNorm_(head[i+27])!==logNorm_(f[1])))throw new Error('A estrutura da planilha mudou. A gravação foi interrompida.');
@@ -1174,12 +1180,12 @@ function transportEdit_(user,p,id){
   const input=p.values;if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!SAC_FIELDS.some(f=>f[0]===k)))throw new Error('Campos de gravação inválidos.');
   const next=values.slice();fields.forEach((f,i)=>{if(!Object.prototype.hasOwnProperty.call(input,f.name))return;const v=String(input[f.name]??'').trim();if(v.length>2000)throw new Error('O campo '+f.label+' excede 2.000 caracteres.');if(v!==values[i]&&f.readOnly)throw new Error('O campo '+f.label+' contém fórmula e não pode ser editado.');if(v!==values[i]&&v&&f.options&&!f.options.includes(v))throw new Error('Escolha uma opção válida para '+f.label+'.');next[i]=v;});
   if(next.every((v,i)=>v===values[i]))return {ok:true,message:'Nenhuma alteração para salvar.'};
-  if(String(sh.getRange(n,1).getDisplayValue())!==key||digestHex_(JSON.stringify(range.getDisplayValues()[0]))!==digestHex_(JSON.stringify(values)))throw new Error('A planilha mudou durante a edição. Reabra a nota.');
+  if(transportRowKey_(sh.getRange(n,1,1,7).getDisplayValues()[0])!==key||digestHex_(JSON.stringify(range.getDisplayValues()[0]))!==digestHex_(JSON.stringify(values)))throw new Error('A planilha mudou durante a edição. Reabra a nota.');
   // Texto literal evita que entradas do usuário sejam interpretadas como fórmulas.
   const safe=next.map((v,i)=>formulas[i]||(/^[=+@-]/.test(v)?"'"+v:v));range.setValues([safe]);SpreadsheetApp.flush();
   const verified=range.getDisplayValues()[0];if(!next.every((v,i)=>formulas[i]||verified[i]===v))throw new Error('Revise a planilha: não foi possível confirmar todos os campos gravados.');
   const audit=rbnLoadState_('LOG_SAC_AUDIT')||[];audit.unshift({at:new Date().toISOString(),by:user.login,key,fields:fields.filter((f,i)=>next[i]!==values[i]).map(f=>f.name)});while(audit.length>100||JSON.stringify(audit).length>30000)audit.pop();rbnSaveState_('LOG_SAC_AUDIT',audit);
-  const base='LOG_S6_'+digestHex_(id+'|transport').slice(0,24);CacheService.getScriptCache().remove(base+'_M');
+  const base='LOG_S7_'+digestHex_(id+'|transport').slice(0,24);CacheService.getScriptCache().remove(base+'_M');
   return {ok:true,message:'Campos salvos na planilha de transportadoras.',updatedAt:new Date().toISOString()};
  }finally{lock.releaseLock();}
 }
