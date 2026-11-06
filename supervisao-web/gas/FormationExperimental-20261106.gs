@@ -46,9 +46,18 @@ function formExpCommercial_(keys,force){
  for(const key of pending){const o=out[key];if(!o)continue;o.rcas=[...new Set(o.rcas||[o.rca])];o.statuses=[...new Set(o.statuses)];o.invoices=[...new Set(o.invoices)];o.version=digestHex_(JSON.stringify(o)).slice(0,24);try{const s=JSON.stringify(o);if(s.length<85000)cache.put('FORM_EXP_ORDER_'+digestHex_(key).slice(0,24),s,120);}catch(e){}}
  return out;
 }
-function formExpLookup_(number,user,sourceKeys,sources){
- if(!/^\d{1,20}$/.test(String(number||'')))throw new Error('Informe o número exato do pedido.');if(!Array.isArray(sourceKeys)||!sourceKeys.length||sourceKeys.length>50)throw new Error('Selecione os registros de formação que deseja vincular.');
+function formExpClientKeys_(query,sourceRows){
+ const tokens=logNorm_(query).split(/\s+/).filter(t=>t.length>1&&!['DE','DA','DO','DAS','DOS','LTDA'].includes(t));if(!tokens.length)throw new Error('Informe um nome de cliente mais específico.');
+ const years=new Set(sourceRows.flatMap(r=>r.date?[r.date.slice(0,4),String(Number(r.date.slice(0,4))-1)]:[])),ss=SpreadsheetApp.openById(CFG.salesSpreadsheetId),found=new Map(),references=sourceRows.map(r=>Date.parse(r.date)).filter(Number.isFinite);
+ for(const year of CFG.years.filter(y=>years.has(y))){const sh=ss.getSheetByName(year);if(!sh||sh.getLastRow()<2)continue;const count=sh.getLastRow()-1,identities=sh.getRange(2,8,count,2).getValues();let dates=null;
+  identities.forEach((r,i)=>{if(!tokens.every(t=>logNorm_(r[0]).includes(t)))return;const code=code_(r[0]),number=String(r[1]||'');if(code==null||!/^\d{1,20}$/.test(number))return;if(!dates)dates=sh.getRange(2,16,count,1).getValues();const day=logDate_(dates[i][0],ss.getSpreadsheetTimeZone()),stamp=Date.parse(day),rank=references.length&&Number.isFinite(stamp)?Math.min(...references.map(ref=>Math.abs(stamp-ref))):Number.MAX_SAFE_INTEGER,key=formExpOrderKey_(year,String(code),number);if(!found.has(key)||found.get(key)>rank)found.set(key,rank);});
+ }
+ return [...found].sort((a,b)=>a[1]-b[1]).slice(0,30).map(x=>x[0]);
+}
+function formExpLookup_(number,user,sourceKeys,sources,clientSearch){
+ const exact=/^\d{1,20}$/.test(String(number||''));if(!exact&&logNorm_(clientSearch).length<5)throw new Error('Informe o número do pedido ou um nome de cliente com pelo menos 5 caracteres.');if(!Array.isArray(sourceKeys)||!sourceKeys.length||sourceKeys.length>50)throw new Error('Selecione os registros de formação que deseja vincular.');
  for(const key of sourceKeys){const r=sources.all[key];if(!r||r.ambiguous||!r.awaitingFormation||!logisticsRowAllowed_(user,r,'operations'))throw new Error('Registro de formação indisponível ou fora do seu recorte.');}
+ if(!exact)return Object.values(formExpCommercial_(formExpClientKeys_(clientSearch,sourceKeys.map(k=>sources.all[k])),true)).filter(o=>(o.rcas||[o.rca]).every(rca=>userAllowsRca_(user,rca)));
  const ss=SpreadsheetApp.openById(CFG.salesSpreadsheetId),keys=[];for(const year of CFG.years){const sh=ss.getSheetByName(year);if(!sh||sh.getLastRow()<2)continue;const cells=sh.getRange(2,9,sh.getLastRow()-1,1).createTextFinder(String(number)).matchEntireCell(true).useRegularExpression(false).findAll();if(cells.length>500)throw new Error('O pedido tem muitos itens; revise sua identificação.');for(const c of cells){const customer=sh.getRange(c.getRow(),8).getDisplayValue(),code=code_(customer);if(code!=null)keys.push(formExpOrderKey_(year,String(code),String(number)));}}
  return Object.values(formExpCommercial_([...new Set(keys)],true)).filter(o=>(o.rcas||[o.rca]).every(rca=>userAllowsRca_(user,rca)));
 }
@@ -69,11 +78,12 @@ function formExpView_(st,sources,commercial,user){
 function formExpValidateMove_(st,view,p){
  const actions=['CRIAR','ADICIONAR','TRANSFERIR','REMOVER','RENOMEAR','VINCULAR'];if(!actions.includes(p.operation))throw new Error('Operação de montagem inválida.');if(Number(p.revision)!==st.revision||p.sourceVersion!==view.sourceVersion)throw new Error('As montagens ou as fontes foram atualizadas. Recarregue antes de confirmar.');
  const keys=p.keys||[];if(!Array.isArray(keys)||keys.length>100||new Set(keys).size!==keys.length||keys.some(k=>typeof k!=='string'))throw new Error('Selecione até 100 pedidos distintos.');
+ const canonical=keys.map(key=>{const x=formExpParseKey_(key);return x.client+'|'+x.order;});if(new Set(canonical).size!==canonical.length)throw new Error('O mesmo pedido aparece em mais de um ano. Confirme sua identificação antes de selecionar.');
  const visible=new Map(view.orders.map(o=>[o.key,o])),montages=new Map(view.montages.map(m=>[m.id,m]));
  if(['ADICIONAR','TRANSFERIR','RENOMEAR'].includes(p.operation)&&!montages.has(String(p.target||'')))throw new Error('Montagem de destino não disponível no seu recorte.');
  if(['TRANSFERIR','REMOVER'].includes(p.operation)&&p.confirmed!==true)throw new Error('Confirme a remoção ou transferência dos pedidos.');
  if(['ADICIONAR','TRANSFERIR','REMOVER'].includes(p.operation)&&!keys.length)throw new Error('Selecione os pedidos.');
- for(const key of keys){const o=visible.get(key);if(!o||o.blocked)throw new Error('Um pedido está fora do seu recorte, sem fonte válida ou já saiu para entrega.');const a=st.assignments[key];if(['CRIAR','ADICIONAR'].includes(p.operation)&&a)throw new Error('Um pedido já pertence a uma montagem ativa.');if(['TRANSFERIR','REMOVER'].includes(p.operation)&&!a)throw new Error('Um pedido já foi retirado da montagem.');if(p.operation==='TRANSFERIR'&&a.montageId===p.target)throw new Error('Escolha outra montagem de destino.');}
+ for(const key of keys){const o=visible.get(key);if(!o||o.blocked)throw new Error('Um pedido está fora do seu recorte, sem fonte válida ou já saiu para entrega.');const a=st.assignments[key],identity=formExpParseKey_(key),alreadyReserved=Object.keys(st.assignments).some(k=>{const other=formExpParseKey_(k);return other.order===identity.order&&other.client===identity.client;});if(['CRIAR','ADICIONAR'].includes(p.operation)&&alreadyReserved)throw new Error('Um pedido já pertence a uma montagem ativa.');if(['TRANSFERIR','REMOVER'].includes(p.operation)&&!a)throw new Error('Um pedido já foi retirado da montagem.');if(p.operation==='TRANSFERIR'&&a.montageId===p.target)throw new Error('Escolha outra montagem de destino.');}
 }
 function formExpMaterialize_(ss,st){
  const write=(name,rows)=>{const sh=ss.getSheetByName(name),width=FORM_EXP_SCHEMA[name].length,last=sh.getLastRow();if(rows.length){if(sh.getMaxRows()<rows.length+1)sh.insertRowsAfter(sh.getMaxRows(),rows.length+1-sh.getMaxRows());sh.getRange(2,1,rows.length,width).setValues(rows.map(r=>r.map(v=>typeof v==='string'&&/^[=+@-]/.test(v)?"'"+v:v)));}if(last>rows.length+1)sh.getRange(rows.length+2,1,last-rows.length-1,width).clearContent();};
@@ -84,7 +94,7 @@ function formationExperimentalApi_(user,p){
  try{
   const ss=formExpAux_(),st=formExpState_(ss),sources=formExpSources_(user),commercial=formExpCommercial_(Object.keys(st.links),p.action==='save'||p.force===true),view=formExpView_(st,sources,commercial,user);
   if(p.action==='read'||!p.action)return {ok:true,...view,experimental:true};
-  if(p.action==='lookup')return {ok:true,orders:formExpLookup_(p.orderNumber,user,p.sourceKeys,sources).filter(o=>!st.links[o.key]||view.orders.some(v=>v.key===o.key)).map(o=>({...o,confirmedSourceRows:[...new Set([...(st.links[o.key]&&st.links[o.key].sourceKeys||[]),...p.sourceKeys])].map(k=>sources.all[k]).filter(Boolean)})),revision:st.revision,sourceVersion:view.sourceVersion};
+  if(p.action==='lookup')return {ok:true,orders:formExpLookup_(p.orderNumber,user,p.sourceKeys,sources,p.clientSearch).filter(o=>!st.links[o.key]||view.orders.some(v=>v.key===o.key)).map(o=>({...o,confirmedSourceRows:[...new Set([...(st.links[o.key]&&st.links[o.key].sourceKeys||[]),...p.sourceKeys])].map(k=>sources.all[k]).filter(Boolean)})),revision:st.revision,sourceVersion:view.sourceVersion};
   if(p.action!=='save')throw new Error('Ação experimental inválida.');if(!/^[a-zA-Z0-9_-]{16,100}$/.test(String(p.requestId||'')))throw new Error('Identificador de movimentação inválido.');if(st.requests[p.requestId])return {ok:true,alreadyApplied:true,message:'Movimentação já registrada.'};
   if(p.operation==='VINCULAR'){
    if(Number(p.revision)!==st.revision||p.sourceVersion!==view.sourceVersion||p.confirmed!==true)throw new Error('Reabra e confirme o vínculo com as fontes atuais.');
