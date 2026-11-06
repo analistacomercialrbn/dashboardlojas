@@ -7,7 +7,7 @@
   <title>Dashboard de Supervisão • Rebanho</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ca306da3cb43f1f31b7530ca0be7be6547657b49/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@f534a2586472984821515e2933b27c13da470cea/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 </head>
 <body>
@@ -816,6 +816,39 @@ function metasPage(filters){
   return {monthly,supervisors:[...supMap].map(([name,meta])=>({name,meta})).sort((a,b)=>b.meta-a.meta),totalMeta:[...metaByMonth.values()].reduce((a,b)=>a+b,0),totalRevenue:rows.reduce((a,s)=>a+s.value,0)};
 }
 
+
+function biComponents_(filters,widgets){
+ const sales=filterSales(filters),open=filterOpenOrders(filters),goals=filterMetas(filters),cache=new Map();let portfolio;
+ const key=(row,dim)=>{if(dim==='none')return {key:'total',label:'Total'};if(dim==='month'){const k=row.monthKey||String(row.date?.getUTCFullYear()||row.year)+'-'+String(row.date?.getUTCMonth()+1||row.month).padStart(2,'0');return {key:k,label:k.slice(5,7)+'/'+k.slice(0,4)};}if(dim==='year'){const k=String(row.year||row.date?.getUTCFullYear());return {key:k,label:k};}if(dim==='rca'){return {key:String(row.rca),label:RCA_BY_CODE.get(row.rca)?.name||row.rcaName||String(row.rca)};}if(dim==='city')return {key:String(row.city||'Sem cidade')+'|'+String(row.uf||''),label:String(row.city||'Sem cidade')+' · '+String(row.uf||''),city:row.city,uf:row.uf};if(dim==='product')return {key:String(row.product),label:row.productName||String(row.product)};if(dim==='client')return {key:String(row.client),label:CLIENTS.get(row.client)?.name||String(row.client)};return {key:String(row[dim]||'Sem informação'),label:String(row[dim]||'Sem informação')};};
+ const groups=(source,dim)=>{const map=new Map();source.forEach(r=>{const k=key(r,dim);if(!map.has(k.key))map.set(k.key,{...k,rows:[]});map.get(k.key).rows.push(r)});return map;};
+ const aggregate=(f,metric,dim)=>{
+ const signature=JSON.stringify([f,metric,dim]);if(cache.has(signature))return cache.get(signature);
+ const same=f===filters,ss=same?sales:filterSales(f),oo=same?open:filterOpenOrders(f),gg=same?goals:filterMetas(f);
+ if(['inactiveShort','inactiveLong','newClients'].includes(metric)){
+  const p=same?(portfolio||(portfolio=carteira(f))):carteira(f);let out=[];
+  if(metric==='newClients'){const period=new Set(ss.map(s=>s.client));const m=new Map();period.forEach(c=>{const first=CLIENT_HISTORY.get(c)?.[0];if(!first)return;if(f.year!=='Todos'&&first.date.getFullYear()!==Number(f.year))return;if(f.month!=='Todos'&&first.date.getMonth()+1!==Number(f.month))return;const rca=CLIENTS.get(c)?.rca??first.rca;m.set(rca,(m.get(rca)||0)+1);});out=dim==='none'?[{key:'total',label:'Total',value:p.kpis.newClients}]:[...m].map(([rca,value])=>({key:String(rca),label:RCA_BY_CODE.get(rca)?.name||String(rca),value}));}
+  else{const field=metric==='inactiveShort'?'short':'long';out=dim==='none'?[{key:'total',label:'Total',value:p.kpis[field]}]:p.byRca.map(r=>({key:String(r.rca),label:r.name,value:r[field]}));}cache.set(signature,out);return out;
+ }
+ const sm=groups(ss,dim),om=groups(oo,dim),gm=groups(gg,dim),keys=new Set(metric==='goal'?[...gm.keys()]:['open','openCount','blocked','pending','released'].includes(metric)?[...om.keys()]:['projection','attainment'].includes(metric)?[...sm.keys(),...om.keys(),...gm.keys()]:[...sm.keys()]);if(dim==='none')keys.add('total');
+ const out=[...keys].map(k=>{const s=sm.get(k),o=om.get(k),g=gm.get(k),sr=s?.rows||[],or=o?.rows||[],gr=g?.rows||[],m=metrics(sr),goal=gr.reduce((a,r)=>a+Number(r.value||0),0),os=openOrderSummary(or,m.revenue,goal);let value;
+ switch(metric){case'revenue':value=m.revenue;break;case'orders':value=m.orders;break;case'clients':value=m.clients;break;case'products':value=m.products;break;case'ticket':value=m.ticket;break;case'mix':value=m.mix;break;case'goal':value=goal;break;case'attainment':value=goal?m.revenue/goal*100:null;break;case'open':value=os.totalOpenValue;break;case'openCount':value=os.totalOpenCount;break;case'blocked':value=os.blockedValue;break;case'pending':value=or.filter(x=>x.status==='PENDENTE').reduce((a,x)=>a+Number(x.value||0),0);break;case'released':value=or.filter(x=>x.status==='LIBERADO').reduce((a,x)=>a+Number(x.value||0),0);break;case'projection':value=os.projected;break;default:value=null;}
+ return {...(s||o||g||{key:k,label:'Total'}),rows:undefined,value};});cache.set(signature,out);return out;
+ };
+ return widgets.slice(0,100).map(w=>{try{
+  if(w.hidden||w.original)return {id:w.id,rows:[]};
+  if(!['none','month','year','rca','supervisor','department','city','uf','product','client','status'].includes(w.dimension))throw Error('Agrupamento inválido.');
+  let rows=aggregate(filters,w.metric,w.dimension).map(x=>({...x})),other=null;
+  if(w.comparison==='goal')other=aggregate(filters,'goal',w.dimension);
+  else if(w.comparison==='previous'||w.comparison==='year'){
+   if(filters.year==='Todos'||(w.comparison==='previous'&&filters.month==='Todos'))throw Error('Selecione ano e mês para esta comparação.');
+   const f={...filters};if(w.comparison==='year')f.year=String(Number(f.year)-1);else{let d=new Date(Date.UTC(Number(f.year),Number(f.month)-2,1));f.year=String(d.getUTCFullYear());f.month=String(d.getUTCMonth()+1);}other=aggregate(f,w.metric,w.dimension);
+  }
+  if(other){const map=new Map(other.map(x=>[x.key,x]));rows.forEach((r,i)=>{let x=map.get(r.key);if(['month','year'].includes(w.dimension))x=other.find(o=>w.dimension==='month'?o.key.slice(5)===r.key.slice(5):true);r.comparison=x?.value??null;r.change=r.comparison>0&&r.value!=null?(r.value/r.comparison-1)*100:null;});}
+  rows.sort((a,b)=>w.sort==='label'?a.key.localeCompare(b.key,'pt-BR',{numeric:true}):(Number(a.value)-Number(b.value))*(w.sort==='asc'?1:-1));
+  return {id:w.id,rows:rows.slice(0,w.type==='map'?600:w.limit||10),total:rows.length,updatedAt:SERVER_UPDATED_AT};
+ }catch(e){return {id:w.id,rows:[],error:e.message};}});
+}
+
 onmessage=async(e)=>{
   const msg=e.data||{};
   if(msg.type==='serverResponse'){
@@ -837,12 +870,13 @@ onmessage=async(e)=>{
       else if(msg.page==='metas')payload=metasPage(f);
       else if(msg.page==='pedidos')payload=ordersPage(f);
       else payload={};
+      payload.bi=biComponents_(f,msg.biWidgets||[]);
       postMessage({type:'result',requestId:msg.requestId,page:msg.page,payload});
     }catch(err){postMessage({type:'queryError',requestId:msg.requestId,message:err?.message||String(err)});}
   }
 };
 </script>
-  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@011128fe41fbe0da0c22d22a06025d8201aa88cd/supervisao-web/gas/gas-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@4a8bcd20bbb2508f8776ef4f1cc0cee002ebd312/supervisao-web/gas/gas-app.js"></script>
 </body>
 </html>
 
