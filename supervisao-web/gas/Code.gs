@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/1952753efc96090733e1c645effc4d1214b8bfca/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/860750cbf3a0689d550208f44732c6342202ad01/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -293,17 +293,18 @@ function dashboardApi(action, payload, token) {
     const user = sessionUser_(token);
     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
     if(action==='logistics')return logisticsApi_(user,payload);
+    if(action==='users')return manageUsers_(user,payload);
+    requireArea_(user,'commercial');
     if(action==='biLayout')return biLayoutApi_(user,payload);
     if(action==='biDiagnostics')return biDiagnostics_(user);
     if (action === 'history') return recoveredMacroHistory_(user);
     if (action === 'historyGeo') return recoveredGeoHistory_(user);
-    if (action === 'users') return manageUsers_(user,payload);
     if (action === 'info') return Object.assign({ ok: true }, datasetInfo_());
     if (action === 'openOrders') { const out=openOrdersData_(); out.orders=out.orders.filter(row=>userAllowsRca_(user,row.rca));return out; }
     if (action === 'page') {const out=datasetPage_(payload.offset,payload.limit);out.records=out.records.filter(row=>userAllowsRecord_(user,row));return out;}
     if (action === 'coverage') {
       if (payload.force === true) CacheService.getScriptCache().remove('DASH_COVERAGE_MATRIX_V1');
-      return coverageData_();
+      const data=coverageData_();if(['SUPERVISOR','RCA'].includes(user.perfil)){const names=readAuxiliary_().rcas.filter(r=>userAllowsRca_(user,r.code)).map(r=>norm_(r.name));data.cities=data.cities.filter(r=>['nutrition','animalHealth','poultry','swine'].some(k=>names.includes(norm_(r[k]))));data.count=data.cities.length;}return data;
     }
     if (action === 'refresh') {
       if (['ADMIN', 'GERENTE'].indexOf(user.perfil) < 0) throw new Error('Seu perfil não pode atualizar as bases.');
@@ -329,7 +330,7 @@ function loginDashboard_(payload) {
     throw new Error('Usuário ou senha inválidos.');
   }
   cache.remove(throttleKey);
-  const user = { login: login, nome: String(record.nome || login), perfil: String(record.perfil || 'RCA').toUpperCase(), cod_rca: record.cod_rca == null ? null : record.cod_rca, supervisor: String(record.supervisor || ''),accessVersion:String(record.accessVersion||'') };
+  const user = publicUser_(login,record);
   const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   cache.put('DASH_SESSION_' + token, JSON.stringify(user), AUTH.sessionTtlSeconds);
   return { ok: true, token: token, user: user };
@@ -339,7 +340,7 @@ function sessionUser_(token) {
   if (!/^[a-f0-9]{64}$/i.test(token)) return null;
   const value = CacheService.getScriptCache().get('DASH_SESSION_' + token);
   if (!value) return null;
-  try { const saved=JSON.parse(value),record=loadUsers_()[saved.login];if(!record||record.ativo!==true||String(record.accessVersion||'')!==String(saved.accessVersion||''))return null;return Object.assign({},saved,{perfil:record.perfil,cod_rca:record.cod_rca,supervisor:record.supervisor}); } catch (err) { return null; }
+  try { const saved=JSON.parse(value),record=loadUsers_()[saved.login];if(!record||record.ativo!==true||String(record.accessVersion||'')!==String(saved.accessVersion||''))return null;return publicUser_(saved.login,record); } catch (err) { return null; }
 }
 function loadUsers_() {
   const cache = CacheService.getScriptCache(), cached = cache.get('DASH_USERS_JSON');
@@ -927,7 +928,7 @@ function instalarFluxoRapidoRbn(){const wanted={sincronizarVendasRbn:1,atualizar
 function inicializarLayoutCacheRbn(){const p=PropertiesService.getScriptProperties(),ss=SpreadsheetApp.openById(CFG.cacheSpreadsheetId),name=p.getProperty('SNAPSHOT_SHEET_NAME'),sheet=ss.getSheetByName(name),count=Number(p.getProperty('SNAPSHOT_RECORD_COUNT')),sales=Number(p.getProperty('SNAPSHOT_SALES_COUNT')),recent=Number(p.getProperty('SNAPSHOT_RECENT_COUNT')),from=previousMonthKey_(new Date());if(p.getProperty('RBN_CACHE_LAYOUT'))return;const headRows=sheet.getRange(2,1,Math.min(10000,count),1).getValues();let head=0;for(const row of headRows){const item=JSON.parse(row[0]);if(item.type==='sale')break;head++;}if(head>=headRows.length||recent>sales)throw new Error('Estrutura do cache não reconhecida.');const history=sales-recent,edge=history?JSON.parse(sheet.getRange(1+head+history,1).getValues()[0][0]):null,next=recent?JSON.parse(sheet.getRange(2+head+history,1).getValues()[0][0]):null;if(edge&&(edge.type!=='sale'||edge.value.date.slice(0,7)>=from))throw new Error('Limite histórico divergente.');if(next&&(next.type!=='sale'||next.value.date.slice(0,7)<from))throw new Error('Limite recente divergente.');const layout={sheet:name,fromMonth:from,recordCount:count,headLength:head,historyCount:history,historyLatest:edge?edge.value.date:null};p.setProperty('RBN_CACHE_LAYOUT',JSON.stringify(layout));console.log(JSON.stringify({layout:layout,updatedAt:p.getProperty('SNAPSHOT_UPDATED_AT'),totals:p.getProperty('SNAPSHOT_RECENT_TOTALS'),goals:readAuxiliary_().goals.filter(g=>g.monthKey==='2026-11').reduce((s,g)=>s+g.value,0)}));}
 
 function userAllowsRca_(user,rca){
- if(['ADMIN','GERENTE'].indexOf(user.perfil)>=0)return true;
+ if(['ADMIN','DIRETOR','GERENTE'].indexOf(user.perfil)>=0)return true;
  if(user.perfil==='RCA')return String(user.cod_rca)===String(rca);
  if(user.perfil==='SUPERVISOR'){
   if(!user._allowed){const cache=CacheService.getScriptCache(),key='DASH_SCOPE_'+digestHex_(user.login+'|'+user.supervisor),saved=cache.get(key);const codes=saved?JSON.parse(saved):readAuxiliary_().rcas.filter(r=>norm_(r.supervisor)===norm_(user.supervisor)&&!!user.supervisor).map(r=>String(r.code));user._allowed=new Set(codes);if(!saved)cache.put(key,JSON.stringify(codes),300);}return user._allowed.has(String(rca));
@@ -935,7 +936,7 @@ function userAllowsRca_(user,rca){
  return false;
 }
 function userAllowsRecord_(user,row){
- if(['ADMIN','GERENTE'].indexOf(user.perfil)>=0)return true;
+ if(['ADMIN','DIRETOR','GERENTE'].indexOf(user.perfil)>=0)return true;
  if(row[0]===4)return true;
  const index={0:2,1:1,2:4,3:3,5:2}[row[0]];
  return index!=null&&userAllowsRca_(user,row[index]);
@@ -947,11 +948,19 @@ function manageUsers_(actor,payload){
   const input=payload.save,login=String(input.login||'').trim().toLowerCase();
   if(!/^[a-z0-9][a-z0-9._@-]{2,99}$/.test(login))throw new Error('Login: use de 3 a 100 caracteres, sem espaços.');
   const perfil=String(input.perfil||'').toUpperCase();
-  if(['ADMIN','GERENTE','SUPERVISOR','RCA'].indexOf(perfil)<0)throw new Error('Perfil inválido.');
+  if(['ADMIN','DIRETOR','GERENTE','SUPERVISOR','RCA','SAC','INTERNO'].indexOf(perfil)<0)throw new Error('Perfil inválido.');
   const old=users[login],record=Object.assign({},old||{},{nome:String(input.nome||'').trim().slice(0,120),perfil:perfil,ativo:input.ativo===true,cod_rca:perfil==='RCA'?Number(input.cod_rca):null,supervisor:perfil==='SUPERVISOR'?String(input.supervisor||''):''});
+  record.areas=['ADMIN','DIRETOR'].includes(perfil)?['commercial','logistics']:Array.isArray(input.areas)?[...new Set(input.areas)].filter(a=>['commercial','logistics'].includes(a)):[];
+  if(!record.areas.length)throw new Error('Selecione pelo menos uma área.');
+  if(['SAC','INTERNO'].includes(perfil))record.areas=['logistics'];
+  if(perfil==='RCA')record.areas=['commercial'];
+  const scope=input.logisticsScope||{},clean=k=>Array.isArray(scope[k])?[...new Set(scope[k].map(x=>String(x).trim()).filter(Boolean))].slice(0,100):[];
+  record.logisticsScope={carriers:clean('carriers'),sellers:['SAC','INTERNO'].includes(perfil)?[]:clean('sellers'),regions:['SAC','INTERNO'].includes(perfil)?[]:clean('regions')};
+  record.editTransport=perfil==='SAC'&&input.editTransport===true;
+  if(perfil==='SUPERVISOR'&&record.areas.includes('logistics')&&!Object.values(record.logisticsScope).some(a=>a.length))throw new Error('Defina o recorte logístico do supervisor.');
   if(!record.nome)throw new Error('Informe o nome.');
   if(perfil==='RCA'&&!aux.rcas.some(r=>Number(r.code)===record.cod_rca))throw new Error('Selecione um RCA válido.');
-  if(perfil==='SUPERVISOR'&&!aux.rcas.some(r=>r.supervisor===record.supervisor&&!!record.supervisor))throw new Error('Selecione uma supervisão válida.');
+  if(perfil==='SUPERVISOR'&&record.areas.includes('commercial')&&!aux.rcas.some(r=>r.supervisor===record.supervisor&&!!record.supervisor))throw new Error('Selecione uma supervisão válida.');
   if(login===actor.login&&(perfil!=='ADMIN'||!record.ativo))throw new Error('Você não pode remover seu próprio acesso administrativo.');
   if(input.credential){
    const p=input.credential;
@@ -966,11 +975,11 @@ function manageUsers_(actor,payload){
   console.log('Usuário atualizado: '+login+' por '+actor.login);
  }
  const updated=loadUsers_();
- return {ok:true,users:Object.keys(updated).map(login=>{const r=updated[login];return {login:login,nome:r.nome,perfil:r.perfil,ativo:r.ativo===true,cod_rca:r.cod_rca,supervisor:r.supervisor};}),rcas:aux.rcas.map(r=>({code:r.code,name:r.name,supervisor:r.supervisor}))};
+ return {ok:true,users:Object.keys(updated).map(login=>{const r=updated[login];return publicUser_(login,r);}),rcas:aux.rcas.map(r=>({code:r.code,name:r.name,supervisor:r.supervisor}))};
 }
 
 function recoveredMacroHistory_(user){
- if(['ADMIN','GERENTE'].indexOf(user.perfil)<0)throw new Error('O histórico macro não possui vínculo com RCA ou supervisão.');
+ if(['ADMIN','DIRETOR','GERENTE'].indexOf(user.perfil)<0)throw new Error('O histórico macro não possui vínculo com RCA ou supervisão.');
  const cache=CacheService.getScriptCache(),key='DASH_RECOVERED_MACRO_V1',saved=cache.get(key);
  if(saved)return JSON.parse(saved);
  const packed=SCRIPT_PROPS.getProperty('RECOVERED_MACRO_MONTHS_V1');if(!packed)throw new Error('Histórico recuperado ainda não foi inicializado.');
@@ -984,7 +993,7 @@ function recoveredMacroHistory_(user){
 
 
 function recoveredGeoHistory_(user){
- if(['ADMIN','GERENTE'].indexOf(user.perfil)<0)throw new Error('O histórico geográfico consolidado exige perfil gerencial.');
+ if(['ADMIN','DIRETOR','GERENTE'].indexOf(user.perfil)<0)throw new Error('O histórico geográfico consolidado exige perfil gerencial.');
  const count=Number(SCRIPT_PROPS.getProperty('RECOVERED_GEO_V1_COUNT')||0);
  if(!count)return {ok:true,monthly:[],available:false};
  if(count<1||count>40)throw new Error('Histórico geográfico inválido.');
@@ -1048,7 +1057,7 @@ function biDiagnostics_(user){
 
 // Módulo logístico: fontes de leitura separadas da base comercial.
 const LOGISTICS_SOURCES={operations:'1HmmIntr9PMEJSk6rAPhWJafTynxmZWUQiehxR1bRZUU',indicators:'1mdgzC1erdRyHiiauwVepFu3odSRU3oM6tpzSa2csxtM',reference:'127enD4Qy-u_9aUNgCEF-Lt57Y2jaKBQ4',geoUrl:'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/7b1b074e704661878a79200f054f762774187c6a/supervisao-web/assets/logistica-ne-2025.geojson.gz.b64'};
-function logisticsAllowed_(user){return !!user&&['ADMIN','GERENTE'].indexOf(user.perfil)>=0;}
+function logisticsAllowed_(user){return !!user&&platformAccess_(user).areas.includes('logistics');}
 function logNorm_(v){return String(v==null?'':v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();}
 function logText_(v){const s=String(v==null?'':v).trim();return s&&s!=='#N/A'?s:'';}
 function logNumber_(v){if(v==null||v==='')return null;if(typeof v==='number')return Number.isFinite(v)?v:null;let s=String(v).trim().replace(/R\$|\s/g,'');if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');const n=Number(s);return Number.isFinite(n)?n:null;}
@@ -1076,13 +1085,16 @@ function logRecords_(values,kind,tz,regionValues){
   const deliveredDate=D('DATA ENTREGA'),sla=T('STATUS SLA'),status=T('STATUS TRANSPORTADORA')||sla||'Sem status',forecast=D('PRAZO INTERNO REBANHO')||D('PREVISÃO TRANSPORTADORA'),today=Utilities.formatDate(new Date(),tz||'America/Fortaleza','yyyy-MM-dd');
   const onTime=!!deliveredDate&&/NO PRAZO/.test(logNorm_(sla)),late=!!deliveredDate&&/FORA|ATRAS/.test(logNorm_(sla)),overdue=!deliveredDate&&!!forecast&&forecast<today;
   const loc=logCity_(T('CIDADE'));loc.uf=T('UF')||loc.uf;
-  return [{id:T('CHAVE')||'tr_'+(i+2),invoice:T('NF'),client:T('CLIENTE'),...loc,cityLabel:T('CIDADE'),date:D('EMISSÃO')||D('DATA COLETA')||deliveredDate,issued:D('EMISSÃO'),collected:D('DATA COLETA'),forecast,deliveredDate,delivered:!!deliveredDate,weight:N('PESO'),volumes:N('VOLUMES'),freight:N('FRETE TOTAL'),goods:N('VALOR MERCADORIA'),status,sla,delay:N('DIAS ATRASO'),onTime,late,overdue,carrier:T('TRANSPORTADORA'),problem:T('OCORRÊNCIA')||T('PROBLEMA / OBSERVAÇÃO'),category:T('CATEGORIA OCORRÊNCIA'),responsible:T('RESPONSÁVEL OCORRÊNCIA'),follow:T('FOLLOW UP / OCORRÊNCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),cargoType:T('TIPO DE CARGA'),seller:T('RCA'),occurrence:logProblem_(T('OCORRÊNCIA'))||logProblem_(T('PROBLEMA / OBSERVAÇÃO'))}];
+  return [{id:T('CHAVE')||'tr_'+(i+2),invoice:T('NF'),client:T('CLIENTE'),...loc,cityLabel:T('CIDADE'),date:D('EMISSÃO')||D('DATA COLETA')||deliveredDate,issued:D('EMISSÃO'),collected:D('DATA COLETA'),forecast,deliveredDate,delivered:!!deliveredDate,weight:N('PESO'),volumes:N('VOLUMES'),freight:N('FRETE TOTAL'),goods:N('VALOR MERCADORIA'),status,sla,delay:N('DIAS ATRASO'),onTime,late,overdue,carrier:T('TRANSPORTADORA'),manualOccurrence:T('OCORRÊNCIA'),notes:T('PROBLEMA / OBSERVAÇÃO'),problem:T('OCORRÊNCIA')||T('PROBLEMA / OBSERVAÇÃO'),category:T('CATEGORIA OCORRÊNCIA'),responsible:T('RESPONSÁVEL OCORRÊNCIA'),follow:T('FOLLOW UP / OCORRÊNCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),cargoType:T('TIPO DE CARGA'),seller:T('RCA'),occurrence:logProblem_(T('OCORRÊNCIA'))||logProblem_(T('PROBLEMA / OBSERVAÇÃO'))}];
  });
 }
 function logisticsApi_(user,payload){
  if(!logisticsAllowed_(user))throw new Error('Este módulo está disponível para os perfis de gestão.');
  const p=payload||{},kind=p.kind||'operations',props=PropertiesService.getScriptProperties();
+ if(platformAccess_(user).transportOnly&&!['transport','geo'].includes(kind))throw new Error('Seu acesso está limitado às transportadoras.');
+ if(kind==='schedule'&&user.perfil==='SUPERVISOR')throw new Error('A agenda geral exige visão de toda a área.');
  const ids={operations:props.getProperty('LOG_OPERATIONS_ID')||LOGISTICS_SOURCES.operations,indicators:props.getProperty('LOG_INDICATORS_ID')||LOGISTICS_SOURCES.indicators};
+ if(['editRead','editSave'].includes(p.action))return transportEdit_(user,p,ids.indicators);
  if(p.action==='configure'){
   if(user.perfil!=='ADMIN')throw new Error('Somente o administrador pode configurar fontes.');
   const a=String(p.operationsId||ids.operations).trim(),b=String(p.indicatorsId||ids.indicators).trim();if(!/^[\w-]{20,}$/.test(a)||!/^[-\w]{20,}$/.test(b))throw new Error('Informe o ID de uma planilha Google.');
@@ -1090,10 +1102,11 @@ function logisticsApi_(user,payload){
   props.setProperties({LOG_OPERATIONS_ID:a,LOG_INDICATORS_ID:b});return {ok:true,message:'Fontes de leitura atualizadas.'};
  }
  if(kind==='geo'){const response=UrlFetchApp.fetch(LOGISTICS_SOURCES.geoUrl,{muteHttpExceptions:true});if(response.getResponseCode()!==200)throw new Error('Não foi possível carregar a malha municipal.');const bytes=Utilities.base64Decode(response.getContentText().trim());return {ok:true,geo:JSON.parse(Utilities.ungzip(Utilities.newBlob(bytes,'application/gzip')).getDataAsString('UTF-8'))};}
+ if(kind==='sources'&&user.perfil!=='ADMIN')throw new Error('Somente o administrador acessa as fontes.');
  if(kind==='sources')return {ok:true,ids,reference:LOGISTICS_SOURCES.reference,readOnly:true};
  if(!['operations','formations','transport','schedule'].includes(kind))throw new Error('Fonte logística inválida.');
  // Consulta somente planilhas, usando as permissões que o módulo comercial já possui.
- const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S4_'+digestHex_(id+'|'+kind).slice(0,24);
+ const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S5_'+digestHex_(id+'|'+kind).slice(0,24);
  let meta=cache.get(base+'_M');meta=meta?JSON.parse(meta):null;let rows=null;
  if(meta&&p.force!==true){const keys=Array.from({length:meta.parts},(_,i)=>base+'_'+i),saved=cache.getAll(keys);if(keys.every(k=>saved[k]!=null)){try{rows=JSON.parse(keys.map(k=>saved[k]).join(''));}catch(e){rows=null;}}}
  if(!rows){
@@ -1105,6 +1118,10 @@ function logisticsApi_(user,payload){
   meta={count:rows.length,version,parts:Math.ceil(json.length/45000),updatedAt:stamp,checkedAt:stamp,sourceTimestampKind:'read',sourceId:id,sourceName:ss.getName(),sheet:sheetName,from:dates[0]||'',to:dates.at(-1)||'',reference:false,referenceUpdatedAt:'2026-09-10T20:24:33.252Z'};parts[base+'_M']=JSON.stringify(meta);
   try{cache.putAll(parts,180);}catch(e){console.warn('Cache logístico indisponível: '+e.message);}
  }
+ rows=rows.filter(r=>logisticsRowAllowed_(user,r,kind));
+ const dates=rows.map(r=>r.date).filter(Boolean).sort();
+ meta=Object.assign({},meta,{count:rows.length,from:dates[0]||'',to:dates.at(-1)||'',version:digestHex_(meta.version+'|'+user.login+'|'+String(user.accessVersion||'')).slice(0,24)});
+ if(user.perfil!=='ADMIN'){delete meta.sourceId;delete meta.parts;}
  const version=meta.version;
  if(p.version===version&&p.check===true)return {ok:true,unchanged:true,meta};
  return {ok:true,meta,rows};
@@ -1116,3 +1133,53 @@ function verificarFontesLogisticaRbn(){const result={};for(const kind of ['opera
 
 // Conecta as duas fontes solicitadas e valida a leitura sem alterar suas células.
 function conectarBasesLogisticaRbn(){const r=logisticsApi_({perfil:'ADMIN'},{action:'configure',operationsId:LOGISTICS_SOURCES.operations,indicatorsId:LOGISTICS_SOURCES.indicators});console.log(r.message);return verificarFontesLogisticaRbn();}
+
+
+// Plataforma: autorização central por área, perfil e recorte.
+function platformAccess_(record){
+ const role=String(record.perfil||'RCA').toUpperCase(),all=['ADMIN','DIRETOR'].includes(role);
+ const areas=all?['commercial','logistics']:['SAC','INTERNO'].includes(role)?['logistics']:role==='RCA'?['commercial']:Array.isArray(record.areas)?record.areas.filter(a=>['commercial','logistics'].includes(a)):role==='GERENTE'?['commercial','logistics']:['SAC','INTERNO'].includes(role)?['logistics']:['commercial'];
+ const s=record.logisticsScope||{},list=k=>Array.isArray(s[k])?s[k].map(String).filter(Boolean):[];
+ return {areas,transportOnly:['SAC','INTERNO'].includes(role),editTransport:role==='SAC'&&record.editTransport===true,logisticsScope:{carriers:list('carriers'),sellers:list('sellers'),regions:list('regions')}};
+}
+function publicUser_(login,r){return Object.assign({login,nome:String(r.nome||login),perfil:String(r.perfil||'RCA').toUpperCase(),ativo:r.ativo===true,cod_rca:r.cod_rca==null?null:r.cod_rca,supervisor:String(r.supervisor||''),accessVersion:String(r.accessVersion||'')},platformAccess_(r));}
+function requireArea_(user,area){if(!user||!platformAccess_(user).areas.includes(area))throw new Error('Seu usuário não tem acesso a esta área.');}
+function logisticsRowAllowed_(user,row,kind){
+ const a=platformAccess_(user);if(!a.areas.includes('logistics')||a.transportOnly&&kind!=='transport')return false;
+ if(['ADMIN','DIRETOR'].includes(user.perfil))return true;
+ const s=a.logisticsScope;
+ if(user.perfil==='SUPERVISOR'&&!s.carriers.length&&!s.sellers.length&&!s.regions.length)return false;
+ return (!s.carriers.length||s.carriers.some(x=>logNorm_(x)===logNorm_(row.carrier)))&&(!s.sellers.length||s.sellers.some(x=>logNorm_(x)===logNorm_(row.seller)))&&(!s.regions.length||s.regions.some(x=>logNorm_(x)===logNorm_(row.region)));
+}
+const SAC_FIELDS=[['manualOccurrence','OCORRÊNCIA'],['category','CATEGORIA OCORRÊNCIA'],['responsible','RESPONSÁVEL OCORRÊNCIA'],['follow','FOLLOW UP / OCORRÊNCIA'],['checker','CONFERENTE'],['picker','SEPARADOR'],['cargoType','TIPO DE CARGA'],['notes','PROBLEMA / OBSERVAÇÃO']];
+function transportEdit_(user,p,id){
+ if(!platformAccess_(user).editTransport)throw new Error('Somente o SAC autorizado pode preencher os campos manuais.');
+ const sh=SpreadsheetApp.openById(id).getSheetByName('ACOMPANHAMENTO');if(!sh)throw new Error('Aba de acompanhamento ausente.');
+ const key=String(p.key||'');if(!key||key.length>200)throw new Error('Identificador da nota inválido.');
+ const lock=LockService.getScriptLock();if(!lock.tryLock(10000))throw new Error('Outra gravação está em andamento. Tente novamente.');
+ try{
+  const hits=sh.getRange(2,1,Math.max(1,sh.getLastRow()-1),1).createTextFinder(key).matchEntireCell(true).useRegularExpression(false).findAll();
+  if(hits.length!==1)throw new Error('Nota ausente ou chave duplicada. Atualize a tela antes de editar.');
+  const n=hits[0].getRow(),head=sh.getRange(1,1,1,36).getDisplayValues()[0],raw=sh.getRange(n,1,1,36).getValues()[0],row=logRecords_([head,raw],'transport',sh.getParent().getSpreadsheetTimeZone(),[])[0];
+  if(!row||!logisticsRowAllowed_(user,row,'transport'))throw new Error('Esta nota está fora do seu recorte de acesso.');
+  const range=sh.getRange(n,28,1,8),values=range.getDisplayValues()[0],formulas=range.getFormulas()[0],rules=range.getDataValidations()[0];
+  if(SAC_FIELDS.some((f,i)=>logNorm_(head[i+27])!==logNorm_(f[1])))throw new Error('A estrutura da planilha mudou. A gravação foi interrompida.');
+  const version=digestHex_(JSON.stringify([key,raw[2],values]));
+  const fields=SAC_FIELDS.map(([name,label],i)=>{const rule=rules[i];let options=null;
+   if(rule){const type=String(rule.getCriteriaType()),args=rule.getCriteriaValues();if(type==='VALUE_IN_LIST')options=args[0].map(String);else if(type==='VALUE_IN_RANGE')options=args[0].getDisplayValues().flat().filter(Boolean);else throw new Error('Validação não suportada no campo '+label+'.');}
+   return {name,label,value:values[i],options,readOnly:!!formulas[i]};});
+  if(p.action==='editRead')return {ok:true,key,version,fields,invoice:row.invoice,client:row.client,carrier:row.carrier};
+  if(p.action!=='editSave')throw new Error('Ação de edição inválida.');
+  if(p.version!==version)throw new Error('A nota foi alterada na planilha. Feche e abra novamente para revisar os valores atuais.');
+  const input=p.values;if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!SAC_FIELDS.some(f=>f[0]===k)))throw new Error('Campos de gravação inválidos.');
+  const next=values.slice();fields.forEach((f,i)=>{if(!Object.prototype.hasOwnProperty.call(input,f.name))return;const v=String(input[f.name]??'').trim();if(v.length>2000)throw new Error('O campo '+f.label+' excede 2.000 caracteres.');if(v!==values[i]&&f.readOnly)throw new Error('O campo '+f.label+' contém fórmula e não pode ser editado.');if(v!==values[i]&&v&&f.options&&!f.options.includes(v))throw new Error('Escolha uma opção válida para '+f.label+'.');next[i]=v;});
+  if(next.every((v,i)=>v===values[i]))return {ok:true,message:'Nenhuma alteração para salvar.'};
+  if(String(sh.getRange(n,1).getDisplayValue())!==key||digestHex_(JSON.stringify(range.getDisplayValues()[0]))!==digestHex_(JSON.stringify(values)))throw new Error('A planilha mudou durante a edição. Reabra a nota.');
+  // Texto literal evita que entradas do usuário sejam interpretadas como fórmulas.
+  const safe=next.map((v,i)=>formulas[i]||(/^[=+@-]/.test(v)?"'"+v:v));range.setValues([safe]);SpreadsheetApp.flush();
+  const verified=range.getDisplayValues()[0];if(!next.every((v,i)=>formulas[i]||verified[i]===v))throw new Error('Revise a planilha: não foi possível confirmar todos os campos gravados.');
+  const audit=rbnLoadState_('LOG_SAC_AUDIT')||[];audit.unshift({at:new Date().toISOString(),by:user.login,key,fields:fields.filter((f,i)=>next[i]!==values[i]).map(f=>f.name)});while(audit.length>100||JSON.stringify(audit).length>30000)audit.pop();rbnSaveState_('LOG_SAC_AUDIT',audit);
+  const base='LOG_S5_'+digestHex_(id+'|transport').slice(0,24);CacheService.getScriptCache().remove(base+'_M');
+  return {ok:true,message:'Campos salvos na planilha de transportadoras.',updatedAt:new Date().toISOString()};
+ }finally{lock.releaseLock();}
+}
