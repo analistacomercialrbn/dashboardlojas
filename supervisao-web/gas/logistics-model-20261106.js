@@ -3,8 +3,8 @@ function logPlanningRows(rows,kind=LOG.kind){return kind==='transport'?rows.filt
 function logInvoiceParts(value){
  const s=normalize(String(value||'')).replace(/\b(NF-E|NFE|NOTA FISCAL|NF)\b/g,'').trim();
  if(!s)return [];
- const parts=s.split(/\s*[,;/\n+]\s*/).filter(Boolean),out=[];
- for(const p of parts){const m=p.match(/^(\d+)(?:\s*-\s*(\d+))?$/);if(!m)return [];out.push({number:String(Number(m[1])),series:m[2]==null?'':String(Number(m[2]))});}
+ const parts=s.split(/\s*[,;\n+]\s*/).filter(Boolean),out=[];
+ for(const p of parts){const m=p.match(/^(\d+)(?:\s*-\s*(\d+))?$/);if(!m||Number(m[1])<=0)return [];out.push({number:String(Number(m[1])),series:m[2]==null?'':String(Number(m[2]))});}
  return out;
 }
 function logDeliveryConsolidation(operations,transport){
