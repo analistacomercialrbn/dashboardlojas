@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/e4dba9c2ba219431e42e90594b5211412767ff38/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/b2765e95d85cc9fae660c02d529f7f97af185f18/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -1099,6 +1099,7 @@ function logisticsApi_(user,payload){
  if(platformAccess_(user).transportOnly&&!['transport','geo'].includes(kind))throw new Error('Seu acesso está limitado às transportadoras.');
  if(kind==='schedule'&&user.perfil==='SUPERVISOR')throw new Error('A agenda geral exige visão de toda a área.');
  const ids={operations:props.getProperty('LOG_OPERATIONS_ID')||LOGISTICS_SOURCES.operations,indicators:props.getProperty('LOG_INDICATORS_ID')||LOGISTICS_SOURCES.indicators};
+ if(['batchRead','batchSave'].includes(p.action))return transportBatch_(user,p,ids.indicators);
  if(['editRead','editSave'].includes(p.action))return transportEdit_(user,p,ids.indicators);
  if(p.action==='configure'){
   if(user.perfil!=='ADMIN')throw new Error('Somente o administrador pode configurar fontes.');
@@ -1203,3 +1204,54 @@ function sincronizarVendasRbn(event){requireInstalledClock_(event,'sincronizarVe
 function atualizarCacheVendasRbn(event){requireInstalledClock_(event,'atualizarCacheVendasRbn');atualizarCacheVendasRbn_();return {ok:true};}
 function sincronizarMetasRbn(event){requireInstalledClock_(event,'sincronizarMetasRbn');sincronizarMetasRbn_();return {ok:true};}
 function continuarAtualizacaoRbn(event){requireInstalledClock_(event,'continuarAtualizacaoRbn');continuarAtualizacaoRbn_();return {ok:true};}
+
+// SAC: leitura e gravação em lote com o mesmo recorte da edição individual.
+function transportBatch_(user,p,id){
+ if(!platformAccess_(user).editTransport)throw new Error('Somente o SAC autorizado pode preencher os campos manuais.');
+ if(p.kind!=='transport')throw new Error('Fonte de edição inválida.');
+ if(!Array.isArray(p.keys)||!p.keys.length||p.keys.length>500||p.keys.some(k=>typeof k!=='string'||!k||k.length>200)||new Set(p.keys).size!==p.keys.length)throw new Error('Selecione de 1 a 500 notas distintas.');
+ const lock=LockService.getScriptLock();if(!lock.tryLock(10000))throw new Error('Outra gravação está em andamento. Tente novamente.');
+ let wrote=false;
+ try{
+  const sh=SpreadsheetApp.openById(id).getSheetByName('ACOMPANHAMENTO');if(!sh)throw new Error('Aba de acompanhamento ausente.');
+  const total=sh.getLastRow();if(total<2)throw new Error('Nenhuma nota disponível.');
+  const grid=sh.getRange(1,1,total,36),raw=grid.getValues(),display=grid.getDisplayValues(),head=display[0],manual=sh.getRange(2,28,total-1,8),formulas=manual.getFormulas(),rules=manual.getDataValidations();
+  if(SAC_FIELDS.some((f,i)=>logNorm_(head[i+27])!==logNorm_(f[1])))throw new Error('A estrutura da planilha mudou. Atualize a tela.');
+  const indices=new Map();display.slice(1).forEach((r,i)=>{const key=transportRowKey_(r.slice(0,7));if(!indices.has(key))indices.set(key,[]);indices.get(key).push(i+1);});
+  const items=p.keys.map(key=>{
+   const hits=indices.get(key)||[];if(hits.length!==1)throw new Error('Nota ausente ou chave duplicada. Atualize a seleção.');
+   const i=hits[0],record=logRecords_([raw[0],raw[i]],'transport',sh.getParent().getSpreadsheetTimeZone(),[])[0];
+   if(!record||!logisticsRowAllowed_(user,record,'transport'))throw new Error('Uma nota está fora do seu recorte de acesso.');
+   const values=display[i].slice(27,35),rowFormulas=formulas[i-1],fields=SAC_FIELDS.map(([name,label],j)=>{
+    let options=null;const rule=rules[i-1][j];if(rule){const type=String(rule.getCriteriaType()),args=rule.getCriteriaValues();if(type==='VALUE_IN_LIST')options=args[0].map(String);else if(type==='VALUE_IN_RANGE')options=args[0].getDisplayValues().flat().filter(Boolean);else throw new Error('Validação não suportada no campo '+label+'.');}
+    return {name,label,value:values[j],readOnly:!!rowFormulas[j],options};
+   });
+   const version=digestHex_(JSON.stringify([key,raw[i][2],values,rowFormulas,fields.map(f=>f.options)]));
+   return {key,version,invoice:record.invoice,client:record.client,n:i+1,values,formulas:rowFormulas,fields};
+  });
+  if(p.action==='batchRead')return {ok:true,items:items.map(x=>({key:x.key,version:x.version,invoice:x.invoice,client:x.client})),fields:SAC_FIELDS.map(([name,label],j)=>{
+   const fs=items.map(x=>x.fields[j]),restricted=fs.filter(f=>f.options!==null);return {name,label,readOnly:fs.some(f=>f.readOnly),filled:fs.filter(f=>String(f.value||'').trim()).length,options:restricted.length?[...new Set(restricted[0].options)].filter(v=>restricted.every(f=>f.options.includes(v))):null};
+  })};
+  if(p.action!=='batchSave')throw new Error('Ação de edição inválida.');
+  const changes=p.changes;if(!changes||typeof changes!=='object'||Array.isArray(changes)||!Object.keys(changes).length||Object.keys(changes).some(k=>!SAC_FIELDS.some(f=>f[0]===k)))throw new Error('Campos de gravação inválidos.');
+  if(!p.versions||typeof p.versions!=='object'||Array.isArray(p.versions))throw new Error('Reabra o lote para conferir os valores atuais.');
+  const clean={};Object.entries(changes).forEach(([name,c])=>{if(!c||typeof c!=='object'||typeof c.value!=='string'||!c.value.trim()||c.value.trim().length>2000||!['replace',...(name==='follow'?['append']:[])].includes(c.mode))throw new Error('Preencha corretamente os campos marcados.');clean[name]={value:c.value.trim(),mode:c.mode};});
+  items.forEach(x=>{
+   if(p.versions[x.key]!==x.version)throw new Error('Uma nota foi alterada na planilha. Reabra o lote antes de salvar.');
+   x.next=x.values.slice();x.changed=[];x.fields.forEach((f,j)=>{const c=clean[f.name];if(!c)return;if(f.readOnly)throw new Error('O campo '+f.label+' contém fórmula em uma nota.');const v=c.mode==='append'&&x.values[j]?x.values[j]+'\n'+c.value:c.value;if(v.length>2000)throw new Error('O campo '+f.label+' excede 2.000 caracteres após o preenchimento.');if(f.options&&!f.options.includes(v))throw new Error('Escolha uma opção válida para '+f.label+'.');x.next[j]=v;if(v!==x.values[j])x.changed.push(j);});
+  });
+  let updated=0,unchanged=0;const failed=[],auditRows=[];
+  for(const x of items){
+   if(!x.changed.length){unchanged++;continue;}
+   try{
+    const current=sh.getRange(x.n,1,1,36),now=current.getDisplayValues()[0],nowFormulas=sh.getRange(x.n,28,1,8).getFormulas()[0];
+    if(transportRowKey_(now.slice(0,7))!==x.key||JSON.stringify(now.slice(27,35))!==JSON.stringify(x.values)||JSON.stringify(nowFormulas)!==JSON.stringify(x.formulas))throw new Error('Nota alterada durante o salvamento.');
+    for(const j of x.changed){wrote=true;const v=x.next[j];sh.getRange(x.n,28+j).setValue(/^[=+@-]/.test(v)?"'"+v:v);}
+    SpreadsheetApp.flush();const verified=sh.getRange(x.n,28,1,8).getDisplayValues()[0];if(!x.changed.every(j=>verified[j]===x.next[j]))throw new Error('Gravação não confirmada.');
+    updated++;auditRows.push({at:new Date().toISOString(),by:user.login,key:x.key,fields:x.changed.map(j=>SAC_FIELDS[j][0]),batch:true});
+   }catch(err){failed.push({key:x.key,invoice:x.invoice});}
+  }
+  let auditWarning=false;if(auditRows.length)try{const audit=auditRows.concat(rbnLoadState_('LOG_SAC_AUDIT')||[]);while(audit.length>100||JSON.stringify(audit).length>30000)audit.pop();rbnSaveState_('LOG_SAC_AUDIT',audit);}catch(err){auditWarning=true;}
+  return {ok:true,updated,unchanged,failed,partial:failed.length>0,auditWarning};
+ }finally{if(wrote)try{CacheService.getScriptCache().remove('LOG_S7_'+digestHex_(id+'|transport').slice(0,24)+'_M');}catch(err){}lock.releaseLock();}
+}
