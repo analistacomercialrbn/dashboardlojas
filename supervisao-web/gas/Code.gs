@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/129acd8acfadc7c9679a2a824eca8fffdc6df04e/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/be3ce749b8e1791e71a1e257fe17f34fc00b3afe/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -1047,7 +1047,7 @@ function biDiagnostics_(user){
 }
 
 // Módulo logístico: fontes de leitura separadas da base comercial.
-const LOGISTICS_SOURCES={operations:'1HmmIntr9PMEJSk6rAPhWJafTynxmZWUQiehxR1bRZUU',indicators:'1QONSaMv3miwHb3o9kCYHr0s_dDc4eaJFDAhfx22wZhs',reference:'127enD4Qy-u_9aUNgCEF-Lt57Y2jaKBQ4',geo:'1syIzmYAeSd6_LS0d3P-yO411KsVzDP5K'};
+const LOGISTICS_SOURCES={operations:'1HmmIntr9PMEJSk6rAPhWJafTynxmZWUQiehxR1bRZUU',indicators:'1QONSaMv3miwHb3o9kCYHr0s_dDc4eaJFDAhfx22wZhs',reference:'127enD4Qy-u_9aUNgCEF-Lt57Y2jaKBQ4',geoUrl:'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/7b1b074e704661878a79200f054f762774187c6a/supervisao-web/assets/logistica-ne-2025.geojson.gz.b64'};
 function logisticsAllowed_(user){return !!user&&['ADMIN','GERENTE'].indexOf(user.perfil)>=0;}
 function logNorm_(v){return String(v==null?'':v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();}
 function logText_(v){const s=String(v==null?'':v).trim();return s&&s!=='#N/A'?s:'';}
@@ -1087,25 +1087,26 @@ function logisticsApi_(user,payload){
   const ops=SpreadsheetApp.openById(a),ind=SpreadsheetApp.openById(b);if(!ops.getSheetByName('FORMAÇÃO 2026')||!ops.getSheetByName('CADASTRO REGIAO'))throw new Error('A fonte operacional precisa das abas FORMAÇÃO 2026 e CADASTRO REGIAO.');if(!ind.getSheetByName('Formação de Carga')||!ind.getSheetByName('Transportadoras'))throw new Error('A fonte de indicadores precisa das abas Formação de Carga e Transportadoras.');
   props.setProperties({LOG_OPERATIONS_ID:a,LOG_INDICATORS_ID:b});return {ok:true,message:'Fontes de leitura atualizadas.'};
  }
- if(kind==='geo'){return {ok:true,geo:JSON.parse(DriveApp.getFileById(LOGISTICS_SOURCES.geo).getBlob().getDataAsString())};}
+ if(kind==='geo'){const response=UrlFetchApp.fetch(LOGISTICS_SOURCES.geoUrl,{muteHttpExceptions:true});if(response.getResponseCode()!==200)throw new Error('Não foi possível carregar a malha municipal.');const bytes=Utilities.base64Decode(response.getContentText().trim());return {ok:true,geo:JSON.parse(Utilities.ungzip(Utilities.newBlob(bytes,'application/gzip')).getDataAsString('UTF-8'))};}
  if(kind==='sources')return {ok:true,ids,reference:LOGISTICS_SOURCES.reference,readOnly:true};
  if(!['operations','formations','transport','schedule'].includes(kind))throw new Error('Fonte logística inválida.');
- const id=['operations','schedule'].includes(kind)?ids.operations:ids.indicators,file=DriveApp.getFileById(id),stamp=file.getLastUpdated().toISOString(),cache=CacheService.getScriptCache(),version=digestHex_(id+'|'+kind+'|'+stamp).slice(0,24),base='LOG_V1_'+version;
- if(p.version&&!p.check&&p.version!==version)throw new Error('A fonte mudou durante a leitura. Recarregue a tela.');
+ // Consulta somente planilhas, usando as permissões que o módulo comercial já possui.
+ const id=['operations','schedule'].includes(kind)?ids.operations:ids.indicators,cache=CacheService.getScriptCache(),base='LOG_S2_'+digestHex_(id+'|'+kind).slice(0,24);
  let meta=cache.get(base+'_M');meta=meta?JSON.parse(meta):null;let rows=null;
  if(meta&&p.force!==true){const keys=Array.from({length:meta.parts},(_,i)=>base+'_'+i),saved=cache.getAll(keys);if(keys.every(k=>saved[k]!=null)){try{rows=JSON.parse(keys.map(k=>saved[k]).join(''));}catch(e){rows=null;}}}
  if(!rows){
   const ss=SpreadsheetApp.openById(id),sheetName={operations:'FORMAÇÃO 2026',formations:'Formação de Carga',transport:'Transportadoras',schedule:'DESTINO MOTORISTAS'}[kind],sh=ss.getSheetByName(sheetName);if(!sh)throw new Error('Aba ausente: '+sheetName);
-  const values=sh.getRange(1,1,Math.max(1,sh.getLastRow()),Math.min(sh.getLastColumn(),kind==='operations'?23:kind==='transport'?24:kind==='formations'?11:27)).getValues();
+  const values=sh.getRange(1,1,Math.max(1,sh.getLastRow()),Math.min(sh.getLastColumn(),kind==='operations'?23:kind==='transport'?24:kind==='formations'?11:27)).getValues(),regions=kind==='operations'?ss.getSheetByName('CADASTRO REGIAO').getDataRange().getValues():[];
   if(kind==='schedule'){const hs=values[0]||[];rows=values.slice(1).flatMap((r,i)=>hs.slice(2).flatMap((h,j)=>logText_(h)&&logText_(r[j+2])?[{id:'ag_'+i+'_'+j,date:logDate_(r[0],ss.getSpreadsheetTimeZone()),driver:logText_(h),destination:logText_(r[j+2])}]:[]));}
-  else rows=logRecords_(values,kind,ss.getSpreadsheetTimeZone(),kind==='operations'?ss.getSheetByName('CADASTRO REGIAO').getDataRange().getValues():[]);
-  const dates=rows.map(x=>x.date).filter(Boolean).sort(),json=JSON.stringify(rows),parts={};for(let i=0;i<json.length;i+=45000)parts[base+'_'+(i/45000)]=json.slice(i,i+45000);
-  meta={count:rows.length,version,parts:Math.ceil(json.length/45000),updatedAt:stamp,checkedAt:new Date().toISOString(),sourceId:id,sourceName:file.getName(),sheet:sheetName,from:dates[0]||'',to:dates.at(-1)||'',reference:ids.indicators===LOGISTICS_SOURCES.indicators&&!['operations','schedule'].includes(kind),referenceUpdatedAt:'2026-09-10T20:24:33.252Z'};parts[base+'_M']=JSON.stringify(meta);
+  else rows=logRecords_(values,kind,ss.getSpreadsheetTimeZone(),regions);
+  const dates=rows.map(x=>x.date).filter(Boolean).sort(),json=JSON.stringify(rows),version=digestHex_(id+'|'+kind+'|'+json).slice(0,24),stamp=new Date().toISOString(),parts={};for(let i=0;i<json.length;i+=45000)parts[base+'_'+(i/45000)]=json.slice(i,i+45000);
+  meta={count:rows.length,version,parts:Math.ceil(json.length/45000),updatedAt:stamp,checkedAt:stamp,sourceTimestampKind:'read',sourceId:id,sourceName:ss.getName(),sheet:sheetName,from:dates[0]||'',to:dates.at(-1)||'',reference:ids.indicators===LOGISTICS_SOURCES.indicators&&!['operations','schedule'].includes(kind),referenceUpdatedAt:'2026-09-10T20:24:33.252Z'};parts[base+'_M']=JSON.stringify(meta);
   try{cache.putAll(parts,180);}catch(e){console.warn('Cache logístico indisponível: '+e.message);}
  }
+ const version=meta.version;
  if(p.version===version&&p.check===true)return {ok:true,unchanged:true,meta};
  return {ok:true,meta,rows};
 }
 
 // Verificação manual de leitura das fontes, sem gravar nas planilhas.
-function verificarFontesLogisticaRbn(){const result={};for(const kind of ['operations','formations','transport','schedule']){try{const r=logisticsApi_({perfil:'ADMIN'},{kind});result[kind]={count:r.rows.length,updatedAt:r.meta.updatedAt,from:r.meta.from,to:r.meta.to,weight:r.rows.reduce((s,x)=>s+(x.weight||0),0),delivered:r.rows.filter(x=>x.delivered).length,onTime:r.rows.filter(x=>x.onTime).length,late:r.rows.filter(x=>x.late).length,occurrences:r.rows.filter(x=>x.occurrence).length};}catch(e){result[kind]={error:e.message};}}console.log(JSON.stringify(result));return result;}
+function verificarFontesLogisticaRbn(){const result={};for(const kind of ['operations','formations','transport','schedule']){try{const r=logisticsApi_({perfil:'ADMIN'},{kind});result[kind]={count:r.rows.length,updatedAt:r.meta.updatedAt,from:r.meta.from,to:r.meta.to,weight:r.rows.reduce((s,x)=>s+(x.weight||0),0),delivered:r.rows.filter(x=>x.delivered).length,onTime:r.rows.filter(x=>x.onTime).length,late:r.rows.filter(x=>x.late).length,occurrences:r.rows.filter(x=>x.occurrence).length};}catch(e){result[kind]={error:e.message};}}try{const geo=logisticsApi_({perfil:'ADMIN'},{kind:'geo'});result.geo={features:geo.geo.features.length};}catch(e){result.geo={error:e.message};}console.log(JSON.stringify(result));return result;}
