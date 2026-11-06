@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/ea3e9d18a272cfd484afa87251827091eb9bce17/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/94ea3a05affa4dd92d38c8aa0e18347f70c3ae51/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -1052,7 +1052,7 @@ function logisticsAllowed_(user){return !!user&&['ADMIN','GERENTE'].indexOf(user
 function logNorm_(v){return String(v==null?'':v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();}
 function logText_(v){const s=String(v==null?'':v).trim();return s&&s!=='#N/A'?s:'';}
 function logNumber_(v){if(v==null||v==='')return null;if(typeof v==='number')return Number.isFinite(v)?v:null;let s=String(v).trim().replace(/R\$|\s/g,'');if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');const n=Number(s);return Number.isFinite(n)?n:null;}
-function logDate_(v,tz){if(v==null||v==='')return '';if(v instanceof Date)return isNaN(v)?'':Utilities.formatDate(v,tz||'America/Fortaleza','yyyy-MM-dd');if(typeof v==='number'){if(v<30000||v>70000)return '';return new Date(Date.UTC(1899,11,30)+v*86400000).toISOString().slice(0,10);}const s=String(v).trim();if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);if(!m)return '';return (m[3].length===2?'20'+m[3]:m[3])+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');}
+function logDate_(v,tz){if(v==null||v==='')return '';const clean=x=>{if(!/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(x))return '';const d=new Date(x+'T12:00:00Z');return !isNaN(d)&&d.toISOString().slice(0,10)===x?x:'';};if(v instanceof Date)return isNaN(v)?'':clean(Utilities.formatDate(v,tz||'America/Fortaleza','yyyy-MM-dd'));if(typeof v==='number'){if(v<30000||v>70000)return '';return clean(new Date(Date.UTC(1899,11,30)+v*86400000).toISOString().slice(0,10));}const s=String(v).trim();if(/^\d{4}-\d{2}-\d{2}/.test(s))return clean(s.slice(0,10));const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);return m?clean((m[3].length===2?'20'+m[3]:m[3])+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0')):'';}
 function logProblem_(v){const t=logNorm_(v);return !!t&&!['SEM OCORRENCIAS','SEM OCORRENCIA','NENHUMA','NAO','N/A','-','OK'].includes(t);}
 function logCity_(v){const s=logText_(v),m=logNorm_(s).match(/\s*[-/]\s*([A-Z]{2})$/);return {city:logNorm_(s).replace(/\s*[-/]\s*[A-Z]{2}$/,''),uf:m?m[1]:''};}
 function logRecords_(values,kind,tz,regionValues){
@@ -1066,7 +1066,7 @@ function logRecords_(values,kind,tz,regionValues){
    if(!T('CLIENTE')&&!T('CIDADE')&&!T('PRODUTO'))return [];
    const loc=logCity_(T('CIDADE')),status=T('STATUS DA ENTREGA'),s=logNorm_(status),wait=get(r,'TEMPO ESPERA');
    let days=wait instanceof Date?Math.round((wait.getTime()-new Date(1899,11,31).getTime())/86400000):logNumber_(wait);if(days!=null&&days<0)days=null;
-   return [{id:'op_'+(i+header+2),date:D('DATA IMPLANTAÇÃO'),client:T('CLIENTE'),seller:T('VENDEDOR'),...loc,cityLabel:T('CIDADE'),region:regionMap.get(loc.city+'|'+loc.uf)||regionMap.get(loc.city)||T('CLASSIFICAÇÃO DE ROTA')||'Sem região',loading:T('LOCAL CARREGAMENTO'),product:T('PRODUTO'),volumes:N('VOLUMES'),weight:N('PESO'),cost:N('CUSTOS R$'),notes:T('OBSERVAÇÕES'),vehicle:T('CAMINHÃO'),driver:T('MOTORISTA'),status:status||'Sem status',loaded:D('DATA CARREGAMENTO (Expedição)'),deliveredDate:D('DATA CHEGADA CLIENTE'),route:T('CLASSIFICAÇÃO DE ROTA'),invoice:T('NOTA FISCAL'),category:T('CATEGORIA OCORRENCIA'),follow:T('FOLLOW UP OCORRENCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),forecast:D('PREVISÃO DE ROTA'),wait:days,delivered:/^ENTREGUE\b/.test(s),inRoute:/ROTA/.test(s)&&!/^ENTREGUE\b/.test(s),isLoaded:/CARREG/.test(s)&&!/^ENTREGUE\b/.test(s),occurrence:logProblem_(T('CATEGORIA OCORRENCIA'))||logProblem_(T('FOLLOW UP OCORRENCIA'))}];
+   return [{id:'op_'+(i+header+2),date:D('DATA IMPLANTAÇÃO'),dateInvalid:!!get(r,'DATA IMPLANTAÇÃO')&&!D('DATA IMPLANTAÇÃO'),client:T('CLIENTE'),seller:T('VENDEDOR'),...loc,cityLabel:T('CIDADE'),region:regionMap.get(loc.city+'|'+loc.uf)||regionMap.get(loc.city)||T('CLASSIFICAÇÃO DE ROTA')||'Sem região',loading:T('LOCAL CARREGAMENTO'),product:T('PRODUTO'),volumes:N('VOLUMES'),weight:N('PESO'),cost:N('CUSTOS R$'),notes:T('OBSERVAÇÕES'),vehicle:T('CAMINHÃO'),driver:T('MOTORISTA'),status:status||'Sem status',loaded:D('DATA CARREGAMENTO (Expedição)'),deliveredDate:D('DATA CHEGADA CLIENTE'),route:T('CLASSIFICAÇÃO DE ROTA'),invoice:T('NOTA FISCAL'),category:T('CATEGORIA OCORRENCIA'),follow:T('FOLLOW UP OCORRENCIA'),checker:T('CONFERENTE'),picker:T('SEPARADOR'),forecast:D('PREVISÃO DE ROTA'),wait:days,delivered:/^ENTREGUE\b/.test(s),inRoute:/ROTA/.test(s)&&!/^ENTREGUE\b/.test(s),isLoaded:/CARREG/.test(s)&&!/^ENTREGUE\b/.test(s),occurrence:logProblem_(T('CATEGORIA OCORRENCIA'))||logProblem_(T('FOLLOW UP OCORRENCIA'))}];
   }
   if(kind==='formations'){
    if(!D('DATA')&&!T('REGIÃO')&&!T('VEÍCULO')&&!T('MOTORISTA'))return [];
@@ -1093,7 +1093,7 @@ function logisticsApi_(user,payload){
  if(kind==='sources')return {ok:true,ids,reference:LOGISTICS_SOURCES.reference,readOnly:true};
  if(!['operations','formations','transport','schedule'].includes(kind))throw new Error('Fonte logística inválida.');
  // Consulta somente planilhas, usando as permissões que o módulo comercial já possui.
- const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S3_'+digestHex_(id+'|'+kind).slice(0,24);
+ const id=kind==='transport'?ids.indicators:ids.operations,cache=CacheService.getScriptCache(),base='LOG_S4_'+digestHex_(id+'|'+kind).slice(0,24);
  let meta=cache.get(base+'_M');meta=meta?JSON.parse(meta):null;let rows=null;
  if(meta&&p.force!==true){const keys=Array.from({length:meta.parts},(_,i)=>base+'_'+i),saved=cache.getAll(keys);if(keys.every(k=>saved[k]!=null)){try{rows=JSON.parse(keys.map(k=>saved[k]).join(''));}catch(e){rows=null;}}}
  if(!rows){
@@ -1111,7 +1111,7 @@ function logisticsApi_(user,payload){
 }
 
 // Verificação manual de leitura das fontes, sem gravar nas planilhas.
-function verificarFontesLogisticaRbn(){const result={};for(const kind of ['operations','formations','transport','schedule']){try{const r=logisticsApi_({perfil:'ADMIN'},{kind});result[kind]={count:r.rows.length,updatedAt:r.meta.updatedAt,from:r.meta.from,to:r.meta.to,weight:r.rows.reduce((s,x)=>s+(x.weight||0),0),delivered:r.rows.filter(x=>x.delivered).length,onTime:r.rows.filter(x=>x.onTime).length,late:r.rows.filter(x=>x.late).length,occurrences:r.rows.filter(x=>x.occurrence).length};}catch(e){result[kind]={error:e.message};}}try{const geo=logisticsApi_({perfil:'ADMIN'},{kind:'geo'});result.geo={features:geo.geo.features.length};}catch(e){result.geo={error:e.message};}console.log(JSON.stringify(result));return result;}
+function verificarFontesLogisticaRbn(){const result={};for(const kind of ['operations','formations','transport','schedule']){try{const r=logisticsApi_({perfil:'ADMIN'},{kind});result[kind]={count:r.rows.length,updatedAt:r.meta.updatedAt,from:r.meta.from,to:r.meta.to,weight:r.rows.reduce((s,x)=>s+(x.weight||0),0),delivered:r.rows.filter(x=>x.delivered).length,invalidDates:r.rows.filter(x=>x.dateInvalid).length,...(kind==='transport'?{onTime:r.rows.filter(x=>x.onTime).length,late:r.rows.filter(x=>x.late).length}:{}),occurrences:r.rows.filter(x=>x.occurrence).length};}catch(e){result[kind]={error:e.message};}}try{const geo=logisticsApi_({perfil:'ADMIN'},{kind:'geo'});result.geo={features:geo.geo.features.length};}catch(e){result.geo={error:e.message};}console.log(JSON.stringify(result));return result;}
 
 
 // Conecta as duas fontes solicitadas e valida a leitura sem alterar suas células.
