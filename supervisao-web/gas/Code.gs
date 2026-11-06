@@ -233,7 +233,7 @@ const AUTH = {
   sessionTtlSeconds: 21600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/967baf45e64196d6072ff993fce7c3058008e74a/supervisao-web/gas/gas-app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/8f126eb48b1465a692f422a17fffe3c309eb51b6/supervisao-web/gas/gas-app.html';
 
 function doGet() {
   const response = UrlFetchApp.fetch(UI_BUNDLE_URL, { muteHttpExceptions: true });
@@ -292,6 +292,8 @@ function dashboardApi(action, payload, token) {
     }
     const user = sessionUser_(token);
     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
+    if(action==='biLayout')return biLayoutApi_(user,payload);
+    if(action==='biDiagnostics')return biDiagnostics_(user);
     if (action === 'history') return recoveredMacroHistory_(user);
     if (action === 'historyGeo') return recoveredGeoHistory_(user);
     if (action === 'users') return manageUsers_(user,payload);
@@ -992,3 +994,53 @@ function recoveredGeoHistory_(user){
  return {ok:true,available:true,monthly:data.map(r=>({month:r[0],cities:r[1],unlocated:r[2]})),source:'Shop Control recuperado',cutoff:'2024-08-01'};
 }
 
+
+
+// Configurações e layouts: JSON declarativo, sem código fornecido pelo editor.
+function biDefault_(){return {schema:1,settings:{shortDays:90,longDays:180,cutoff:'previous',openStatuses:['PENDENTE','LIBERADO','BLOQUEADO'],projectionStatuses:['PENDENTE','LIBERADO'],warning:70,success:100,defaultPage:'overview',defaultPeriod:'latest',compact:true,decimals:2,animation:true,density:'comfortable',refreshMinutes:1,autoRefresh:true},pages:[],widgets:[],overrides:[]};}
+function biValidate_(input){
+ if(!input||input.schema!==1)throw new Error('Formato de configuração inválido.');
+ const d=biDefault_(),s=input.settings||{},out={schema:1,settings:{},pages:[],widgets:[],overrides:[]};
+ const integer=(v,min,max,name)=>{if(!Number.isInteger(v)||v<min||v>max)throw new Error('Valor inválido: '+name);return v;};
+ const choose=(v,options,name)=>{if(options.indexOf(v)<0)throw new Error('Opção inválida: '+name);return v;};
+ const text=(v,max)=>{if(typeof v!=='string'||v.length>max)throw new Error('Texto inválido.');return v.trim();};
+ const statuses=(v)=>{if(!Array.isArray(v)||v.some(x=>['PENDENTE','LIBERADO','BLOQUEADO'].indexOf(x)<0))throw new Error('Posição de pedido inválida.');return [...new Set(v)];};
+ Object.keys(d.settings).forEach(k=>{const v=s[k]===undefined?d.settings[k]:s[k];if(['compact','animation','autoRefresh'].indexOf(k)>=0){if(typeof v!=='boolean')throw new Error('Preferência inválida.');out.settings[k]=v;}else if(k==='shortDays'||k==='longDays')out.settings[k]=integer(v,1,3650,k);else if(k==='warning'||k==='success')out.settings[k]=integer(v,0,300,k);else if(k==='decimals')out.settings[k]=integer(v,0,2,k);else if(k==='openStatuses'||k==='projectionStatuses')out.settings[k]=statuses(v);else if(k==='refreshMinutes')out.settings[k]=choose(v,[1,5,10,15,30],k);else if(k==='cutoff')out.settings[k]=choose(v,['previous','selected'],k);else if(k==='defaultPeriod')out.settings[k]=choose(v,['latest','current','previous'],k);else if(k==='density')out.settings[k]=choose(v,['compact','comfortable'],k);else if(k==='defaultPage')out.settings[k]=text(v,50);});
+ if(out.settings.longDays<=out.settings.shortDays)throw new Error('O longo prazo deve começar depois do curto prazo.');
+ if(out.settings.success<=out.settings.warning)throw new Error('A faixa de meta atingida deve ser maior que a faixa de atenção.');
+ const built=['overview','pedidos','carteira','produtos','cidades','metas','history'];
+ if(!Array.isArray(input.pages)||input.pages.length>12)throw new Error('Use até 12 páginas personalizadas.');
+ const ids=new Set();input.pages.forEach(p=>{const id=text(p.id,50);if(!/^bi_[a-z0-9_-]+$/.test(id)||ids.has(id))throw new Error('Página duplicada ou inválida.');ids.add(id);if(!Array.isArray(p.roles)||!p.roles.length||p.roles.some(r=>['ADMIN','GERENTE','SUPERVISOR','RCA'].indexOf(r)<0))throw new Error('Perfil de página inválido.');out.pages.push({id,title:text(p.title,70),roles:[...new Set(p.roles)]});});
+ const validPages=built.concat([...ids]);if(validPages.indexOf(out.settings.defaultPage)<0)out.settings.defaultPage='overview';
+ const metrics=['revenue','orders','clients','products','ticket','mix','goal','attainment','open','openCount','blocked','pending','released','projection','inactiveShort','inactiveLong','newClients'];
+ const dimensions=['none','month','year','rca','supervisor','department','city','uf','product','client','status'];
+ const widgets=(list,native)=>{if(!Array.isArray(list)||list.length>(native?60:40))throw new Error('Limite de componentes excedido.');return list.map(w=>{const id=text(w.id,100);if(!/^[a-zA-Z0-9_-]+$/.test(id))throw new Error('Identificador inválido.');const o={id,page:choose(w.page,validPages,'página'),title:text(w.title,100),type:choose(w.type,['card','bar','column','line','area','doughnut','table'],'visualização'),metric:choose(w.metric,metrics,'indicador'),dimension:choose(w.dimension,dimensions,'agrupamento'),comparison:choose(w.comparison||'none',['none','previous','year','goal'],'comparação'),sort:choose(w.sort||'desc',['desc','asc','label'],'ordem'),limit:integer(w.limit||10,3,50,'limite'),width:choose(w.width||'half',['half','full','third'],'largura'),height:integer(w.height||300,160,650,'altura'),color:choose(w.color||'blue',['blue','cyan','green','purple','orange'],'cor'),interaction:w.interaction===true,hidden:w.hidden===true};
+ if(o.type==='card')o.dimension='none';if(o.type==='map'){o.dimension='city';if(o.metric!=='revenue')throw new Error('Mapa disponível para faturamento por cidade.');}
+ if(['goal','attainment','projection'].indexOf(o.metric)>=0&&['none','month','year','rca','supervisor','department'].indexOf(o.dimension)<0)throw new Error('Meta e projeção não têm distribuição válida neste agrupamento.');
+ if(['inactiveShort','inactiveLong','newClients'].indexOf(o.metric)>=0&&['none','rca'].indexOf(o.dimension)<0)throw new Error('Este indicador está disponível no total ou por RCA.');
+ if(['open','openCount','blocked','pending','released'].indexOf(o.metric)>=0&&o.dimension==='product')throw new Error('Pedidos não possuem distribuição segura por produto neste editor.');
+ if(o.comparison==='goal'&&!['none','month','year','rca','supervisor','department'].includes(o.dimension))throw new Error('A comparação com meta não está disponível neste agrupamento.');
+ if(o.dimension==='status'&&['open','openCount','blocked','pending','released'].indexOf(o.metric)<0)throw new Error('Posição disponível para pedidos em aberto.');
+ if(native){o.nativeKey=text(w.nativeKey,160);if(!/^[a-zA-Z0-9_-]+$/.test(o.nativeKey))throw new Error('Componente original inválido.');o.original=w.original===true;}return o;});};
+ out.widgets=widgets(input.widgets||[],false);out.overrides=widgets(input.overrides||[],true);
+ if(new Set(out.widgets.map(w=>w.id)).size!==out.widgets.length)throw new Error('Componente duplicado.');
+ if(JSON.stringify(out).length>40000)throw new Error('Layout excedeu o limite de tamanho.');return out;
+}
+function biLayoutApi_(user,payload){
+ const p=PropertiesService.getScriptProperties(),read=k=>rbnLoadState_(k),published=read('DASH_BI_PUBLISHED')||{revision:0,config:biDefault_()},admin=user.perfil==='ADMIN';
+ if(!payload.action||payload.action==='read')return {ok:true,revision:published.revision,published:published.config,draft:admin?(read('DASH_BI_DRAFT')||published.config):null,versions:admin?(read('DASH_BI_VERSIONS')||[]).map(v=>({revision:v.revision,at:v.at,by:v.by})):[]};
+ if(!admin)throw new Error('Apenas administradores podem alterar layouts e regras.');
+ const lock=LockService.getScriptLock();if(!lock.tryLock(5000))throw new Error('Outra gravação está em andamento. Tente novamente.');
+ try{
+ const current=read('DASH_BI_PUBLISHED')||{revision:0,config:biDefault_()};
+ if(Number(payload.revision)!==current.revision)throw new Error('Outro administrador publicou alterações. Reabra as configurações antes de salvar.');
+ if(payload.action==='draft'){const config=biValidate_(payload.config);rbnSaveState_('DASH_BI_DRAFT',config);return {ok:true,message:'Rascunho salvo.'};}
+ let config;if(payload.action==='restore'){const v=(read('DASH_BI_VERSIONS')||[]).find(v=>v.revision===Number(payload.version));if(!v)throw new Error('Versão não encontrada.');config=biValidate_(v.config);}else if(payload.action==='publish')config=biValidate_(payload.config);else throw new Error('Ação de layout inválida.');
+ const versions=read('DASH_BI_VERSIONS')||[];versions.unshift({revision:current.revision,config:current.config,at:current.at||new Date().toISOString(),by:current.by||'Inicial'});while(versions.length>5)versions.pop();rbnSaveState_('DASH_BI_VERSIONS',versions);
+ const saved={revision:current.revision+1,config,at:new Date().toISOString(),by:user.login};rbnSaveState_('DASH_BI_PUBLISHED',saved);rbnSaveState_('DASH_BI_DRAFT',config);console.log('Configuração BI publicada por '+user.login+' revisão '+saved.revision);return {ok:true,revision:saved.revision,message:'Layout e configurações publicados.'};
+ }finally{lock.releaseLock();}
+}
+function biDiagnostics_(user){
+ if(user.perfil!=='ADMIN')throw new Error('Diagnóstico disponível ao administrador.');
+ const p=PropertiesService.getScriptProperties(),info=datasetInfo_();return {ok:true,dataset:info,sync:p.getProperty('VENDAS_RBN_ULTIMA_SYNC'),stage:p.getProperty('RBN_UPDATE_STAGE'),stageAt:p.getProperty('RBN_UPDATE_STAGE_AT'),error:p.getProperty('RBN_UPDATE_ERROR'),goalsAt:p.getProperty('RBN_GOALS_UPDATED_AT'),sources:{sales:CFG.salesSpreadsheetId,auxiliary:CFG.auxiliarySpreadsheetId,cache:CFG.cacheSpreadsheetId,coverage:CFG.coverageSpreadsheetId},triggers:ScriptApp.getProjectTriggers().filter(t=>['sincronizarVendasRbn','atualizarCacheVendasRbn','sincronizarMetasRbn'].indexOf(t.getHandlerFunction())>=0).map(t=>t.getHandlerFunction())};
+}
