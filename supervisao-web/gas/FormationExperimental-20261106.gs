@@ -1,0 +1,104 @@
+// Experimental: todas as gravações ficam em uma planilha auxiliar independente.
+const FORM_EXP_SCHEMA={MONTAGENS:['ID','NOME','CRIADO_EM','RESPONSAVEL','STATUS'],MONTAGEM_PEDIDOS:['MONTAGEM_ID','PEDIDO','PEDIDO_ID','INCLUIDO_EM','USUARIO'],VINCULOS_FONTES:['PEDIDO_ID','FONTE_ID','CONFIRMADO_EM','USUARIO'],HISTORICO_MOVIMENTACOES:['EVENTO_ID','REVISAO','DATA_HORA','USUARIO','TIPO','PEDIDOS_JSON','ORIGEM_JSON','DESTINO','DADOS_JSON']};
+function formExpAccess_(user){if(!user||!logisticsAllowed_(user)||platformAccess_(user).transportOnly||!['ADMIN','DIRETOR','GERENTE','SUPERVISOR'].includes(user.perfil))throw new Error('Seu perfil não tem acesso à gestão de formação.');}
+function formExpAux_(){
+ const p=PropertiesService.getScriptProperties(),id=p.getProperty('FORM_EXP_AUX_ID');if(!id)throw new Error('A base auxiliar experimental ainda não foi inicializada.');
+ const forbidden=[CFG.salesSpreadsheetId,CFG.auxiliarySpreadsheetId,CFG.cacheSpreadsheetId,p.getProperty('LOG_OPERATIONS_ID')||LOGISTICS_SOURCES.operations,p.getProperty('LOG_INDICATORS_ID')||LOGISTICS_SOURCES.indicators];
+ if(forbidden.includes(id))throw new Error('A base auxiliar não pode ser uma das planilhas originais.');
+ const ss=SpreadsheetApp.openById(id);Object.keys(FORM_EXP_SCHEMA).forEach(name=>{const sh=ss.getSheetByName(name);if(!sh||JSON.stringify(sh.getRange(1,1,1,FORM_EXP_SCHEMA[name].length).getDisplayValues()[0])!==JSON.stringify(FORM_EXP_SCHEMA[name]))throw new Error('Estrutura auxiliar divergente: '+name);});return ss;
+}
+function formExpInitialize_(){
+ const lock=LockService.getScriptLock();if(!lock.tryLock(10000))throw new Error('Outra rotina está em andamento.');
+ try{const p=PropertiesService.getScriptProperties();if(p.getProperty('FORM_EXP_AUX_ID'))return {id:formExpAux_().getId(),existing:true};const ss=SpreadsheetApp.create('Central Rebanho — Formação Experimental — TESTE');const first=ss.getSheets()[0];let index=0;for(const [name,headers]of Object.entries(FORM_EXP_SCHEMA)){const sh=index++===0?first.setName(name):ss.insertSheet(name);sh.getRange(1,1,1,headers.length).setValues([headers]);sh.setFrozenRows(1);sh.getRange(1,1,1,headers.length).setBackground('#a95018').setFontColor('#ffffff').setFontWeight('bold');sh.autoResizeColumns(1,headers.length);}ss.setSpreadsheetTimeZone('America/Fortaleza');p.setProperty('FORM_EXP_AUX_ID',ss.getId());return {id:ss.getId(),existing:false};}finally{lock.releaseLock();}
+}
+function formExpEmpty_(){return {revision:0,montages:{},links:{},assignments:{},last:{},events:[],requests:{},sequence:0};}
+function formExpReplay_(rows){
+ const st=formExpEmpty_();for(const row of rows){if(!row[0])continue;const e={id:String(row[0]),revision:Number(row[1]),at:String(row[2]),by:String(row[3]),type:String(row[4]),keys:JSON.parse(row[5]||'[]'),from:JSON.parse(row[6]||'{}'),to:String(row[7]||''),data:JSON.parse(row[8]||'{}')};if(e.revision!==st.revision+1||st.requests[e.id])throw new Error('Histórico auxiliar inconsistente. Nenhuma movimentação foi aplicada.');formExpApply_(st,e);st.events.push(e);st.requests[e.id]=true;st.revision=e.revision;}return st;
+}
+function formExpApply_(st,e){
+ if(e.type==='CRIAR'){if(st.montages[e.to])throw new Error('Montagem duplicada.');st.sequence++;st.montages[e.to]={id:e.to,name:e.data.name,createdAt:e.at,owner:e.by,status:'Em montagem'};}
+ if(e.type==='RENOMEAR'){if(!st.montages[e.to])throw new Error('Montagem inexistente.');st.montages[e.to].name=e.data.name;}
+ if(e.type==='VINCULAR'){for(const key of e.keys){st.links[key]={sourceKeys:e.data.sourceKeys.slice(),at:e.at,by:e.by};}}
+ if(['CRIAR','ADICIONAR','TRANSFERIR','REMOVER'].includes(e.type))for(const key of e.keys){if(e.type==='REMOVER')delete st.assignments[key];else st.assignments[key]={montageId:e.to,at:e.at,by:e.by};st.last[key]={type:e.type,at:e.at,by:e.by};}
+}
+function formExpState_(ss){const sh=ss.getSheetByName('HISTORICO_MOVIMENTACOES'),n=sh.getLastRow();return formExpReplay_(n>1?sh.getRange(2,1,n-1,9).getValues():[]);}
+function formExpSources_(user){
+ const id=PropertiesService.getScriptProperties().getProperty('LOG_OPERATIONS_ID')||LOGISTICS_SOURCES.operations,ss=SpreadsheetApp.openById(id),sh=ss.getSheetByName('FORMAÇÃO 2026');if(!sh)throw new Error('Aba FORMAÇÃO 2026 ausente.');
+ const values=sh.getRange(1,1,Math.max(2,sh.getLastRow()),23).getValues(),regions=ss.getSheetByName('CADASTRO REGIAO').getDataRange().getValues(),records=logRecords_(values,'operations',ss.getSpreadsheetTimeZone(),regions),counts={},all={};
+ for(const r of records){const key='fs_'+digestHex_(JSON.stringify([r.date,logNorm_(r.client),logNorm_(r.seller),logNorm_(r.cityLabel),logNorm_(r.loading),logNorm_(r.product)])).slice(0,40);r.sourceKey=key;r.sourceVersion=digestHex_(JSON.stringify(r)).slice(0,24);counts[key]=(counts[key]||0)+1;all[key]=r;}
+ for(const r of records)r.ambiguous=counts[r.sourceKey]!==1;
+ return {all,records,visible:records.filter(r=>logisticsRowAllowed_(user,r,'operations')),id};
+}
+function formExpOrderKey_(year,client,order){return 'ord_'+year+'_'+client+'_'+order;}
+function formExpParseKey_(key){const m=String(key||'').match(/^ord_(20\d{2})_(\d+)_(\d{1,20})$/);if(!m)throw new Error('Identificador de pedido inválido.');return {year:m[1],client:m[2],order:m[3]};}
+function formExpCommercial_(keys,force){
+ const out={},cache=CacheService.getScriptCache(),pending=[];for(const key of [...new Set(keys)]){formExpParseKey_(key);let saved=force?null:cache.get('FORM_EXP_ORDER_'+digestHex_(key).slice(0,24));if(saved){try{out[key]=JSON.parse(saved);continue;}catch(e){}}pending.push(key);}
+ if(!pending.length)return out;const ss=SpreadsheetApp.openById(CFG.salesSpreadsheetId),byYear={};pending.forEach(key=>{const p=formExpParseKey_(key);(byYear[p.year]||(byYear[p.year]=[])).push({key,...p});});
+ for(const [year,wanted]of Object.entries(byYear)){const sh=ss.getSheetByName(year);if(!sh)continue;const count=sh.getLastRow()-1;if(count<1)continue;const headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0],ix=headerIndex_(headers);for(const name of ['NUMPED','Cod/Cliente','Cod/Produto','Qt Pedida','Posição','Data Pedido'])if(ix[name]==null)throw new Error('Coluna comercial ausente: '+name);
+  if(ix['NUMPED']!==ix['Cod/Cliente']+1)throw new Error('A estrutura de identificação comercial mudou.');const identities=sh.getRange(2,ix['Cod/Cliente']+1,count,2).getValues(),targets=new Map(wanted.map(p=>[p.order+'|'+p.client,p.key])),matches=[];
+  identities.forEach((r,i)=>{const key=targets.get(String(r[1]).trim()+'|'+String(code_(r[0])));if(key)matches.push({row:i+2,key});});
+  // Lê blocos próximos de uma vez; as fontes originais nunca são gravadas.
+  const blocks=[];for(const m of matches){const last=blocks[blocks.length-1];if(last&&m.row-last.end<8)last.end=m.row;else blocks.push({start:m.row,end:m.row});}
+  const rowKeys=new Map(matches.map(m=>[m.row,m.key]));for(const b of blocks){const raw=sh.getRange(b.start,1,b.end-b.start+1,headers.length).getValues();raw.forEach((r,j)=>{const key=rowKeys.get(b.start+j);if(!key)return;const status=norm_(cell_(r,ix,'Posição'));if(!['FECHADO','PENDENTE','LIBERADO','BLOQUEADO'].includes(status))return;let o=out[key];const rawClient=String(cell_(r,ix,'Cod/Cliente')||''),clientCode=String(code_(rawClient)),order=String(cell_(r,ix,'NUMPED')||''),date=logDate_(cell_(r,ix,'Data inicial do pedido')||cell_(r,ix,'Data Pedido'),ss.getSpreadsheetTimeZone());if(!o)o=out[key]={key,order,clientCode,client:rawClient.replace(/^\s*\d+\s*-\s*/,''),city:logText_(cell_(r,ix,'MUNICENT')),uf:logText_(cell_(r,ix,'ESTENT')),date,year,rca:code_(cell_(r,ix,'Cod/Vend.')),products:[],statuses:[],invoices:[]};
+   o.rcas=o.rcas||[];o.rcas.push(code_(cell_(r,ix,'Cod/Vend.')));const product=String(cell_(r,ix,'Cod/Produto')||''),quantity=logNumber_(cell_(r,ix,'Qt Pedida'));o.products.push({code:code_(product),description:product.replace(/^\s*\d+\s*-\s*/,''),quantity,value:logNumber_(cell_(r,ix,'Pedidos Enviados')),supplier:logText_(cell_(r,ix,'Cod/Fornecedor')),department:logText_(cell_(r,ix,'DEPARTAMENTO')),section:logText_(cell_(r,ix,'SECAO')),invoice:logText_(cell_(r,ix,'Numero Nota Fiscal')),billingDate:logDate_(cell_(r,ix,'Data Faturamento'),ss.getSpreadsheetTimeZone()),orderDate:logDate_(cell_(r,ix,'Data Pedido'),ss.getSpreadsheetTimeZone()),status});o.statuses.push(status);if(cell_(r,ix,'Numero Nota Fiscal'))o.invoices.push(String(cell_(r,ix,'Numero Nota Fiscal')));
+  });}
+ }
+ for(const key of pending){const o=out[key];if(!o)continue;o.rcas=[...new Set(o.rcas||[o.rca])];o.statuses=[...new Set(o.statuses)];o.invoices=[...new Set(o.invoices)];o.version=digestHex_(JSON.stringify(o)).slice(0,24);try{const s=JSON.stringify(o);if(s.length<85000)cache.put('FORM_EXP_ORDER_'+digestHex_(key).slice(0,24),s,120);}catch(e){}}
+ return out;
+}
+function formExpLookup_(number,user,sourceKeys,sources){
+ if(!/^\d{1,20}$/.test(String(number||'')))throw new Error('Informe o número exato do pedido.');if(!Array.isArray(sourceKeys)||!sourceKeys.length||sourceKeys.length>50)throw new Error('Selecione os registros de formação que deseja vincular.');
+ for(const key of sourceKeys){const r=sources.all[key];if(!r||r.ambiguous||!r.awaitingFormation||!logisticsRowAllowed_(user,r,'operations'))throw new Error('Registro de formação indisponível ou fora do seu recorte.');}
+ const ss=SpreadsheetApp.openById(CFG.salesSpreadsheetId),keys=[];for(const year of CFG.years){const sh=ss.getSheetByName(year);if(!sh||sh.getLastRow()<2)continue;const cells=sh.getRange(2,9,sh.getLastRow()-1,1).createTextFinder(String(number)).matchEntireCell(true).useRegularExpression(false).findAll();if(cells.length>500)throw new Error('O pedido tem muitos itens; revise sua identificação.');for(const c of cells){const customer=sh.getRange(c.getRow(),8).getDisplayValue(),code=code_(customer);if(code!=null)keys.push(formExpOrderKey_(year,String(code),String(number)));}}
+ return Object.values(formExpCommercial_([...new Set(keys)],true)).filter(o=>(o.rcas||[o.rca]).every(rca=>userAllowsRca_(user,rca)));
+}
+function formExpView_(st,sources,commercial,user){
+ const allowedSources=new Set(sources.visible.filter(r=>!r.ambiguous).map(r=>r.sourceKey)),orders=[],byKey={},sourceOwners={};
+ for(const [key,link]of Object.entries(st.links)){for(const k of link.sourceKeys){if(sourceOwners[k]&&sourceOwners[k]!==key)throw new Error('Vínculo auxiliar duplicado.');sourceOwners[k]=key;}const raw=link.sourceKeys.map(k=>sources.all[k]),o=commercial[key];
+  if(raw.some(r=>r&&!logisticsRowAllowed_(user,r,'operations'))||o&&!(o.rcas||[o.rca]).every(rca=>userAllowsRca_(user,rca)))continue;
+  // Links órfãos só são visíveis ao criador ou à gestão; não liberam reservas automaticamente.
+  if(raw.some(r=>!r)&&!['ADMIN','DIRETOR','GERENTE'].includes(user.perfil)&&link.by!==user.login)continue;
+  const missing=raw.some(r=>!r||r.ambiguous)||!o,changed=missing||raw.some(r=>!r.awaitingFormation),assignment=st.assignments[key],montageId=assignment&&assignment.montageId||'',last=st.last[key];
+  const order=Object.assign({},o||{key,order:formExpParseKey_(key).order,client:'Fonte indisponível',clientCode:formExpParseKey_(key).client,products:[]},{commercialCity:o&&o.city||'',commercialUf:o&&o.uf||'',city:[...new Set(raw.filter(Boolean).map(r=>r.city))].join(' / '),uf:[...new Set(raw.filter(Boolean).map(r=>r.uf).filter(Boolean))].join(' / '),sourceRows:raw.filter(Boolean),sourceKeys:link.sourceKeys,sourceIssue:missing?'Fonte ausente ou identificação duplicada':changed?'Status original alterado':'',blocked:changed,weight:missing?null:raw.reduce((s,r)=>s+(r.weight||0),0),volumes:missing||raw.some(r=>r.volumes==null)?null:raw.reduce((s,r)=>s+r.volumes,0),weightIncomplete:missing||raw.some(r=>r.weight==null),montageId,internalStatus:montageId?'Em montagem':last&&last.type==='REMOVER'?'Removido da montagem':'Disponível',originalStatuses:[...new Set(raw.filter(Boolean).map(r=>r.status))],region:raw[0]&&raw[0].region||'',sourceDate:raw[0]&&raw[0].date||'',linkBy:link.by});orders.push(order);byKey[key]=order;
+ }
+ const montages=[];for(const m of Object.values(st.montages)){const keys=Object.keys(st.assignments).filter(k=>st.assignments[k].montageId===m.id);if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!['ADMIN','DIRETOR','GERENTE'].includes(user.perfil)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]),incomplete=members.some(o=>o.weightIncomplete||o.weight==null),volumeIncomplete=members.some(o=>o.volumes==null);montages.push({...m,orderKeys:keys,orders:members.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.flatMap(o=>o.sourceRows.map(r=>r.city+'|'+r.uf))).size,weight:incomplete?null:members.reduce((s,o)=>s+o.weight,0),volumes:volumeIncomplete?null:members.reduce((s,o)=>s+o.volumes,0),sourceIssues:members.filter(o=>o.blocked).length});}
+ const mapRows=sources.visible.map(r=>{const owner=sourceOwners[r.sourceKey],reserved=owner&&!!st.assignments[owner];return {...r,availableWeight:r.awaitingFormation&&!reserved?(r.weight||0):0,mountedWeight:r.awaitingFormation&&reserved?(r.weight||0):0,orderKey:owner||'',montageId:reserved?st.assignments[owner].montageId:'',linked:!!owner};});
+ const visibleOrders=new Set(orders.map(o=>o.key)),events=st.events.slice().reverse().filter(e=>e.keys.length?e.keys.every(k=>visibleOrders.has(k)):montages.some(m=>m.id===e.to)).slice(0,200).map(e=>({id:e.id,at:e.at,by:e.by,type:e.type,keys:e.keys,from:e.from,to:e.to,name:e.data.name||''}));
+ return {orders,montages,mapRows,events,sequence:st.sequence,revision:st.revision,sourceVersion:digestHex_(JSON.stringify([sources.records.map(r=>[r.sourceKey,r.sourceVersion,r.ambiguous]),Object.keys(commercial).sort().map(k=>[k,commercial[k].version])])).slice(0,32)};
+}
+function formExpValidateMove_(st,view,p){
+ const actions=['CRIAR','ADICIONAR','TRANSFERIR','REMOVER','RENOMEAR','VINCULAR'];if(!actions.includes(p.operation))throw new Error('Operação de montagem inválida.');if(Number(p.revision)!==st.revision||p.sourceVersion!==view.sourceVersion)throw new Error('As montagens ou as fontes foram atualizadas. Recarregue antes de confirmar.');
+ const keys=p.keys||[];if(!Array.isArray(keys)||keys.length>100||new Set(keys).size!==keys.length||keys.some(k=>typeof k!=='string'))throw new Error('Selecione até 100 pedidos distintos.');
+ const visible=new Map(view.orders.map(o=>[o.key,o])),montages=new Map(view.montages.map(m=>[m.id,m]));
+ if(['ADICIONAR','TRANSFERIR','RENOMEAR'].includes(p.operation)&&!montages.has(String(p.target||'')))throw new Error('Montagem de destino não disponível no seu recorte.');
+ if(['TRANSFERIR','REMOVER'].includes(p.operation)&&p.confirmed!==true)throw new Error('Confirme a remoção ou transferência dos pedidos.');
+ if(['ADICIONAR','TRANSFERIR','REMOVER'].includes(p.operation)&&!keys.length)throw new Error('Selecione os pedidos.');
+ for(const key of keys){const o=visible.get(key);if(!o||o.blocked)throw new Error('Um pedido está fora do seu recorte, sem fonte válida ou já saiu para entrega.');const a=st.assignments[key];if(['CRIAR','ADICIONAR'].includes(p.operation)&&a)throw new Error('Um pedido já pertence a uma montagem ativa.');if(['TRANSFERIR','REMOVER'].includes(p.operation)&&!a)throw new Error('Um pedido já foi retirado da montagem.');if(p.operation==='TRANSFERIR'&&a.montageId===p.target)throw new Error('Escolha outra montagem de destino.');}
+}
+function formExpMaterialize_(ss,st){
+ const write=(name,rows)=>{const sh=ss.getSheetByName(name),width=FORM_EXP_SCHEMA[name].length,last=sh.getLastRow();if(rows.length){if(sh.getMaxRows()<rows.length+1)sh.insertRowsAfter(sh.getMaxRows(),rows.length+1-sh.getMaxRows());sh.getRange(2,1,rows.length,width).setValues(rows.map(r=>r.map(v=>typeof v==='string'&&/^[=+@-]/.test(v)?"'"+v:v)));}if(last>rows.length+1)sh.getRange(rows.length+2,1,last-rows.length-1,width).clearContent();};
+ write('MONTAGENS',Object.values(st.montages).map(m=>[m.id,m.name,m.createdAt,m.owner,m.status]));write('MONTAGEM_PEDIDOS',Object.entries(st.assignments).map(([key,a])=>[a.montageId,formExpParseKey_(key).order,key,a.at,a.by]));write('VINCULOS_FONTES',Object.entries(st.links).flatMap(([key,l])=>l.sourceKeys.map(source=>[key,source,l.at,l.by])));
+}
+function formationExperimentalApi_(user,p){
+ formExpAccess_(user);const lock=LockService.getScriptLock();if(!lock.tryLock(10000))throw new Error('Outra rotina está em andamento. Aguarde e tente novamente.');
+ try{
+  const ss=formExpAux_(),st=formExpState_(ss),sources=formExpSources_(user),commercial=formExpCommercial_(Object.keys(st.links),p.action==='save'||p.force===true),view=formExpView_(st,sources,commercial,user);
+  if(p.action==='read'||!p.action)return {ok:true,...view,experimental:true};
+  if(p.action==='lookup')return {ok:true,orders:formExpLookup_(p.orderNumber,user,p.sourceKeys,sources).filter(o=>!st.links[o.key]||view.orders.some(v=>v.key===o.key)).map(o=>({...o,confirmedSourceRows:[...new Set([...(st.links[o.key]&&st.links[o.key].sourceKeys||[]),...p.sourceKeys])].map(k=>sources.all[k]).filter(Boolean)})),revision:st.revision,sourceVersion:view.sourceVersion};
+  if(p.action!=='save')throw new Error('Ação experimental inválida.');if(!/^[a-zA-Z0-9_-]{16,100}$/.test(String(p.requestId||'')))throw new Error('Identificador de movimentação inválido.');if(st.requests[p.requestId])return {ok:true,alreadyApplied:true,message:'Movimentação já registrada.'};
+  if(p.operation==='VINCULAR'){
+   if(Number(p.revision)!==st.revision||p.sourceVersion!==view.sourceVersion||p.confirmed!==true)throw new Error('Reabra e confirme o vínculo com as fontes atuais.');
+   if(!Array.isArray(p.sourceKeys)||!p.sourceKeys.length||new Set(p.sourceKeys).size!==p.sourceKeys.length)throw new Error('Selecione registros de formação distintos.');const sourceKeys=[...new Set([...(st.links[p.orderKey]&&st.links[p.orderKey].sourceKeys||[]),...p.sourceKeys])];if(sourceKeys.length>50)throw new Error('Selecione até 50 registros de formação distintos.');p.sourceKeys=sourceKeys;formExpParseKey_(p.orderKey);if(st.assignments[p.orderKey])throw new Error('Retire o pedido da montagem antes de alterar seu vínculo.');
+   for(const key of sourceKeys){const r=sources.all[key];if(!r||r.ambiguous||!r.awaitingFormation||!logisticsRowAllowed_(user,r,'operations'))throw new Error('Registro da formação mudou, é duplicado ou não está disponível.');if(Object.entries(st.links).some(([order,l])=>order!==p.orderKey&&l.sourceKeys.includes(key)))throw new Error('Um registro já está vinculado a outro pedido.');}
+   const actual=formExpCommercial_([p.orderKey],true)[p.orderKey];if(!actual||!(actual.rcas||[actual.rca]).every(rca=>userAllowsRca_(user,rca))||actual.version!==p.orderVersion)throw new Error('O pedido comercial mudou ou não está no seu recorte.');
+  }else formExpValidateMove_(st,view,p);
+  const name=String(p.name||'').trim();if(['CRIAR','RENOMEAR'].includes(p.operation)&&name.length>100)throw new Error('Use até 100 caracteres no nome da montagem.');if(p.operation==='RENOMEAR'&&!name)throw new Error('Informe o nome.');
+  const keys=p.operation==='VINCULAR'?[p.orderKey]:p.keys||[],to=p.operation==='CRIAR'?'mont_'+Utilities.getUuid():p.target||'',e={id:p.requestId,revision:st.revision+1,at:new Date().toISOString(),by:user.login,type:p.operation,keys,from:Object.fromEntries(keys.map(k=>[k,st.assignments[k]&&st.assignments[k].montageId||''])),to,data:p.operation==='VINCULAR'?{sourceKeys:p.sourceKeys}:{name:name||(p.operation==='CRIAR'?'Montagem '+(st.sequence+1):'')}};
+  const payload=JSON.stringify(e.data),keyJson=JSON.stringify(keys),fromJson=JSON.stringify(e.from);if([payload,keyJson,fromJson].some(s=>s.length>44000))throw new Error('Movimentação muito grande. Divida a seleção.');
+  const journal=ss.getSheetByName('HISTORICO_MOVIMENTACOES'),row=journal.getLastRow()+1;if(row>journal.getMaxRows())journal.insertRowsAfter(journal.getMaxRows(),row-journal.getMaxRows());
+  // Uma única linha de evento é a fonte de verdade. As projeções podem ser reconstruídas.
+  journal.getRange(row,1,1,9).setValues([[e.id,e.revision,e.at,e.by,e.type,keyJson,fromJson,e.to,payload]]);SpreadsheetApp.flush();if(journal.getRange(row,1).getDisplayValue()!==e.id)throw new Error('Não foi possível confirmar o registro. Recarregue antes de repetir.');
+  formExpApply_(st,e);st.events.push(e);st.requests[e.id]=true;st.revision=e.revision;let projectionWarning=false;try{formExpMaterialize_(ss,st);}catch(err){projectionWarning=true;console.warn('Projeções auxiliares pendentes; histórico preservado.');}
+  return {ok:true,revision:st.revision,montageId:to,message:'Movimentação salva na base auxiliar de teste.',projectionWarning};
+ }finally{lock.releaseLock();}
+}
