@@ -418,12 +418,12 @@ var VENDAS_RBN_CFG = {
 };
 
 function instalarGatilhosVendasRbn_() {
-  var funcs = ['sincronizarVendasRbn_','atualizarCacheVendasRbn_'];
+  var funcs = ['sincronizarVendasRbn','atualizarCacheVendasRbn'];
   ScriptApp.getProjectTriggers().forEach(function(t) {
     if (funcs.indexOf(t.getHandlerFunction()) !== -1) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('sincronizarVendasRbn_').timeBased().everyMinutes(5).create();
-  ScriptApp.newTrigger('atualizarCacheVendasRbn_').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('sincronizarVendasRbn').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('atualizarCacheVendasRbn').timeBased().everyMinutes(5).create();
   return {ok:true, gatilhos:funcs};
 }
 
@@ -875,7 +875,7 @@ function inicializarDatasPedidosRbn_(){
 function rbnLoadState_(key){const p=PropertiesService.getScriptProperties(),n=Number(p.getProperty(key+'_N')||0);if(!n)return null;let s='';for(let i=0;i<n;i++)s+=p.getProperty(key+'_'+i)||'';return JSON.parse(s);}
 function rbnSaveState_(key,value){const p=PropertiesService.getScriptProperties(),s=JSON.stringify(value),parts={};for(let i=0;i<s.length;i+=6000)parts[key+'_'+(i/6000)]=s.slice(i,i+6000);p.setProperties(parts,false);p.setProperty(key+'_N',String(Math.ceil(s.length/6000)));}
 function rbnClearState_(key){const p=PropertiesService.getScriptProperties(),n=Number(p.getProperty(key+'_N')||0);for(let i=0;i<n;i++)p.deleteProperty(key+'_'+i);p.deleteProperty(key+'_N');}
-function rbnScheduleContinuation_(){const h='continuarAtualizacaoRbn_';if(!ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()===h))ScriptApp.newTrigger(h).timeBased().after(1000).create();}
+function rbnScheduleContinuation_(){const h='continuarAtualizacaoRbn';if(!ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()===h))ScriptApp.newTrigger(h).timeBased().after(1000).create();}
 function rbnStatus_(stage,error){PropertiesService.getScriptProperties().setProperties({RBN_UPDATE_STAGE:stage,RBN_UPDATE_STAGE_AT:new Date().toISOString(),RBN_UPDATE_ERROR:error?String(error).slice(0,1000):''},false);}
 function rbnSheetsBatch_(id,requests){const ss=SpreadsheetApp.openById(id);requests.forEach(q=>{if(q.updateCells){const x=q.updateCells,r=x.range||x.start,s=ss.getSheetById(r.sheetId);if(x.range)s.getRange(r.startRowIndex+1,r.startColumnIndex+1,r.endRowIndex-r.startRowIndex,r.endColumnIndex-r.startColumnIndex).clearContent();else if(x.rows.length)s.getRange(r.rowIndex+1,r.columnIndex+1,x.rows.length,1).setValues(x.rows.map(v=>[v.values[0].userEnteredValue.stringValue]));}else if(q.copyPaste){const x=q.copyPaste,a=x.source,b=x.destination;ss.getSheetById(a.sheetId).getRange(a.startRowIndex+1,1,a.endRowIndex-a.startRowIndex,1).copyTo(ss.getSheetById(b.sheetId).getRange(b.startRowIndex+1,1,b.endRowIndex-b.startRowIndex,1),{contentsOnly:true});}else throw new Error('Operação de preparação não suportada.');});}
 function rbnWriteRecords_(ss,sheet,start,records){for(let i=0;i<records.length;i+=2000)rbnSheetsBatch_(ss.getId(),[{updateCells:{start:{sheetId:sheet.getSheetId(),rowIndex:start+i,columnIndex:0},rows:records.slice(i,i+2000).map(v=>({values:[{userEnteredValue:{stringValue:v}}]})),fields:'userEnteredValue'}}]);}
@@ -923,8 +923,8 @@ function sincronizarVendasRbn_(){
   }catch(e){rbnStatus_('Falha na sincronização',e);if(st){st.errors=Number(st.errors||0)+1;if(st.errors>=3)st.failed=String(e).slice(0,500);rbnSaveState_('RBN_SALES_JOB',st);if(!st.failed)rbnScheduleContinuation_();}throw e;}finally{lock.releaseLock();}
 }
 function sincronizarMetasRbn_(){const lock=LockService.getScriptLock();if(!lock.tryLock(1000))return {ok:true,pending:true};try{const p=PropertiesService.getScriptProperties(),data=rbnApi_(rbnConfig_(),'acao=metas');if(!Array.isArray(data.metas)||!data.signature)throw new Error('Exportação de metas inválida.');if(p.getProperty('RBN_GOALS_SIGNATURE')===data.signature)return {ok:true,changed:false};const incoming=data.metas,keys=new Set(),months=new Set();const rows=incoming.map(v=>{const mes=String(v.mes),rca=Number(v.cod_rca),department=String(v.departamento||''),value=Number(v.meta),key=mes+'|'+rca+'|'+department;if(!/^20\d\d-\d\d$/.test(mes)||!Number.isFinite(rca)||!department||!Number.isFinite(value)||value<0||keys.has(key))throw new Error('Meta inválida ou duplicada.');keys.add(key);months.add(mes);return [mes,rca,department,value];});if(!rows.length)return {ok:true,changed:false};const sheet=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId).getSheetByName('METAS'),old=sheet.getDataRange().getValues();if(old[0].slice(0,4).join('|')!=='MES|COD_RCA|DEPARTAMENTO|META')throw new Error('Cabeçalho de metas divergente.');const output=old.slice(1).filter(v=>v[0]&&!months.has(v[0] instanceof Date?Utilities.formatDate(v[0],sheet.getParent().getSpreadsheetTimeZone(),'yyyy-MM'):String(v[0]))).map(v=>[v[0] instanceof Date?Utilities.formatDate(v[0],sheet.getParent().getSpreadsheetTimeZone(),'yyyy-MM'):v[0],v[1],v[2],v[3]]).concat(rows);sheet.getRange(2,1,output.length,1).setNumberFormat('@');sheet.getRange(2,1,output.length,4).setValues(output);if(old.length>output.length+1)sheet.getRange(output.length+2,1,old.length-output.length-1,4).clearContent();SpreadsheetApp.flush();p.setProperties({RBN_GOALS_SIGNATURE:data.signature,RBN_GOALS_UPDATED_AT:new Date().toISOString(),VENDAS_RBN_CACHE_PENDENTE:'1'},false);rbnScheduleContinuation_();return {ok:true,changed:true,rows:rows.length};}finally{lock.releaseLock();}}
-function continuarAtualizacaoRbn_(){ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='continuarAtualizacaoRbn_').forEach(t=>ScriptApp.deleteTrigger(t));if(rbnLoadState_('RBN_SALES_JOB'))return sincronizarVendasRbn_();if(rbnLoadState_('RBN_CACHE_JOB')||PropertiesService.getScriptProperties().getProperty('VENDAS_RBN_CACHE_PENDENTE')==='1')return atualizarCacheVendasRbn_();return {ok:true};}
-function instalarFluxoRapidoRbn_(){const wanted={sincronizarVendasRbn_:1,atualizarCacheVendasRbn_:1,sincronizarMetasRbn_:1},seen={};ScriptApp.getProjectTriggers().forEach(t=>{const h=t.getHandlerFunction();if(wanted[h]){ScriptApp.deleteTrigger(t);seen[h]=true;}});Object.keys(wanted).forEach(h=>ScriptApp.newTrigger(h).timeBased().everyMinutes(1).create());console.log('Fluxo automático a cada minuto e continuação por etapa instalado.');}
+function continuarAtualizacaoRbn_(){ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='continuarAtualizacaoRbn').forEach(t=>ScriptApp.deleteTrigger(t));if(rbnLoadState_('RBN_SALES_JOB'))return sincronizarVendasRbn_();if(rbnLoadState_('RBN_CACHE_JOB')||PropertiesService.getScriptProperties().getProperty('VENDAS_RBN_CACHE_PENDENTE')==='1')return atualizarCacheVendasRbn_();return {ok:true};}
+function instalarFluxoRapidoRbn_(){const wanted={sincronizarVendasRbn:1,atualizarCacheVendasRbn:1,sincronizarMetasRbn:1},seen={};ScriptApp.getProjectTriggers().forEach(t=>{const h=t.getHandlerFunction();if(wanted[h]){ScriptApp.deleteTrigger(t);seen[h]=true;}});Object.keys(wanted).forEach(h=>ScriptApp.newTrigger(h).timeBased().everyMinutes(1).create());console.log('Fluxo automático a cada minuto e continuação por etapa instalado.');}
 function inicializarLayoutCacheRbn_(){const p=PropertiesService.getScriptProperties(),ss=SpreadsheetApp.openById(CFG.cacheSpreadsheetId),name=p.getProperty('SNAPSHOT_SHEET_NAME'),sheet=ss.getSheetByName(name),count=Number(p.getProperty('SNAPSHOT_RECORD_COUNT')),sales=Number(p.getProperty('SNAPSHOT_SALES_COUNT')),recent=Number(p.getProperty('SNAPSHOT_RECENT_COUNT')),from=previousMonthKey_(new Date());if(p.getProperty('RBN_CACHE_LAYOUT'))return;const headRows=sheet.getRange(2,1,Math.min(10000,count),1).getValues();let head=0;for(const row of headRows){const item=JSON.parse(row[0]);if(item.type==='sale')break;head++;}if(head>=headRows.length||recent>sales)throw new Error('Estrutura do cache não reconhecida.');const history=sales-recent,edge=history?JSON.parse(sheet.getRange(1+head+history,1).getValues()[0][0]):null,next=recent?JSON.parse(sheet.getRange(2+head+history,1).getValues()[0][0]):null;if(edge&&(edge.type!=='sale'||edge.value.date.slice(0,7)>=from))throw new Error('Limite histórico divergente.');if(next&&(next.type!=='sale'||next.value.date.slice(0,7)<from))throw new Error('Limite recente divergente.');const layout={sheet:name,fromMonth:from,recordCount:count,headLength:head,historyCount:history,historyLatest:edge?edge.value.date:null};p.setProperty('RBN_CACHE_LAYOUT',JSON.stringify(layout));console.log(JSON.stringify({layout:layout,updatedAt:p.getProperty('SNAPSHOT_UPDATED_AT'),totals:p.getProperty('SNAPSHOT_RECENT_TOTALS'),goals:readAuxiliary_().goals.filter(g=>g.monthKey==='2026-11').reduce((s,g)=>s+g.value,0)}));}
 
 function userAllowsRca_(user,rca){
@@ -1052,7 +1052,7 @@ function biLayoutApi_(user,payload){
 }
 function biDiagnostics_(user){
  if(user.perfil!=='ADMIN')throw new Error('Diagnóstico disponível ao administrador.');
- const p=PropertiesService.getScriptProperties(),info=datasetInfo_();return {ok:true,dataset:info,sync:p.getProperty('VENDAS_RBN_ULTIMA_SYNC'),stage:p.getProperty('RBN_UPDATE_STAGE'),stageAt:p.getProperty('RBN_UPDATE_STAGE_AT'),error:p.getProperty('RBN_UPDATE_ERROR'),goalsAt:p.getProperty('RBN_GOALS_UPDATED_AT'),sources:{sales:CFG.salesSpreadsheetId,auxiliary:CFG.auxiliarySpreadsheetId,cache:CFG.cacheSpreadsheetId,coverage:CFG.coverageSpreadsheetId},triggers:ScriptApp.getProjectTriggers().filter(t=>['sincronizarVendasRbn_','atualizarCacheVendasRbn_','sincronizarMetasRbn_'].indexOf(t.getHandlerFunction())>=0).map(t=>t.getHandlerFunction())};
+ const p=PropertiesService.getScriptProperties(),info=datasetInfo_();return {ok:true,dataset:info,sync:p.getProperty('VENDAS_RBN_ULTIMA_SYNC'),stage:p.getProperty('RBN_UPDATE_STAGE'),stageAt:p.getProperty('RBN_UPDATE_STAGE_AT'),error:p.getProperty('RBN_UPDATE_ERROR'),goalsAt:p.getProperty('RBN_GOALS_UPDATED_AT'),sources:{sales:CFG.salesSpreadsheetId,auxiliary:CFG.auxiliarySpreadsheetId,cache:CFG.cacheSpreadsheetId,coverage:CFG.coverageSpreadsheetId},triggers:ScriptApp.getProjectTriggers().filter(t=>['sincronizarVendasRbn','atualizarCacheVendasRbn','sincronizarMetasRbn'].indexOf(t.getHandlerFunction())>=0).map(t=>t.getHandlerFunction())};
 }
 
 // Módulo logístico: fontes de leitura separadas da base comercial.
@@ -1185,3 +1185,15 @@ function transportEdit_(user,p,id){
 }
 
 
+
+// As rotinas mantêm os nomes e acionadores já instalados. A chave do evento
+// é validada no servidor e nunca é enviada para o navegador.
+function requireInstalledClock_(event,handler){
+ if(!event||String(event.authMode)!=='FULL'||typeof event.triggerUid!=='string'||!/^\d{10,30}$/.test(event.triggerUid))throw new Error('Execução reservada à rotina automática instalada.');
+ const valid=ScriptApp.getProjectTriggers().some(t=>String(t.getUniqueId())===event.triggerUid&&t.getHandlerFunction()===handler&&String(t.getEventType())==='CLOCK');
+ if(!valid)throw new Error('Rotina automática não autorizada.');
+}
+function sincronizarVendasRbn(event){requireInstalledClock_(event,'sincronizarVendasRbn');sincronizarVendasRbn_();return {ok:true};}
+function atualizarCacheVendasRbn(event){requireInstalledClock_(event,'atualizarCacheVendasRbn');atualizarCacheVendasRbn_();return {ok:true};}
+function sincronizarMetasRbn(event){requireInstalledClock_(event,'sincronizarMetasRbn');sincronizarMetasRbn_();return {ok:true};}
+function continuarAtualizacaoRbn(event){requireInstalledClock_(event,'continuarAtualizacaoRbn');continuarAtualizacaoRbn_();return {ok:true};}
