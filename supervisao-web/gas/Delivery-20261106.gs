@@ -12,10 +12,10 @@ function deliveryRule_(rule,value,tz){
  const allowed={DATE_IS_VALID_DATE:()=>!!d,DATE_AFTER:()=>d>a,DATE_BEFORE:()=>d<a,DATE_EQUAL_TO:()=>d===a,DATE_ON_OR_AFTER:()=>d>=a,DATE_ON_OR_BEFORE:()=>d<=a,DATE_BETWEEN:()=>d>=a&&d<=b,DATE_NOT_BETWEEN:()=>d<a||d>b};
  if(!allowed[type]||!allowed[type]())throw new Error('A data não atende à validação da planilha. Revise a nota na origem.');
 }
-function deliveryRead_(sh,key,headers,identities,user){
+function deliveryRead_(sh,key,headers,identities,user,snapshot){
  const hits=identities.flatMap((r,i)=>transportRowKey_(r.slice(0,7))===key?[i+2]:[]);
  if(hits.length!==1)throw new Error('Nota ausente ou chave duplicada. Atualize a seleção.');
- const n=hits[0],width=headers.length,range=sh.getRange(n,1,1,width),raw=range.getValues()[0],display=range.getDisplayValues()[0],formulas=range.getFormulas()[0],rules=range.getDataValidations()[0],tz=sh.getParent().getSpreadsheetTimeZone();
+ const n=hits[0],width=headers.length,range=snapshot?null:sh.getRange(n,1,1,width),raw=snapshot?snapshot.raw[n-1]:range.getValues()[0],display=snapshot?snapshot.display[n-1]:range.getDisplayValues()[0],formulas=snapshot?snapshot.formulas[n-1]:range.getFormulas()[0],rules=snapshot?snapshot.rules[n-1]:range.getDataValidations()[0],tz=sh.getParent().getSpreadsheetTimeZone();
  const record=logRecords_([headers,raw],'transport',tz,[])[0];
  if(!record||transportRowKey_(display.slice(0,7))!==key||!logisticsRowAllowed_(user,record,'transport'))throw new Error('Esta nota mudou ou está fora do seu recorte de acesso.');
  const fields=deliveryFields_().map(([name,label])=>{
@@ -42,12 +42,13 @@ function deliveryApi_(user,p,id,batch){
  if(![batch?'batchRead':'editRead',batch?'batchSave':'editSave'].includes(p.action))throw new Error('Ação inválida.');
  if(!Array.isArray(keys)||!keys.length||keys.length>500||keys.some(k=>typeof k!=='string'||!k||k.length>200)||new Set(keys).size!==keys.length)throw new Error('Selecione de 1 a 500 notas distintas.');
  const lock=LockService.getScriptLock();if(!lock.tryLock(10000))throw new Error('Outra gravação está em andamento. Tente novamente.');
- let wrote=false;
+ let wrote=false;const started=Date.now();
  try{
   const sh=SpreadsheetApp.openById(id).getSheetByName('ACOMPANHAMENTO');if(!sh||sh.getLastRow()<2)throw new Error('Acompanhamento sem notas.');
   const headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0];
   if(['CHAVE','NF','TRANSPORTADORA','CLIENTE','CNPJ/CPF','CIDADE','UF'].some((h,i)=>logNorm_(headers[i])!==h))throw new Error('A estrutura de identificação da planilha mudou.');
-  const identities=sh.getRange(2,1,sh.getLastRow()-1,7).getDisplayValues(),items=keys.map(key=>deliveryRead_(sh,key,headers,identities,user));
+  let snapshot=null;if(batch){const grid=sh.getRange(1,1,sh.getLastRow(),headers.length);snapshot={raw:grid.getValues(),display:grid.getDisplayValues(),formulas:grid.getFormulas(),rules:grid.getDataValidations()};}
+  const identities=snapshot?snapshot.display.slice(1).map(r=>r.slice(0,7)):sh.getRange(2,1,sh.getLastRow()-1,7).getDisplayValues(),items=keys.map(key=>{if(Date.now()-started>120000)throw new Error('Reduza a quantidade de notas do lote e tente novamente. Nenhuma gravação foi iniciada.');return deliveryRead_(sh,key,headers,identities,user,snapshot);});
   if(read){
    if(!batch){const x=items[0];return {ok:true,key:x.key,version:x.version,fields:x.fields.map(deliveryPublic_),invoice:x.record.invoice,client:x.record.client,carrier:x.record.carrier,record:x.record};}
    return {ok:true,items:items.map(x=>({key:x.key,version:x.version,invoice:x.record.invoice,client:x.record.client})),fields:items[0].fields.map((f,j)=>{const fs=items.map(x=>x.fields[j]),restricted=fs.filter(f=>f.options!==null);return {...deliveryPublic_(f),value:'',readOnly:fs.some(f=>f.readOnly),filled:fs.filter(f=>f.value).length,options:restricted.length?[...new Set(restricted[0].options)].filter(v=>restricted.every(f=>f.options.includes(v))):null};})};
@@ -76,6 +77,7 @@ function deliveryApi_(user,p,id,batch){
   const changed=[],failed=[];let unchanged=0;
   for(const x of items){
    if(!x.changed.length){unchanged++;continue;}
+   if(Date.now()-started>220000){failed.push({key:x.key,invoice:x.record.invoice});continue;}
    try{
     const nowHeaders=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0];if(JSON.stringify(headers)!==JSON.stringify(nowHeaders))throw new Error('Cabeçalhos alterados.');
     const nowIds=sh.getRange(2,1,sh.getLastRow()-1,7).getDisplayValues(),now=deliveryRead_(sh,x.key,nowHeaders,nowIds,user);
