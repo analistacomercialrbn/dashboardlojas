@@ -1,11 +1,26 @@
+
+function formDirectClientNames_(){
+ const sh=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId).getSheetByName('CLIENTES');
+ if(!sh)throw new Error('Cadastro CLIENTES não encontrado na base auxiliar comercial.');
+ const values=sh.getDataRange().getValues(),ix=headerIndex_(values.shift()||[]);
+ if(ix.CODCLI==null||ix.CLIENTE==null)throw new Error('O cadastro CLIENTES precisa de CODCLI e CLIENTE.');
+ const names={},conflicts=new Set();
+ for(const r of values){const code=code_(r[ix.CODCLI]),name=logText_(r[ix.CLIENTE]);if(code==null||!name||/^\d+$/.test(name))continue;const key=String(code);if(names[key]&&norm_(names[key])!==norm_(name))conflicts.add(key);else names[key]=name;}
+ for(const key of conflicts)delete names[key];return names;
+}
+function formDirectClientName_(raw,names){
+ const code=code_(raw),known=code==null?'':names[String(code)];if(known)return known;
+ const text=logText_(raw).replace(/^\s*\d+\s*-\s*/,'').trim();return text&&!/^\d+$/.test(text)?text:'Nome não localizado no cadastro';
+}
+
 // Pedidos consultados na base sincronizada do Força de Vendas; escrita somente na auxiliar.
 function formDirectCatalog_(){
- const ss=SpreadsheetApp.openById(CFG.salesSpreadsheetId),out={};
+ const ss=SpreadsheetApp.openById(CFG.salesSpreadsheetId),out={},clientNames=formDirectClientNames_();
  for(const year of CFG.years){const sh=ss.getSheetByName(year);if(!sh||sh.getLastRow()<2)continue;const width=sh.getLastColumn(),ix=headerIndex_(sh.getRange(1,1,1,width).getDisplayValues()[0]);
   for(const h of ['NUMPED','Cod/Cliente','Cod/Produto','Qt Pedida','Posição','Data Pedido','MUNICENT','ESTENT'])if(ix[h]==null)throw new Error('Coluna comercial ausente: '+h);
   const lo=Math.min(ix['Cod/Cliente'],ix['NUMPED'],ix['Posição']),hi=Math.max(ix['Cod/Cliente'],ix['NUMPED'],ix['Posição']),ids=sh.getRange(2,lo+1,sh.getLastRow()-1,hi-lo+1).getValues(),hits=[],excluded=new Set();ids.forEach((r,i)=>{const order=String(r[ix['NUMPED']-lo]||'').trim(),client=code_(r[ix['Cod/Cliente']-lo]);if(client==null||!/^\d{1,20}$/.test(order))return;const key=formExpOrderKey_(year,String(client),order);if(['PENDENTE','LIBERADO','BLOQUEADO'].includes(norm_(r[ix['Posição']-lo])))hits.push(i+2);else excluded.add(key);});if(!hits.length)continue;const rows=sh.getRange(hits[0],1,hits[hits.length-1]-hits[0]+1,width).getValues();
   for(const r of rows){const order=String(cell_(r,ix,'NUMPED')||'').trim(),rawClient=String(cell_(r,ix,'Cod/Cliente')||''),clientCode=code_(rawClient),status=norm_(cell_(r,ix,'Posição'));if(!/^\d{1,20}$/.test(order)||clientCode==null)continue;
-   const key=formExpOrderKey_(year,String(clientCode),order);if(excluded.has(key))continue;if(!['PENDENTE','LIBERADO','BLOQUEADO'].includes(status)){out[key]=null;continue;}if(Object.prototype.hasOwnProperty.call(out,key)&&out[key]===null)continue;let o=out[key];if(!o)o=out[key]={key,year,order,clientCode:String(clientCode),client:rawClient.replace(/^\s*\d+\s*-\s*/,''),city:logText_(cell_(r,ix,'MUNICENT')),uf:logText_(cell_(r,ix,'ESTENT')),seller:logText_(cell_(r,ix,'Cod/Vend.')),date:logDate_(cell_(r,ix,'Data inicial do pedido')||cell_(r,ix,'Data Pedido'),ss.getSpreadsheetTimeZone()),products:[],rcas:[],statuses:[],invoices:[],weight:null,volumes:null,weightIncomplete:true};
+   const key=formExpOrderKey_(year,String(clientCode),order);if(excluded.has(key))continue;if(!['PENDENTE','LIBERADO','BLOQUEADO'].includes(status)){out[key]=null;continue;}if(Object.prototype.hasOwnProperty.call(out,key)&&out[key]===null)continue;let o=out[key];if(!o)o=out[key]={key,year,order,clientCode:String(clientCode),client:formDirectClientName_(rawClient,clientNames),city:logText_(cell_(r,ix,'MUNICENT')),uf:logText_(cell_(r,ix,'ESTENT')),seller:logText_(cell_(r,ix,'Cod/Vend.')),date:logDate_(cell_(r,ix,'Data inicial do pedido')||cell_(r,ix,'Data Pedido'),ss.getSpreadsheetTimeZone()),products:[],rcas:[],statuses:[],invoices:[],weight:null,volumes:null,weightIncomplete:true};
    o.rcas.push(code_(cell_(r,ix,'Cod/Vend.')));o.statuses.push(status);const product=String(cell_(r,ix,'Cod/Produto')||'');o.products.push({code:code_(product),description:product.replace(/^\s*\d+\s*-\s*/,''),quantity:logNumber_(cell_(r,ix,'Qt Pedida')),value:logNumber_(cell_(r,ix,'Pedidos Enviados')),supplier:logText_(cell_(r,ix,'Cod/Fornecedor')),department:logText_(cell_(r,ix,'DEPARTAMENTO')),section:logText_(cell_(r,ix,'SECAO')),invoice:logText_(cell_(r,ix,'Numero Nota Fiscal')),billingDate:logDate_(cell_(r,ix,'Data Faturamento'),ss.getSpreadsheetTimeZone()),orderDate:logDate_(cell_(r,ix,'Data Pedido'),ss.getSpreadsheetTimeZone()),status});if(cell_(r,ix,'Numero Nota Fiscal'))o.invoices.push(String(cell_(r,ix,'Numero Nota Fiscal')));
   }
  }
