@@ -55,3 +55,9 @@ function formationDirectApi_(user,p){
  }finally{lock.releaseLock();}
 }
 function verificarMontagemDiretaRbn(){const st=formExpState_(formExpAux_()),catalog=formDirectCatalog_(),v=formDirectView_(st,catalog,{perfil:'ADMIN',login:'diagnostico'});console.log(JSON.stringify({pedidos:v.orders.length,cidades:new Set(v.orders.map(o=>o.city+'|'+o.uf)).size,montagens:v.montages.length,revisao:v.revision,camposAusentes:v.missingFields,primeiroPedido:v.orders[0]?{pedido:v.orders[0].order,itens:v.orders[0].products.length}:null}));return {ok:true,pedidos:v.orders.length};}
+
+function verificarNomesClientesMontagemRbn(){
+ const names=formDirectClientNames_(),codes=['1015','10749','7534','10390','11869','8132'];
+ const result=codes.map(code=>({codigo:code,nome:formDirectClientName_(code,names)}));
+ console.log(JSON.stringify({cadastros:Object.keys(names).length,clientes:result}));return result;
+}
