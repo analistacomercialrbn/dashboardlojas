@@ -42,8 +42,20 @@ function formDirectMaterialize_(ss,st){
  formExpMaterialize_(ss,st);const sh=ss.getSheetByName('MONTAGEM_PEDIDOS'),headers=['CLIENTE_CODIGO','CLIENTE','CIDADE','UF','DATA_PEDIDO','STATUS_COMERCIAL','PESO_KG','VOLUMES','ITENS_JSON','FONTE','VERSAO_FONTE'];sh.getRange(1,6,1,headers.length).setValues([headers]);const saved=formDirectSnapshot_(st),rows=Object.keys(st.assignments).map(k=>{const o=saved[k];return o?[o.clientCode,o.client,o.city,o.uf,o.date,o.statuses.join(' / '),o.weight==null?'':o.weight,o.volumes==null?'':o.volumes,JSON.stringify(o.products),'FORCA_DE_VENDAS',o.version]:Array(headers.length).fill('');});if(rows.length)sh.getRange(2,6,rows.length,headers.length).setValues(rows.map(r=>r.map(v=>typeof v==='string'&&/^[=+@-]/.test(v)?"'"+v:v)));const end=sh.getLastRow();if(end>rows.length+1)sh.getRange(rows.length+2,6,end-rows.length-1,headers.length).clearContent();
 }
 function formationDirectApi_(user,p){
- formExpAccess_(user);const lock=LockService.getScriptLock();if(!lock.tryLock(10000))throw new Error('Outra rotina está em andamento. Tente novamente.');try{
- const ss=formExpAux_(),st=formExpState_(ss);if(p.action==='save'&&st.requests[p.requestId])return {ok:true,alreadyApplied:true,message:'Movimentação já registrada.'};const catalog=formDirectCatalog_(),view=formDirectView_(st,catalog,user);if(!p.action||p.action==='read')return view;
+ formExpAccess_(user);
+ // Consultas demoradas não reservam o bloqueio global usado pelos acionadores.
+ const ss=formExpAux_(),initial=formExpState_(ss);
+ if(p.action==='save'&&initial.requests[p.requestId])return {ok:true,alreadyApplied:true,message:'Movimentação já registrada.'};
+ const sourceState=formDirectSourceState_(),catalog=formDirectCatalog_();
+ if(formDirectSourceState_()!==sourceState)throw new Error('A base de vendas foi atualizada durante a consulta. Atualize os pedidos antes de salvar.');
+ if(!p.action||p.action==='read')return formDirectView_(formExpState_(ss),catalog,user);
+ if(p.action!=='save')throw new Error('Ação de montagem inválida.');
+ // O bloqueio protege apenas revisão, reserva e escrita do histórico auxiliar.
+ const lock=LockService.getScriptLock();if(!lock.tryLock(30000))throw new Error('A atualização está finalizando uma gravação. Sua seleção foi preservada; tente salvar novamente em instantes.');
+ try{
+ const st=formExpState_(ss);if(st.requests[p.requestId])return {ok:true,alreadyApplied:true,message:'Movimentação já registrada.'};
+ if(formDirectSourceState_()!==sourceState)throw new Error('A base de vendas mudou antes da gravação. Atualize os pedidos para conferir.');
+ const view=formDirectView_(st,catalog,user);
  if(p.action!=='save'||!['CRIAR','ADICIONAR','TRANSFERIR','REMOVER','RENOMEAR'].includes(p.operation))throw new Error('Operação inválida. Os pedidos já vêm identificados do Força de Vendas.');if(!/^[a-zA-Z0-9_-]{16,100}$/.test(String(p.requestId||'')))throw new Error('Identificador de movimentação inválido.');
  // Retirar um pedido cujo status mudou deve continuar possível para liberar a montagem.
  if(p.operation==='REMOVER'){if(Number(p.revision)!==st.revision||p.sourceVersion!==view.sourceVersion||p.confirmed!==true)throw new Error('Atualize e confirme a retirada.');if(!Array.isArray(p.keys)||!p.keys.length||p.keys.length>100||new Set(p.keys).size!==p.keys.length||p.keys.some(k=>!st.assignments[k]||!view.orders.some(o=>o.key===k)))throw new Error('Seleção de pedidos inválida.');}
@@ -60,4 +72,10 @@ function verificarNomesClientesMontagemRbn(){
  const names=formDirectClientNames_(),codes=['1015','10749','7534','10390','11869','8132'];
  const result=codes.map(code=>({codigo:code,nome:formDirectClientName_(code,names)}));
  console.log(JSON.stringify({cadastros:Object.keys(names).length,clientes:result}));return result;
+}
+
+function formDirectSourceState_(){
+ const p=PropertiesService.getScriptProperties();
+ if(p.getProperty('RBN_SALES_JOB_N'))throw new Error('A base de vendas está recebendo novos pedidos. Aguarde a atualização e consulte novamente.');
+ return String(p.getProperty('VENDAS_RBN_ULTIMA_SYNC')||'');
 }
