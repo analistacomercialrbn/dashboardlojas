@@ -20,20 +20,60 @@ function formDirectClientName_(raw,names){
 const FORM_OPEN_STATUSES = new Set(['PENDENTE','LIBERADO','BLOQUEADO']);
 const FORM_CACHE_SECONDS = 1800;
 
+function formDirectStatusPattern_() {
+ const letters=new Map();
+ for(const word of FORM_OPEN_STATUSES)for(const letter of word)letters.set(letter,'');
+ for(const [first,last] of [[65,122],[192,591],[7680,7935]]){
+  for(let i=first;i<=last;i++){
+   const char=String.fromCharCode(i), base=norm_(char);
+   if(letters.has(base))letters.set(base,letters.get(base)+char);
+  }
+ }
+ const words=[...FORM_OPEN_STATUSES].map(word=>[...word].map(letter=>'['+letters.get(letter)+'][\u0300-\u036f]*').join(''));
+ return '(?:'+words.join('|')+')';
+}
+
+function formDirectFindRows_(sheet, column, count, pattern) {
+ const space='[\\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*';
+ return sheet.getRange(2,column+1,count,1).createTextFinder('^'+space+pattern+space+'$')
+  .useRegularExpression(true).matchEntireCell(true).findAll().map(range=>range.getRow());
+}
+
+function formDirectFindNumbers_(sheet, column, count, numbers) {
+ const terms=[...numbers].map(number=>number.replace(/\d(?=(?:\d{3})+$)/g,'$&[.,\u00a0\u202f ]?')).join('|');
+ if(terms.length>7000)return null;
+ return formDirectFindRows_(sheet,column,count,'(?:'+terms+')(?:[.,]0+)?');
+}
+
+function formDirectFindOpenRows_(sheet, ix, count) {
+ const open=formDirectFindRows_(sheet,ix['Posição'],count,formDirectStatusPattern_());
+ if(!open.length)return [];
+ const needed=new Set(open), numbers=new Set();
+ for(const {first,last} of centralRowBlocks_(open)){
+  const ids=sheet.getRange(first,ix.NUMPED+1,last-first+1,1).getValues();
+  ids.forEach(([value],i)=>{
+   const id=String(value||'').trim();
+   if(needed.has(first+i)&&/^\d{1,20}$/.test(id))numbers.add(id);
+  });
+ }
+ if(!numbers.size)return [];
+ const matched=formDirectFindNumbers_(sheet,ix.NUMPED,count,numbers);
+ if(!matched)return null;
+ const found=new Set(matched);
+ // Se a exibição de NUMPED omitiu uma linha válida, usa os valores brutos desse ano.
+ return open.every(row=>found.has(row))?matched:null;
+}
+
 function formDirectCandidateRows_(sheet, ix, count, selected, fast) {
  const orderText=value=>String(value||'').trim();
  let wanted=selected;
  let ids;
- if(fast&&wanted?.size){
-  // NUMPED pode aparecer com separadores na exibição; os valores brutos são validados abaixo.
-  const terms=[...wanted].map(number=>number.replace(/\d(?=(?:\d{3})+$)/g,'$&[.,\u00a0\u202f ]?')).join('|');
-  if(terms.length<7000){
-   try{
-    return sheet.getRange(2,ix.NUMPED+1,count,1).createTextFinder('^\\s*(?:'+terms+')(?:[.,]0+)?\\s*$')
-     .useRegularExpression(true).matchEntireCell(true).findAll().map(range=>range.getRow());
-   }catch(error){
-    // A leitura bruta também suporta abas e formatos legados.
-   }
+ if(fast){
+  try{
+   const rows=wanted?formDirectFindNumbers_(sheet,ix.NUMPED,count,wanted):formDirectFindOpenRows_(sheet,ix,count);
+   if(rows)return rows;
+  }catch(error){
+   // A leitura bruta também suporta abas e formatos legados.
   }
  }
  if(!wanted){
@@ -139,7 +179,7 @@ function formDirectReadCatalog_(sourceState, force, checkedKeys = [], cacheOnly 
   for(const [id] of previous)delete saved[id];
   return Object.assign(saved,selected);
  }
- const catalog=formDirectCatalog_(null,names);
+ const catalog=formDirectCatalog_(null,names,true);
  if(sourceState===formDirectSourceState_()){
   centralCacheWrite_(cache,key,JSON.stringify(catalog),FORM_CACHE_SECONDS);
   centralCacheWrite_(cache,namesKey,JSON.stringify(names),FORM_CACHE_SECONDS);
