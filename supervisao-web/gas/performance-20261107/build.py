@@ -48,8 +48,6 @@ def change_normalizer(body):
 
 
 def change_logistics(body):
-    body = exact(body, 'return transportBatch_(user,p,ids.indicators);', 'return centralTransportEdit_(user,p,ids.indicators,true);')
-    body = exact(body, 'return transportEdit_(user,p,ids.indicators);', 'return centralTransportEdit_(user,p,ids.indicators,false);')
     start = body.index(' const id=kind===\'transport\'?ids.indicators:ids.operations,cache=')
     if 'return {ok:true,meta,rows};' not in body[start:]:
         raise ValueError('Final da leitura logística não identificado')
@@ -90,8 +88,10 @@ def backend(active, html_url, suffix):
                    "if (action === 'page') return centralCommercialPage_(user,payload);")
     prefix = function(prefix, 'logRecords_', change_normalizer)
     prefix = function(prefix, 'logisticsApi_', change_logistics)
-    prefix = function(prefix, 'transportEdit_', lambda _: '')
-    prefix = function(prefix, 'transportBatch_', lambda _: '')
+    prefix = exact(prefix, 'function transportEdit_(user,p,id){return deliveryApi_(user,p,id,false);}',
+                   'function transportEdit_(user,p,id){return centralTransportEdit_(user,p,id,false);}')
+    prefix = exact(prefix, 'function transportBatch_(user,p,id){return deliveryApi_(user,p,id,true);}',
+                   'function transportBatch_(user,p,id){return centralTransportEdit_(user,p,id,true);}')
     prefix = function(prefix, 'formExpAux_', change_auxiliary)
     prefix = exact(prefix, "requireInstalledClock_(event,'atualizarCacheVendasRbn');atualizarCacheVendasRbn_();",
                    "requireInstalledClock_(event,'atualizarCacheVendasRbn');formProjectionRecover_();atualizarCacheVendasRbn_();")
