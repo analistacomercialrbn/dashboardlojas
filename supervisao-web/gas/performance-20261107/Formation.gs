@@ -191,6 +191,20 @@ function formDirectGuard_(sourceState) {
  if(formDirectSourceState_()!==sourceState)throw new Error('A base de vendas foi atualizada durante a consulta. Atualize os pedidos e confira a seleção.');
 }
 
+function formDirectPrepareAfterSync_(sync) {
+ const props=PropertiesService.getScriptProperties(), key='VENDAS_RBN_ULTIMA_SYNC';
+ const before=props.getProperty(key), start=Date.now();
+ sync();
+ if(Date.now()-start>90000||before===props.getProperty(key))return;
+ try{
+  const timing=centralTiming_('formacao.preparoAposSincronizacao');
+  formDirectReadCatalog_(formDirectSourceState_(),false);
+  timing.finish('ok');
+ }catch(error){
+  console.warn('O preparo do catálogo ficou para a próxima consulta.');
+ }
+}
+
 function formDirectTargetKeys_(st, target) {
  return Object.keys(st.assignments).filter(key=>st.assignments[key].montageId===target);
 }
