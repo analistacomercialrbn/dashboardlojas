@@ -1,0 +1,186 @@
+.logistics-content.logistics-overview {
+  --tower-ink: #412417;
+  --tower-muted: #684b3b;
+  --tower-line: #eccdb6;
+  --tower-surface: #fff3e6;
+}
+.logistics-overview .log-tower-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(18px, 3.4vw, 42px);
+  margin-bottom: 16px;
+  border-radius: 22px;
+  color: #fff8f2;
+  background: radial-gradient(ellipse at 86% 6%, #a34b21 0%, transparent 58%),
+    linear-gradient(132deg, #321c15, #6a301a 66%, #87411f);
+  box-shadow: 0 10px 26px #632d1a20;
+}
+.logistics-overview .log-tower-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: linear-gradient(#ffce9b13 1px, transparent 1px), linear-gradient(90deg, #ffce9b13 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(100deg, transparent 20%, #000);
+  pointer-events: none;
+}
+.log-tower-heading { max-width: 700px; margin-bottom: 24px; }
+.log-tower-eyebrow { color: #ffc896; letter-spacing: .15em; font-weight: 800; font-size: .72rem; }
+.logistics-overview .log-tower-heading h2 { color: #fff8f2; margin: 6px 0 4px; font-size: clamp(1.65rem, 3.7vw, 2.85rem); line-height: 1.1; }
+.logistics-overview .log-tower-heading p { color: #ffdeca; margin: 8px 0 0; font-size: .9rem; }
+.log-tower-kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
+.log-tower-kpi {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  text-align: left;
+  background: #ffdfc51c;
+  color: #fff8f2;
+  border: 1px solid #ffc79e56;
+  border-radius: 13px;
+  padding: 13px 18px 13px 13px;
+  cursor: pointer;
+}
+.log-tower-kpi:hover { background: #ffdfc530; }
+.log-tower-kpi:focus-visible { outline: 2px solid #fff4e3; outline-offset: 2px; }
+.log-tower-kpi > span { color: #fff0e3; font-size: .76rem; font-weight: 750; }
+.log-tower-kpi strong { font-size: clamp(1.25rem, 2.7vw, 2.12rem); line-height: 1.12; font-variant-numeric: tabular-nums; }
+.log-tower-kpi small { color: #ffdfca; font-size: .7rem; line-height: 1.3; }
+.log-tower-kpi i { position: absolute; top: 9px; right: 9px; font-style: normal; color: #ffc996; }
+.log-tower-kpi.is-alert { border-top: 2px solid #f59e96; }
+.log-tower-kpi.is-alert strong { color: #ffc4bc; }
+.logistics-overview .overview-grid.log-tower-grid { align-items: stretch; }
+.logistics-overview .panel.log-tower-panel {
+  margin: 0;
+  padding: clamp(12px,2vw,20px);
+  min-width: 0;
+  background: linear-gradient(150deg,#fffaf3,#fbe6d3);
+  border: 1px solid var(--tower-line);
+  box-shadow: 0 3px 12px #7a3a1810;
+  scroll-margin-top: 18px;
+}
+.logistics-overview .log-tower-panel:focus, .logistics-overview #overviewOverdue:focus {
+  outline: 2px solid #b2592d;
+  outline-offset: 2px;
+}
+.log-tower-panel-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+.log-tower-panel-head > span { flex: 0 0 auto; padding: 5px 7px; border-radius: 8px; background: #f3d2b8; color: #69361d; font-size: .67rem; font-weight: 800; }
+.logistics-overview .log-tower-panel-head h3 { margin: 0; color: var(--tower-ink); font-size: 1.04rem; }
+.logistics-overview .log-tower-panel-head p { margin: 4px 0 0; color: var(--tower-muted); font-size: .76rem; line-height: 1.35; }
+.log-wait-total, .log-sla-total { display: grid; gap: 3px; margin-bottom: 13px; }
+.log-wait-total strong, .log-sla-total strong { color: #8d411c; font-size: 1.85rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.log-wait-total span, .log-sla-total span { color: var(--tower-muted); font-size: .75rem; }
+.log-wait-bands, .log-carrier-sla { display: grid; gap: 5px; }
+.log-wait-bands button, .log-carrier-sla button {
+  display: grid;
+  grid-template-columns: minmax(82px,1fr) minmax(44px,1.55fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tower-ink);
+  text-align: left;
+  font-size: .77rem;
+  cursor: pointer;
+}
+.log-carrier-sla button { grid-template-columns: minmax(95px,1.6fr) minmax(40px,1fr) minmax(40px,auto); }
+.log-wait-bands button:hover:not(:disabled), .log-carrier-sla button:hover { background: #ffe8d4; border-color: var(--tower-line); }
+.log-wait-bands button:disabled { cursor: default; color: var(--tower-muted); }
+.log-wait-bands strong, .log-carrier-sla b { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.log-wait-bands small, .log-carrier-sla small { display: block; color: var(--tower-muted); font-size: .67rem; }
+.log-carrier-sla button > span:first-child { overflow-wrap: anywhere; }
+.log-wait-track { display: block; height: 9px; border-radius: 12px; background: #ead2be; overflow: hidden; }
+.log-wait-track i { display: block; width: var(--fill,0%); height: 100%; border-radius: 12px; background: var(--band-color,#b95e2c); }
+.log-sla-chart { position: relative; height: 162px; }
+.log-sla-data { margin-top: 7px; color: var(--tower-muted); font-size: .75rem; }
+.log-sla-data summary { cursor: pointer; font-weight: 700; }
+.log-tower-detail-list, .log-stage-legend { list-style: none; padding: 0; margin: 9px 0 0; }
+.log-tower-detail-list li { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid #ead3c3; }
+.log-tower-queue-total { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--tower-muted); margin: 0 0 8px; font-size: .86rem; }
+.log-tower-queue-total strong { color: #8d411c; }
+.log-tower-due { background: #f4dac5; color: #713c20; border-radius: 7px; padding: 4px 7px; font-weight: 700; white-space: nowrap; font-size: .7rem; }
+.log-tower-due.is-today { background: #9e441a; color: #fff8f1; }
+.log-tower-empty { color: var(--tower-muted); font-size: .82rem; }
+.log-stage-track { display: flex; min-height: 18px; border-radius: 12px; overflow: hidden; background: #ead2be; }
+.log-stage-track span { flex: var(--stage-size) 0 0; background: var(--stage-color); }
+.log-stage-legend { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px 12px; }
+.log-stage-legend li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; font-size: .75rem; color: var(--tower-ink); }
+.log-stage-legend i { width: 9px; height: 9px; border-radius: 50%; background: var(--stage-color); }
+.logistics-overview .overview-metrics.overview-transport { background: #f6e7db; border-color: #e4c4ab; }
+.logistics-overview .overview-metrics.overview-transport h2 { color: #68361f; }
+.logistics-overview .overview-metrics.overview-transport .kpi-card { background: #fff3e9; border-color: #ead0bb; }
+.logistics-overview .overview-metrics.overview-formation { background: #f8dfc6; border-color: #e3b894; }
+.logistics-overview .overview-compact { background: #fff3e7; border-color: #eac9af; }
+.logistics-overview #overviewOverdue { background: #fff3ec; border-color: #e7b8a7; scroll-margin-top: 18px; }
+.logistics-overview .log-identity-note, .logistics-overview .log-overview-links { background: #fbefe3; border-color: #eacdb6; }
+.logistics-content .panel.log-chart-panel:is([data-log-chart=logVehicle],[data-log-chart=logService],[data-log-chart=logOverviewService],[data-log-chart=logDailyDelivery],[data-log-chart=logCostDriver],[data-log-chart=logWaitRegion]) {
+  background: linear-gradient(150deg,#fff4e9,#f1d8c3);
+  border-color: #e5c2a7;
+}
+.logistics-content .panel.log-chart-panel .log-chart-wrap { background: #fff6eb9c; }
+@media (max-width: 920px) {
+  .log-tower-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 700px) {
+  .logistics-overview .overview-grid.log-tower-grid { grid-template-columns: minmax(0,1fr); }
+  .log-tower-kpi { padding: 10px 14px 10px 9px; }
+  .log-tower-kpi i { top: 5px; right: 5px; }
+  .log-stage-legend { grid-template-columns: minmax(0,1fr); }
+}
+.log-tower-kpis:has(> :only-child) { grid-template-columns: minmax(0,320px); }
+
+.formation-workspace-v2 .cargo-priority-summary {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1.7fr);
+  gap: 12px;
+  margin: 12px 0;
+  padding: 13px;
+  border: 1px solid #e7bd9d;
+  border-radius: 12px;
+  color: #542f1e;
+  background: linear-gradient(140deg,#fff5e9,#f8dfc8);
+}
+.cargo-priority-summary h3, .cargo-priority-summary p { margin: 3px 0 0; }
+.cargo-priority-summary small { color: #6f462e; font-size: .7rem; font-weight: 750; }
+.cargo-priority-summary strong { display: block; margin-top: 3px; }
+.cargo-priority-ages ul, .cargo-board-issues { display: flex; flex-wrap: wrap; gap: 5px; list-style: none; margin: 6px 0 0; padding: 0; }
+.cargo-priority-ages li, .cargo-board-issues li { padding: 4px 7px; border-radius: 6px; background: #f6d3b6; color: #64361e; font-size: .76rem; }
+.cargo-board-issues { margin: 0 0 9px; }
+.cargo-board-issues li.critical { background: #f6d4cc; color: #812a20; }
+.transport-workbench .transport-note-badges .badge-due { background: #f6d7bc; color: #723a1e; }
+.transport-workbench .transport-note-follow p { overflow-wrap: anywhere; }
+.transport-workbench .transport-queue-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.cargo-route-badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-weight: 750; color: #66341d; background: #f5d7be; }
+.cargo-route-badge.confirmed { background: #f1e2d4; color: #4f3526; }
+.cargo-route-badge.draft { background: #fbe7d6; color: #733d20; }
+.cargo-route-state { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 9px; }
+.cargo-route-readiness { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; padding: 8px 10px; margin: 8px 0 12px; border-radius: 8px; background: #fff2e6; color: #663c25; font-size: .84rem; }
+.cargo-route-readiness .is-pending, .cargo-stop .cargo-route-missing-label { color: #8b3d1d; font-weight: 750; }
+.cargo-route-stops .cargo-stop.is-address-pending { border-color: #e2a77e; background: #fff6ec; }
+.cargo-route-missing-label { display: block; margin-top: 4px; }
+#driverAgendaMonth .driver-agenda-mode { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+#driverAgendaMonth .driver-agenda-mode .active { color: #6e361d; background: #f7dabe; border-color: #dca97e; }
+#driverAgendaMonth .driver-agenda-day-list { padding: 12px; border: 1px solid #ebc8a9; border-radius: 12px; background: #fff4e8; }
+#driverAgendaMonth .driver-day-list-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+#driverAgendaMonth .driver-day-list-toolbar label { display: grid; gap: 3px; font-size: .8rem; color: #66412b; }
+#driverAgendaMonth .driver-day-list-toolbar input { max-width: 100%; min-width: 0; }
+#driverAgendaMonth .driver-day-list-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+#driverAgendaMonth .driver-day-list-header h3, #driverAgendaMonth .driver-day-list-header p { margin: 2px 0; }
+@media (max-width:760px) {
+  .formation-workspace-v2 .cargo-priority-summary { grid-template-columns: minmax(0,1fr); gap: 8px; }
+  .transport-workbench .transport-queue-kpis { grid-template-columns: minmax(0,1fr); }
+  .transport-workbench .transport-note-row { gap: 7px; }
+  .transport-workbench .transport-note-dates { order: 3; }
+  .transport-workbench .transport-note-open { order: 4; }
+  .transport-workbench .transport-note-follow { order: 2; background: #fff3e8; padding: 7px; border-radius: 7px; }
+  #driverAgendaMonth .driver-agenda-day-list .driver-program-grid { grid-template-columns: minmax(0,1fr); }
+}
+.cargo-route-missing-label[hidden], #cargoRouteFirstMissing[hidden] { display: none; }
