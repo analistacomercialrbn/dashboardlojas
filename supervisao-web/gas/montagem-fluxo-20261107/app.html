@@ -262,9 +262,9 @@
 .cargo-period label {display:grid;gap:4px}
 .cargo-period input,.cargo-period select {min-height:42px;padding:6px;border:1px solid #d3b7a2;border-radius:6px;color:#51361f;background:#fff}
 .cargo-history-row {border-top:1px solid #eadbce}
-.cargo-history-row summary {display:grid;grid-template-columns:1fr 1.35fr .8fr 1.2fr 1.2fr 1.7fr;gap:8px;align-items:center;padding:10px 4px;cursor:pointer}
-.cargo-history-row summary span,.cargo-history-row summary strong {min-width:0;overflow-wrap:anywhere}
-.cargo-history-row summary:hover,.cargo-history-row summary:focus-visible {background:#fff6ec}
+.cargo-history-row>summary {display:grid;grid-template-columns:1fr 1.35fr .8fr 1.2fr 1.2fr 1.7fr;gap:8px;align-items:center;padding:10px 4px;cursor:pointer}
+.cargo-history-row>summary span,.cargo-history-row>summary strong {min-width:0;overflow-wrap:anywhere}
+.cargo-history-row>summary:hover,.cargo-history-row>summary:focus-visible {background:#fff6ec}
 .cargo-history-body {padding:8px 10px 15px}
 .cargo-history-movements {margin-top:12px}
 .cargo-history-movements summary {cursor:pointer;font-weight:700}
@@ -276,7 +276,7 @@
  .cargo-priority-layout {grid-template-columns:minmax(0,1fr)}
  .cargo-priority #cargoPriorityMap {height:clamp(330px,57vh,530px)}
  .cargo-priority-cities {max-height:158px}
- .cargo-history-row summary {grid-template-columns:repeat(2,minmax(0,1fr));font-size:.85rem}
+ .cargo-history-row>summary {grid-template-columns:repeat(2,minmax(0,1fr));font-size:.85rem}
  .cargo-incident-info {left:auto;right:-45px}
  .cargo-queue-card .cargo-route-panel {padding:10px}
 }
@@ -1157,6 +1157,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@31faaa5b629185716ddc4c1d593f62292359bc40/supervisao-web/gas/montagem-fluxo-20261107/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@0e412f7a8929e837359edbbaad046b581e91d491/supervisao-web/gas/montagem-fluxo-20261107/app.js"></script>
 </body>
 </html>
