@@ -18,39 +18,49 @@ function formDirectClientName_(raw,names){
 
 // Pedidos consultados na base sincronizada do Força de Vendas; escrita somente na auxiliar.
 const FORM_OPEN_STATUSES = new Set(['PENDENTE','LIBERADO','BLOQUEADO']);
+const FORM_CACHE_SECONDS = 1800;
 
-function formDirectCatalog_(numbers = null, clientNames = formDirectClientNames_()) {
+function formDirectCandidateRows_(sheet, ix, count, selected, fast) {
+ const orderText=value=>String(value||'').trim();
+ let wanted=selected;
+ let ids;
+ if(fast&&wanted?.size){
+  // NUMPED pode aparecer com separadores na exibição; os valores brutos são validados abaixo.
+  const terms=[...wanted].map(number=>number.replace(/\d(?=(?:\d{3})+$)/g,'$&[.,\u00a0\u202f ]?')).join('|');
+  if(terms.length<7000){
+   try{
+    return sheet.getRange(2,ix.NUMPED+1,count,1).createTextFinder('^\\s*(?:'+terms+')(?:[.,]0+)?\\s*$')
+     .useRegularExpression(true).matchEntireCell(true).findAll().map(range=>range.getRow());
+   }catch(error){
+    // A leitura bruta também suporta abas e formatos legados.
+   }
+  }
+ }
+ if(!wanted){
+  // Abas sem pedidos em aberto só precisam devolver a coluna de posição.
+  const position=sheet.getRange(2,ix['Posição']+1,count,1).getValues(), openRows=[], normalized=new Map();
+  position.forEach(([value],i)=>{
+   if(!normalized.has(value))normalized.set(value,FORM_OPEN_STATUSES.has(norm_(value)));
+   if(normalized.get(value))openRows.push(i);
+  });
+  if(!openRows.length)return [];
+  ids=sheet.getRange(2,ix.NUMPED+1,count,1).getValues();
+  wanted=new Set(openRows.map(i=>orderText(ids[i][0])).filter(id=>/^\d{1,20}$/.test(id)));
+ }
+ if(!wanted.size)return [];
+ if(!ids)ids=sheet.getRange(2,ix.NUMPED+1,count,1).getValues();
+ // Inclui as linhas faturadas com o mesmo número para descartar pedidos mistos.
+ return ids.flatMap(([number],i)=>wanted.has(orderText(number))?[i+2]:[]);
+}
+
+function formDirectCatalog_(numbers = null, clientNames = formDirectClientNames_(), fast = false) {
  const ss=SpreadsheetApp.openById(CFG.salesSpreadsheetId),tz=ss.getSpreadsheetTimeZone(),out={};
  for(const year of CFG.years){
   const sh=ss.getSheetByName(year), count=sh?sh.getLastRow()-1:0;
   if(count<1)continue;
   const width=sh.getLastColumn(), ix=headerIndex_(sh.getRange(1,1,1,width).getDisplayValues()[0]);
   for(const h of ['NUMPED','Cod/Cliente','Cod/Produto','Qt Pedida','Posição','Data Pedido','MUNICENT','ESTENT'])if(ix[h]==null)throw new Error('Coluna comercial ausente: '+h);
-  const hits=[], excluded=new Set();
-  if(numbers){
-   // Confere ao vivo todas as ocorrências dos números selecionados, inclusive em outro ano.
-   const ids=sh.getRange(2,ix.NUMPED+1,count,1).getValues();
-   ids.forEach((r,i)=>{if(numbers.has(String(r[0]||'').trim()))hits.push(i+2);});
-  }else{
-   const lo=Math.min(ix['Cod/Cliente'],ix.NUMPED,ix['Posição']),hi=Math.max(ix['Cod/Cliente'],ix.NUMPED,ix['Posição']);
-   const ids=sh.getRange(2,lo+1,count,hi-lo+1).getValues(), candidates=new Set(), openStatus=new Map();
-   const keyFor=r=>{
-    const order=String(r[ix.NUMPED-lo]||'').trim(), client=code_(r[ix['Cod/Cliente']-lo]);
-    return client!=null&&/^\d{1,20}$/.test(order)?formExpOrderKey_(year,String(client),order):'';
-   };
-   const isOpen=r=>{
-    const status=r[ix['Posição']-lo];
-    if(!openStatus.has(status))openStatus.set(status,FORM_OPEN_STATUSES.has(norm_(status)));
-    return openStatus.get(status);
-   };
-   ids.forEach((r,i)=>{
-    if(!isOpen(r))return;
-    const key=keyFor(r);
-    if(key){candidates.add(key);hits.push(i+2);}
-   });
-   if(!hits.length)continue;
-   for(const r of ids)if(!isOpen(r)){const key=keyFor(r);if(candidates.has(key))excluded.add(key);}
-  }
+  const hits=formDirectCandidateRows_(sh,ix,count,numbers,fast);
   const needed=new Set(hits);
   for(const {first,last} of centralRowBlocks_(hits)){
    const rows=sh.getRange(first,1,last-first+1,width).getValues();
@@ -58,7 +68,7 @@ function formDirectCatalog_(numbers = null, clientNames = formDirectClientNames_
     if(!needed.has(first+i))continue;
     const r=rows[i],order=String(cell_(r,ix,'NUMPED')||'').trim(),rawClient=String(cell_(r,ix,'Cod/Cliente')||''),clientCode=code_(rawClient),status=norm_(cell_(r,ix,'Posição'));
     if(!/^\d{1,20}$/.test(order)||clientCode==null||(numbers&&!numbers.has(order)))continue;
-   const key=formExpOrderKey_(year,String(clientCode),order);if(excluded.has(key))continue;if(!FORM_OPEN_STATUSES.has(status)){out[key]=null;continue;}if(Object.prototype.hasOwnProperty.call(out,key)&&out[key]===null)continue;let o=out[key];if(!o)o=out[key]={key,year,order,clientCode:String(clientCode),client:formDirectClientName_(rawClient,clientNames),city:logText_(cell_(r,ix,'MUNICENT')),uf:logText_(cell_(r,ix,'ESTENT')),seller:logText_(cell_(r,ix,'Cod/Vend.')),date:logDate_(cell_(r,ix,'Data inicial do pedido')||cell_(r,ix,'Data Pedido'),tz),products:[],rcas:[],statuses:[],invoices:[],weight:null,volumes:null,weightIncomplete:true};
+   const key=formExpOrderKey_(year,String(clientCode),order);if(!FORM_OPEN_STATUSES.has(status)){out[key]=null;continue;}if(Object.prototype.hasOwnProperty.call(out,key)&&out[key]===null)continue;let o=out[key];if(!o)o=out[key]={key,year,order,clientCode:String(clientCode),client:formDirectClientName_(rawClient,clientNames),city:logText_(cell_(r,ix,'MUNICENT')),uf:logText_(cell_(r,ix,'ESTENT')),seller:logText_(cell_(r,ix,'Cod/Vend.')),date:logDate_(cell_(r,ix,'Data inicial do pedido')||cell_(r,ix,'Data Pedido'),tz),products:[],rcas:[],statuses:[],invoices:[],weight:null,volumes:null,weightIncomplete:true};
    o.rcas.push(code_(cell_(r,ix,'Cod/Vend.')));o.statuses.push(status);const product=String(cell_(r,ix,'Cod/Produto')||'');o.products.push({code:code_(product),description:product.replace(/^\s*\d+\s*-\s*/,''),quantity:logNumber_(cell_(r,ix,'Qt Pedida')),value:logNumber_(cell_(r,ix,'Pedidos Enviados')),supplier:logText_(cell_(r,ix,'Cod/Fornecedor')),department:logText_(cell_(r,ix,'DEPARTAMENTO')),section:logText_(cell_(r,ix,'SECAO')),invoice:logText_(cell_(r,ix,'Numero Nota Fiscal')),billingDate:logDate_(cell_(r,ix,'Data Faturamento'),tz),orderDate:logDate_(cell_(r,ix,'Data Pedido'),tz),status});if(cell_(r,ix,'Numero Nota Fiscal'))o.invoices.push(String(cell_(r,ix,'Numero Nota Fiscal')));
    }
   }
@@ -118,8 +128,11 @@ function formDirectReadCatalog_(sourceState, force, checkedKeys = [], cacheOnly 
  const names=(force?null:centralCacheRead_(cache,namesKey))||formDirectClientNames_();
  if(saved){
   const numbers=new Set(checkedKeys.map(key=>formExpParseKey_(key).order));
-  const selected=formDirectCatalog_(numbers,names);
   const previous=Object.entries(saved).filter(([,order])=>numbers.has(order.order));
+  let selected=formDirectCatalog_(numbers,names,true);
+  if(previous.some(([id,order])=>selected[id]?.products.length!==order.products.length)){
+   selected=formDirectCatalog_(numbers,names);
+  }
   if(previous.length!==Object.keys(selected).length||previous.some(([id,order])=>order.version!==selected[id]?.version)){
    try{cache.remove(key);}catch(error){}
   }
@@ -128,8 +141,8 @@ function formDirectReadCatalog_(sourceState, force, checkedKeys = [], cacheOnly 
  }
  const catalog=formDirectCatalog_(null,names);
  if(sourceState===formDirectSourceState_()){
-  centralCacheWrite_(cache,key,JSON.stringify(catalog),300);
-  centralCacheWrite_(cache,namesKey,JSON.stringify(names),300);
+  centralCacheWrite_(cache,key,JSON.stringify(catalog),FORM_CACHE_SECONDS);
+  centralCacheWrite_(cache,namesKey,JSON.stringify(names),FORM_CACHE_SECONDS);
  }
  return catalog;
 }
