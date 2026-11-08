@@ -95,6 +95,9 @@ def backend(active, html_url, suffix):
     prefix = function(prefix, 'formExpAux_', change_auxiliary)
     prefix = exact(prefix, "requireInstalledClock_(event,'atualizarCacheVendasRbn');atualizarCacheVendasRbn_();",
                    "requireInstalledClock_(event,'atualizarCacheVendasRbn');formProjectionRecover_();atualizarCacheVendasRbn_();")
+    for name in ('sincronizarVendasRbn', 'continuarAtualizacaoRbn'):
+        prefix = exact(prefix, f"requireInstalledClock_(event,'{name}');{name}_();",
+                       f"requireInstalledClock_(event,'{name}');formDirectPrepareAfterSync_({name}_);")
     return prefix + suffix.lstrip()
 
 
