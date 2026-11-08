@@ -3407,8 +3407,21 @@ async function cargoSave(payload,dialog,status) {
       CARGO_ROUTE.draft=null;
       FEXP.tab='routing';
       FEXP.montage=result.montageId||payload.target;
+      FEXP.routeExpanded='';
     }
     if(['ROTEIRO_SALVAR','REABRIR'].includes(payload.operation))CARGO_ROUTE.draft=null;
+    if(payload.operation==='ROTEIRO_SALVAR' && payload.route.confirmed){
+      FEXP.tab='finished';
+      FEXP.finalPeriod='7';
+      FEXP.routeExpanded=payload.target;
+    }
+    if(payload.operation==='REABRIR'){
+      FEXP.tab='montages';
+      FEXP.montage=payload.target;
+      FEXP.montageDetail=true;
+      FEXP.assemblySelected.clear();
+      FEXP.routeExpanded='';
+    }
     if(result.view){
       formationApplyView(result.view);
       formationShow();
@@ -3430,7 +3443,7 @@ function cargoFinishDialog(reopen=false) {
     <h3>${esc(m.name)}</h3><p>${m.orders} pedidos · ${cargoKg(m.totalWeightKg)}</p>
     <p>${esc(m.vehicle?cargoVehicleLabel(m.vehicle):'')} · ${esc(m.driver)}</p>
     ${reopen?'':cargoAlertList(m.alerts,'Alertas que ficarão no histórico')}
-    <p class="cargo-help">${reopen?'A composição poderá ser editada novamente. O roteiro anterior fica no histórico e a nova composição precisa ser roteirizada.':'A composição será concluída e o roteiro será aberto para conferência.'}</p>
+    <p class="cargo-help">${reopen?'A composição poderá ser editada novamente. O roteiro anterior fica no histórico e a nova composição precisa ser roteirizada.':'A composição será concluída e a carga entrará na fila de roteirização.'}</p>
     <label class="cargo-confirm"><input name="confirmed" type="checkbox" required>Confirmo ${reopen?'a reabertura':'o envio para roteirização'} desta montagem.</label>`,
     f=>({operation:reopen?'REABRIR':'ENVIAR_ROTEIRO',target:m.id,confirmed:f.elements.confirmed.checked}));
   dialog.querySelector('button[type=submit]').textContent=reopen?'Reabrir montagem':'Enviar para roteirização';
