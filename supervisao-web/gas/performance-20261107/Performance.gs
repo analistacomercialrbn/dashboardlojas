@@ -21,7 +21,9 @@ function centralCacheRead_(cache, key, unpack = JSON.parse) {
     const keys = Array.from({length:meta.parts}, (_, i)=>key+'_'+meta.id+'_'+i);
     const chunks = cache.getAll(keys);
     if (!keys.every(k=>typeof chunks[k]==='string')) return null;
-    const text = Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(keys.map(k=>chunks[k]).join('')))).getDataAsString('UTF-8');
+    const packed = keys.map(k=>chunks[k]).join('');
+    const blob = Utilities.newBlob(Utilities.base64Decode(packed), 'application/gzip');
+    const text = Utilities.ungzip(blob).getDataAsString('UTF-8');
     return unpack(text);
   } catch (error) {
     return null;
