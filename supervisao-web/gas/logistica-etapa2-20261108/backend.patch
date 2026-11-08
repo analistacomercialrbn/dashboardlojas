@@ -1,0 +1,327 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -965 +965 @@
+-  if(['ADMIN','DIRETOR','GERENTE','SUPERVISOR','RCA','SAC','INTERNO'].indexOf(perfil)<0)throw new Error('Perfil inválido.');
++  if(['ADMIN','DIRETOR','GERENTE','SUPERVISOR','RCA','SAC','INTERNO',FORMATION_ROLE].indexOf(perfil)<0)throw new Error('Perfil inválido.');
+@@ -968,2 +968 @@
+-  if(!record.areas.length)throw new Error('Selecione pelo menos uma área.');
+-  if(['SAC','INTERNO'].includes(perfil))record.areas=['logistics'];
++  if(['SAC','INTERNO',FORMATION_ROLE].includes(perfil))record.areas=['logistics'];
+@@ -970,0 +970 @@
++  if(!record.areas.length)throw new Error('Selecione pelo menos uma área.');
+@@ -973 +973,9 @@
+-  record.editTransport=perfil==='SAC'&&input.editTransport===true;
++  if(perfil===FORMATION_ROLE)record.logisticsScope={carriers:[],sellers:[],regions:[]};
++  if(input.permissions&&typeof input.permissions==='object'){
++   record.permissions=Object.fromEntries(LOG_PERMISSION_KEYS.map(key=>{
++    const view=input.permissions[key]?.view===true;
++    return [key,{view,edit:view&&input.permissions[key]?.edit===true}];
++   }));
++  }else if(old?.perfil!==perfil)delete record.permissions;
++  if(typeof input.editTransport==='boolean')record.editTransport=perfil==='SAC'&&input.editTransport;
++  record.editTransport=platformAccess_(record).permissions.sac.edit;
+@@ -1121,3 +1129,8 @@
+- const p=payload||{},kind=p.kind||'operations',props=PropertiesService.getScriptProperties();
+- if(platformAccess_(user).transportOnly&&!['transport','geo'].includes(kind))throw new Error('Seu acesso está limitado às transportadoras.');
+- if(kind==='schedule'&&user.perfil==='SUPERVISOR')throw new Error('A agenda geral exige visão de toda a área.');
++ const p=payload||{},kind=p.kind||'operations',props=PropertiesService.getScriptProperties(),access=platformAccess_(user);
++ const special=['formationExperimental','formationDirect','formationSummary','agenda','schedule','geo','transport'];
++ if((access.formationOnly||access.transportOnly)&&!special.includes(kind))throw new Error('Área logística fora do seu perfil.');
++ if(access.formationOnly&&kind==='transport')throw new Error('Seu perfil não tem acesso ao SAC.');
++ if(kind==='transport')requireLogPermission_(user,'sac');
++ if(['operations','formations'].includes(kind))requireLogPermission_(user,'formation');
++ if(kind==='schedule'||kind==='agenda')requireLogPermission_(user,'agenda');
++ if(kind==='geo'&&(access.formationOnly||access.transportOnly))requireLogPermission_(user,'formation');
+@@ -1126,2 +1139,4 @@
+- if(['batchRead','batchSave'].includes(p.action))return transportBatch_(user,p,ids.indicators);
+- if(['editRead','editSave'].includes(p.action))return transportEdit_(user,p,ids.indicators);
++ if(kind==='formationSummary')return formOverviewSummary_(user);
++ if(kind==='agenda')return agendaApi_(user,p,ids.operations);
++ if(kind==='transport'&&['batchRead','batchSave'].includes(p.action))return transportBatch_(user,p,ids.indicators);
++ if(kind==='transport'&&['editRead','editSave'].includes(p.action))return transportEdit_(user,p,ids.indicators);
+@@ -1153 +1168,3 @@
+- const areas=all?['commercial','logistics']:['SAC','INTERNO'].includes(role)?['logistics']:role==='RCA'?['commercial']:Array.isArray(record.areas)?record.areas.filter(a=>['commercial','logistics'].includes(a)):role==='GERENTE'?['commercial','logistics']:['SAC','INTERNO'].includes(role)?['logistics']:['commercial'];
++ const formationOnly=role===FORMATION_ROLE,transportOnly=['SAC','INTERNO'].includes(role);
++ const areas=all?['commercial','logistics']:formationOnly||transportOnly?['logistics']:role==='RCA'?['commercial']:
++  Array.isArray(record.areas)?record.areas.filter(a=>['commercial','logistics'].includes(a)):role==='GERENTE'?['commercial','logistics']:['commercial'];
+@@ -1155 +1172,3 @@
+- return {areas,transportOnly:['SAC','INTERNO'].includes(role),editTransport:role==='SAC'&&record.editTransport===true,logisticsScope:{carriers:list('carriers'),sellers:list('sellers'),regions:list('regions')}};
++ const permissions=logisticsPermissions_(record,role,areas);
++ return {areas,formationOnly,transportOnly,permissions,editTransport:permissions.sac.edit,
++  logisticsScope:{carriers:list('carriers'),sellers:list('sellers'),regions:list('regions')}};
+@@ -1160,2 +1179,7 @@
+- const a=platformAccess_(user);if(!a.areas.includes('logistics')||a.transportOnly&&kind!=='transport')return false;
+- if(['ADMIN','DIRETOR'].includes(user.perfil))return true;
++ const a=platformAccess_(user);if(!a.areas.includes('logistics'))return false;
++ if(kind==='transport'&&!a.permissions.sac.view)return false;
++ if(kind==='schedule')return a.permissions.agenda.view;
++ if(kind==='formationDirect'){
++  if(!a.permissions.formation.view)return false;
++ }else if((a.formationOnly||a.transportOnly)&&kind!=='transport')return false;
++ if(['ADMIN','DIRETOR',FORMATION_ROLE].includes(user.perfil))return true;
+@@ -1368 +1392 @@
+-function formExpAccess_(user){if(!user||!logisticsAllowed_(user)||platformAccess_(user).transportOnly||!['ADMIN','DIRETOR','GERENTE','SUPERVISOR'].includes(user.perfil))throw new Error('Seu perfil não tem acesso à gestão de formação.');}
++function formExpAccess_(user,mode='view'){requireLogPermission_(user,'formation',mode);}
+@@ -1438 +1462 @@
+- const montages=[];for(const m of Object.values(st.montages)){const keys=Object.keys(st.assignments).filter(k=>st.assignments[k].montageId===m.id);if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!['ADMIN','DIRETOR','GERENTE'].includes(user.perfil)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]),incomplete=members.some(o=>o.weightIncomplete||o.weight==null),volumeIncomplete=members.some(o=>o.volumes==null);montages.push({...m,orderKeys:keys,orders:members.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.flatMap(o=>o.sourceRows.map(r=>r.city+'|'+r.uf))).size,weight:incomplete?null:members.reduce((s,o)=>s+o.weight,0),volumes:volumeIncomplete?null:members.reduce((s,o)=>s+o.volumes,0),sourceIssues:members.filter(o=>o.blocked).length});}
++ const montages=[];for(const m of Object.values(st.montages)){const keys=Object.keys(st.assignments).filter(k=>st.assignments[k].montageId===m.id);if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!formWideScope_(user)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]),incomplete=members.some(o=>o.weightIncomplete||o.weight==null),volumeIncomplete=members.some(o=>o.volumes==null);montages.push({...m,orderKeys:keys,orders:members.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.flatMap(o=>o.sourceRows.map(r=>r.city+'|'+r.uf))).size,weight:incomplete?null:members.reduce((s,o)=>s+o.weight,0),volumes:volumeIncomplete?null:members.reduce((s,o)=>s+o.volumes,0),sourceIssues:members.filter(o=>o.blocked).length});}
+@@ -1457,0 +1482 @@
++ if(p.action&&p.action!=='read')formExpAccess_(user,'edit');
+@@ -1604 +1629 @@
+-function formDirectAllowed_(user,o){return (o.rcas||[]).length>0&&o.rcas.every(rca=>userAllowsRca_(user,rca))&&logisticsRowAllowed_(user,{seller:o.seller||String(o.rca||''),region:o.region||'',carrier:''},'operations');}
++function formDirectAllowed_(user,o){return (o.rcas||[]).length>0&&(user.perfil===FORMATION_ROLE||platformAccess_(user).transportOnly||o.rcas.every(rca=>userAllowsRca_(user,rca)))&&logisticsRowAllowed_(user,{seller:o.seller||String(o.rca||''),region:o.region||'',carrier:''},'formationDirect');}
+@@ -1614 +1639 @@
+- const montages=[];for(const m of Object.values(st.montages)){const keys=grouped.get(m.id)||[];if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!['ADMIN','DIRETOR','GERENTE'].includes(user.perfil)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]);montages.push({...m,orderKeys:keys,orders:keys.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.map(o=>o.city+'|'+o.uf)).size,weight:keys.length?null:0,volumes:keys.length?null:0,sourceIssues:members.filter(o=>o.blocked).length});}
++ const montages=[];for(const m of Object.values(st.montages)){const keys=grouped.get(m.id)||[];if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!formWideScope_(user)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]);montages.push({...m,orderKeys:keys,orders:keys.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.map(o=>o.city+'|'+o.uf)).size,weight:keys.length?null:0,volumes:keys.length?null:0,sourceIssues:members.filter(o=>o.blocked).length});}
+@@ -1736 +1761 @@
+- if(p.action==='settingsRead')return formRouteSettingsRead_(user);
++ if(p.action==='settingsRead'){if(platformAccess_(user).formationOnly||platformAccess_(user).transportOnly)throw new Error('Configurações fora do seu perfil.');return formRouteSettingsRead_(user);}
+@@ -1738 +1763 @@
+- if(p.action==='priorityRead')return formPriorityRead_(user);
++ if(p.action==='priorityRead'){if(platformAccess_(user).formationOnly||platformAccess_(user).transportOnly)throw new Error('Fonte fora do seu perfil.');return formPriorityRead_(user);}
+@@ -1740,0 +1766 @@
++ if(!reading)formExpAccess_(user,'edit');
+@@ -1829 +1855 @@
+-function verificarMontagemDiretaRbn(){const st=formExpState_(formExpAux_()),catalog=formDirectCatalog_(),v=formDirectView_(st,catalog,{perfil:'ADMIN',login:'diagnostico'});console.log(JSON.stringify({pedidos:v.orders.length,cidades:new Set(v.orders.map(o=>o.city+'|'+o.uf)).size,montagens:v.montages.length,revisao:v.revision,camposAusentes:v.missingFields,primeiroPedido:v.orders[0]?{pedido:v.orders[0].order,itens:v.orders[0].products.length}:null}));return {ok:true,pedidos:v.orders.length};}
++function verificarMontagemDiretaRbn_(){const st=formExpState_(formExpAux_()),catalog=formDirectCatalog_(),v=formDirectView_(st,catalog,{perfil:'ADMIN',login:'diagnostico'});console.log(JSON.stringify({pedidos:v.orders.length,cidades:new Set(v.orders.map(o=>o.city+'|'+o.uf)).size,montagens:v.montages.length,revisao:v.revision,camposAusentes:v.missingFields,primeiroPedido:v.orders[0]?{pedido:v.orders[0].order,itens:v.orders[0].products.length}:null}));return {ok:true,pedidos:v.orders.length};}
+@@ -1831 +1857 @@
+-function verificarNomesClientesMontagemRbn(){
++function verificarNomesClientesMontagemRbn_(){
+@@ -1857 +1883 @@
+-function formFleetCanManage_(user,st,id){const m=Object.prototype.hasOwnProperty.call(st.montages,id)?st.montages[id]:null;if(!m)throw new Error('Montagem não encontrada.');const keys=Object.keys(st.assignments).filter(k=>st.assignments[k].montageId===id),saved=formDirectSnapshot_(st);if(keys.some(k=>!saved[k]||!formDirectAllowed_(user,saved[k])))throw new Error('Montagem fora do seu recorte.');if(!keys.length&&!['ADMIN','DIRETOR','GERENTE'].includes(user.perfil)&&m.owner!==user.login)throw new Error('Montagem fora do seu recorte.');return m;}
++function formFleetCanManage_(user,st,id){const m=Object.prototype.hasOwnProperty.call(st.montages,id)?st.montages[id]:null;if(!m)throw new Error('Montagem não encontrada.');const keys=Object.keys(st.assignments).filter(k=>st.assignments[k].montageId===id),saved=formDirectSnapshot_(st);if(keys.some(k=>!saved[k]||!formDirectAllowed_(user,saved[k])))throw new Error('Montagem fora do seu recorte.');if(!keys.length&&!formWideScope_(user)&&m.owner!==user.login)throw new Error('Montagem fora do seu recorte.');return m;}
+@@ -1881 +1907 @@
+-function verificarFrotaMontagemRbn(){const st=formExpState_(formExpAux_(true)),fleet=formFleetOptions_(st);console.log(JSON.stringify({revisao:st.revision,montagens:Object.values(st.montages).map(m=>({nome:m.name,status:m.status,pedidos:Object.values(st.assignments).filter(a=>a.montageId===m.id).length})),veiculos:fleet.vehicles,motoristas:fleet.drivers.map(d=>d.name)}));}
++function verificarFrotaMontagemRbn_(){const st=formExpState_(formExpAux_(true)),fleet=formFleetOptions_(st);console.log(JSON.stringify({revisao:st.revision,montagens:Object.values(st.montages).map(m=>({nome:m.name,status:m.status,pedidos:Object.values(st.assignments).filter(a=>a.montageId===m.id).length})),veiculos:fleet.vehicles,motoristas:fleet.drivers.map(d=>d.name)}));}
+@@ -2139 +2165 @@
+-  formExpAccess_(user);
++  formExpAccess_(user,'edit');
+@@ -2148,0 +2175 @@
++  if(editingSettings&&(platformAccess_(user).formationOnly||platformAccess_(user).transportOnly))throw new Error('Configurações fora do seu perfil.');
+@@ -2369 +2396 @@
+-function verificarLogisticaRbn() {
++function verificarLogisticaRbn_() {
+@@ -2899,0 +2927,223 @@
++}
++
++const LOG_PERMISSION_KEYS = ['sac','formation','agenda'];
++const FORMATION_ROLE = 'FORMACAO_CARGA';
++
++function logisticsPermissions_(record, role, areas) {
++  const enabled=areas.includes('logistics');
++  const dedicated=role===FORMATION_ROLE, restricted=['SAC','INTERNO'].includes(role);
++  const defaults={
++    sac:{view:enabled,edit:role==='SAC'&&record.editTransport===true},
++    formation:{view:enabled&&!restricted,edit:enabled&&!restricted},
++    agenda:{view:enabled&&!restricted&&role!=='SUPERVISOR',edit:false}
++  };
++  return Object.fromEntries(LOG_PERMISSION_KEYS.map(key=>{
++    const preset=role==='ADMIN'?{view:true,edit:true}:dedicated?{view:key!=='sac',edit:key!=='sac'}:
++      record.permissions?.[key]||defaults[key];
++    const view=enabled&&preset.view===true;
++    return [key,{view,edit:view&&preset.edit===true}];
++  }));
++}
++
++function requireLogPermission_(user,key,mode='view') {
++  if(!user||!platformAccess_(user).permissions[key]?.[mode]) {
++    throw new Error(mode==='edit'?'Seu perfil não tem permissão para editar esta área.':'Seu perfil não tem acesso a esta área.');
++  }
++}
++
++function formWideScope_(user) {
++  return ['ADMIN','DIRETOR','GERENTE',FORMATION_ROLE].includes(user.perfil);
++}
++
++function formOverviewSummary_(user, ids=null) {
++  requireLogPermission_(user,'formation');
++  const st=formExpState_(formExpAux_(true)), snapshots=formDirectSnapshot_(st);
++  const fleet=new Map(formFleetOptions_(st,true).vehicles.map(v=>[v.plate,v]));
++  const assigned=new Map();
++  for(const [key,a] of Object.entries(st.assignments)) {
++    if(!assigned.has(a.montageId))assigned.set(a.montageId,[]);
++    assigned.get(a.montageId).push(key);
++  }
++  const items=[];
++  for(const m of Object.values(st.montages)){
++    if(ids?!ids.has(m.id):m.status!==FORM_OPEN)continue;
++    const keys=assigned.get(m.id)||[];
++    if(keys.some(k=>!snapshots[k]||!formDirectAllowed_(user,snapshots[k]))||
++       !keys.length&&!formWideScope_(user)&&m.owner!==user.login)continue;
++    const members=keys.map(k=>{
++      const o=snapshots[k], w=st.orderWeights[k];
++      return w&&w.version===o.version?{...o,weight:w.weight,weightIncomplete:false}:o;
++    });
++    const destinations=new Map();
++    for(const o of members){
++      if(!o.city)continue;
++      const label=[o.city,o.uf].filter(Boolean).join(' / ');
++      destinations.set(label,(destinations.get(label)||0)+1);
++    }
++    const vehicle=m.vehicleSnapshot||fleet.get(m.vehicleId);
++    const capacity=m.capacitySnapshot||formFleetCapacity_(members,vehicle);
++    items.push({
++      id:m.id,name:m.name,status:m.status,orders:keys.length,driver:m.driver,vehicleId:m.vehicleId,
++      vehicle:vehicle?{plate:vehicle.plate,type:vehicle.type}:null,overweightOccurrences:m.overweightOccurrences,
++      ...capacity,destinations:[...destinations].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'pt-BR')).map(([name,count])=>({name,count}))
++    });
++  }
++  return {ok:true,revision:st.revision,items};
++}
++
++const AGENDA_SHEET='AGENDA_MOTORISTAS_EVENTOS';
++const AGENDA_HEADERS=['PROGRAMAÇÃO_ID','REQUISIÇÃO_ID','DATA_HORA','USUÁRIO','PROGRAMAÇÃO_JSON'];
++
++function agendaLegacy_(user, id) {
++  const rows=centralLogisticsRead_(user,{},'schedule',id).rows;
++  const repetitions=new Map();
++  return rows.filter(r=>r.date).map(r=>{
++    const identity=r.date+'|'+logNorm_(r.driver);
++    const sequence=(repetitions.get(identity)||0)+1;
++    repetitions.set(identity,sequence);
++    return {
++      id:'leg_'+digestHex_(identity+'|'+sequence).slice(0,24),driver:r.driver,date:r.date,time:'',
++      activity:'Programação',destination:r.destination,vehicle:'',notes:'',montageId:'',
++      version:digestHex_(JSON.stringify([identity,sequence,r.destination])).slice(0,24),legacy:true
++    };
++  });
++}
++
++function agendaSheet_(create=false) {
++  const ss=formExpAux_(true);
++  let sh=ss.getSheetByName(AGENDA_SHEET);
++  if(!sh&&create){
++    sh=ss.insertSheet(AGENDA_SHEET);
++  }
++  if(!sh)return null;
++  if(!sh.getLastRow()&&create){
++    sh.getRange(1,1,1,AGENDA_HEADERS.length).setValues([AGENDA_HEADERS]);
++    sh.setFrozenRows(1);
++  }
++  if(sh.getLastRow()&&sh.getRange(1,1,1,AGENDA_HEADERS.length).getDisplayValues()[0].join('|')!==AGENDA_HEADERS.join('|')){
++    throw new Error('Cabeçalhos da agenda divergentes.');
++  }
++  return sh;
++}
++
++function agendaEvent_(row) {
++  const item=JSON.parse(String(row[4]));
++  return {...item,id:String(row[0]),version:String(row[1]),updatedAt:String(row[2]),updatedBy:String(row[3])};
++}
++
++function agendaLatest_(sh, column, value) {
++  const last=sh.getLastRow();
++  if(last<2)return null;
++  const matches=sh.getRange(2,column,last-1,1).createTextFinder(value).matchEntireCell(true).matchCase(true).findAll();
++  if(!matches.length)return null;
++  const row=Math.max(...matches.map(cell=>cell.getRow()));
++  return agendaEvent_(sh.getRange(row,1,1,5).getValues()[0]);
++}
++
++function agendaSnapshot_(sh) {
++  if(!sh)return [];
++  const last=sh.getLastRow();
++  if(last<2)return [];
++  const tail=sh.getRange(last,2).getDisplayValue();
++  const key='RBN_AGENDA_V1_'+digestHex_(sh.getParent().getId()+'|'+last+'|'+tail).slice(0,28);
++  const cache=CacheService.getScriptCache(), cached=centralCacheRead_(cache,key);
++  if(cached)return cached;
++  const latest=new Map();
++  for(const row of sh.getRange(2,1,last-1,5).getValues()) {
++    if(row[0])latest.set(String(row[0]),agendaEvent_(row));
++  }
++  const items=[...latest.values()];
++  centralCacheWrite_(cache,key,JSON.stringify(items),300);
++  return items;
++}
++
++function agendaPublic_(user, rows) {
++  const canSee=platformAccess_(user).permissions.formation.view;
++  const links=new Set(rows.map(r=>r.montageId).filter(Boolean));
++  const montages=canSee&&links.size?new Map(formOverviewSummary_(user,links).items.map(m=>[m.id,m])):new Map();
++  return rows.map(r=>{
++    const montage=montages.get(r.montageId)||null;
++    return {...r,montageId:montage?.id||'',montage};
++  });
++}
++
++function agendaText_(input, field, max, required=false) {
++  const value=logText_(input[field]);
++  if(value.length>max||required&&!value)throw new Error('Confira o campo '+({driver:'motorista',activity:'atividade',destination:'destinos',vehicle:'veículo',notes:'observações'}[field]||field)+'.');
++  return value;
++}
++
++function agendaSave_(user,p,operationsId) {
++  requireLogPermission_(user,'agenda','edit');
++  const requestId=String(p.requestId||'');
++  if(!/^[a-f0-9]{32}$/i.test(requestId))throw new Error('Identificador de operação inválido.');
++  const input=p.item||{}, id=String(input.id||'');
++  if(id&&!/^(?:ag_[a-f0-9-]{36}|leg_[a-f0-9]{24})$/i.test(id))throw new Error('Programação inválida.');
++  const date=logDate_(input.date);
++  const time=String(input.time||'');
++  if(!date||date!==input.date||time&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new Error('Confira a data e o horário.');
++  const item={date,time,driver:agendaText_(input,'driver',120,true),activity:agendaText_(input,'activity',180,true),
++    destination:agendaText_(input,'destination',500),vehicle:agendaText_(input,'vehicle',120),notes:agendaText_(input,'notes',1200),
++    montageId:''};
++  // Leitura da programação legada fora da seção de gravação.
++  const legacy=id.startsWith('leg_')?agendaLegacy_(user,operationsId).find(x=>x.id===id):null;
++  const lock=LockService.getScriptLock();
++  if(!lock.tryLock(3000))throw new Error('Outra gravação está em andamento. Tente novamente.');
++  let saved;
++  try{
++    const sh=agendaSheet_(true), previousRequest=agendaLatest_(sh,2,requestId);
++    if(previousRequest) {
++      if(previousRequest.updatedBy!==user.login)throw new Error('Identificador de operação indisponível.');
++      saved=agendaLatest_(sh,1,previousRequest.id)||previousRequest;
++    }else{
++      const previous=id?(agendaLatest_(sh,1,id)||legacy):null;
++      if(id&&(!previous||input.version!==previous.version))throw new Error('A programação mudou. Atualize o calendário antes de salvar.');
++      const requested=String(input.montageId||'');
++      const mayLink=platformAccess_(user).permissions.formation.view;
++      if(requested||previous?.montageId){
++        const st=formExpState_(formExpAux_(true));
++        let currentVisible=false;
++        if(mayLink&&previous?.montageId){
++          try{formFleetCanManage_(user,st,previous.montageId);currentVisible=true;}catch(error){}
++        }
++        if(requested){
++          requireLogPermission_(user,'formation');
++          formFleetCanManage_(user,st,requested);
++        }
++        item.montageId=requested||(!currentVisible?previous?.montageId||'':'');
++      }
++      const key=id||'ag_'+Utilities.getUuid(), row=sh.getLastRow()+1;
++      if(row>sh.getMaxRows())sh.insertRowsAfter(sh.getMaxRows(),50);
++      const values=[key,requestId,new Date().toISOString(),user.login,JSON.stringify(item)];
++      sh.getRange(row,1,1,5).setValues([values]);
++      SpreadsheetApp.flush();
++      saved=agendaEvent_(values);
++    }
++  }finally{lock.releaseLock();}
++  // A referência pode ser consultada separadamente caso o resumo esteja temporariamente indisponível.
++  let result={...saved,montageId:''};
++  try{[result]=agendaPublic_(user,[saved]);}catch(error){console.warn('Vínculo da agenda será apresentado na próxima consulta.');}
++  return {ok:true,item:result,message:'Programação salva.'};
++}
++
++function agendaApi_(user,p,id) {
++  requireLogPermission_(user,'agenda');
++  if(p.action==='save')return agendaSave_(user,p,id);
++  if(p.action==='options'){
++    requireLogPermission_(user,'agenda','edit');
++    const st=formExpState_(formExpAux_(true)), fleet=formFleetOptions_(st);
++    const ids=new Set(Object.keys(st.montages));
++    const montages=platformAccess_(user).permissions.formation.view?formOverviewSummary_(user,ids).items:[];
++    return {ok:true,drivers:[...new Set([...fleet.drivers.map(x=>x.name),...agendaLegacy_(user,id).map(x=>x.driver)])],
++      vehicles:fleet.vehicles.map(v=>({plate:v.plate,type:v.type})),montages};
++  }
++  if(p.action&&p.action!=='read')throw new Error('Operação de agenda inválida.');
++  const from=logDate_(p.from), to=logDate_(p.to);
++  if(!from||!to||from!==p.from||to!==p.to||to<from||Date.parse(to)-Date.parse(from)>42*86400000){
++    throw new Error('Informe um período de até 43 dias para a agenda.');
++  }
++  const saved=agendaSnapshot_(agendaSheet_()), replaced=new Set(saved.map(x=>x.id));
++  const rows=agendaLegacy_(user,id).filter(r=>!replaced.has(r.id)).concat(saved)
++    .filter(r=>r.date>=from&&r.date<=to)
++    .sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)||a.driver.localeCompare(b.driver,'pt-BR'));
++  return {ok:true,rows:agendaPublic_(user,rows)};
