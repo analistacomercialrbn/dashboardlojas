@@ -2497,9 +2497,10 @@ function logNav(){
  let n=$('#logNav');if(!n){n=document.createElement('nav');n.id='logNav';n.className='nav';n.setAttribute('aria-label','Seções de logística');$('#appMenu .menu-footer').before(n);}
  const item=(k,label)=>{const p=LOG_PAGES[k];return `<button type="button" class="nav-item ${k===LOG.page?'active':''}" data-log-page="${k}"><span>${moduleIcon(p[2])}</span><b>${esc(label||p[0])}</b></button>`;};
  LOG_PAGES.agenda=['Agenda de motoristas','Calendário da operação', 'M8 2v4M16 2v4M3 9h18M4 4h16v17H4z'];
- if(state.user?.formationOnly||state.user?.transportOnly)n.innerHTML=['overview','formation','agenda','transport'].filter(logPageAllowed).map(k=>item(k)).join('');
- else {
  LOG_PAGES.settings=['Configurações da Logística','Cadastros e padrões do roteiro','M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3'];
+ if(state.user?.formationOnly||state.user?.transportOnly)n.innerHTML=['overview','formation','agenda','transport','settings'].filter(logPageAllowed).map(k=>item(k)).join('');
+ else {
+
  n.innerHTML=['overview','formation','transport'].filter(logPageAllowed).map(k=>item(k)).join('')+'<p class="menu-caption">DETALHAMENTOS</p>'+['routes','fleet','agenda','pending','occurrences','costs'].filter(logPageAllowed).map(k=>item(k)).join('')+(logPageAllowed('indicators')?item('indicators','Qualidade da formação'):'')+(logPageAllowed('settings')?item('settings'):'')+(state.user?.perfil==='ADMIN'?item('sources'):'');
  }
  $$('[data-log-page]').forEach(b=>b.onclick=()=>{LOG.page=b.dataset.logPage;if(LOG.page==='indicators')LOG.indicatorTab='formations';LOG.search='';LOG.tablePage=0;$('#menuClose').click();logShow();});
@@ -3738,6 +3739,8 @@ function cargoDeliveryOrderData(m, orders) {
   };
 }
 
+const CARGO_PRINT_LOGO = 'https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@d5fb43eaa176dbc3a68d0487c42153be84833d26/supervisao-web/assets/rebanho-horizontal-azul.png';
+
 function cargoDeliveryOrderHtml(order) {
   const field = (label, value) => `<div><dt>${label}</dt><dd>${esc(value || 'Não informado')}</dd></div>`;
   const weight = order.unknownWeight === order.rows.length ? 'Não informado' : logN(order.weight / 1000,3)+' t';
@@ -3746,7 +3749,8 @@ function cargoDeliveryOrderHtml(order) {
     <title>${esc(title)}</title><style>
       @page{size:A4;margin:13mm}
       *{box-sizing:border-box}body{font:13px/1.35 system-ui,sans-serif;color:#152542;margin:0}
-      main{max-width:184mm;margin:0 auto;padding:0 0 12px}header{border-bottom:3px solid #243f78;padding-bottom:12px;margin-bottom:14px}
+      main{max-width:184mm;margin:0 auto;padding:0 0 12px}header{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:3px solid #243f78;padding-bottom:12px;margin-bottom:14px;break-inside:avoid}
+      .print-logo{display:block;width:min(155px,100%);height:38px;object-fit:contain;object-position:left center}.print-truck{width:clamp(95px,26vw,180px);height:auto;flex:none}
       header small{color:#243f78;font-weight:750;letter-spacing:.12em}h1{margin:4px 0;font-size:27px}
       header p{margin:0;font-weight:650}dl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}
       dl div,.summary div{min-width:0;border:1px solid #97a9cb;padding:8px 10px;break-inside:avoid}
@@ -3763,7 +3767,17 @@ function cargoDeliveryOrderHtml(order) {
       @media print{.actions{display:none}table{min-width:0}.table-wrap{overflow:visible}}
     </style><body><main>
     <div class="actions"><button type="button" id="deliveryOrderPrint">Imprimir / salvar PDF</button></div>
-    <header><small>REBANHO · LOGÍSTICA</small><h1>Ordem de Entregas</h1><p>Montagem ${esc(order.name)}</p></header>
+    <header><div><img class="print-logo" src="${CARGO_PRINT_LOGO}" alt="Rebanho">
+      <h1>Ordem de Entregas</h1><p>Montagem ${esc(order.name)}</p></div>
+      <svg class="print-truck" viewBox="0 0 188 82" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#243f78" d="M6 15h116v46H6zM126 31h32l20 19v11h-52z"/>
+        <path fill="#c2d3ee" d="M132 36h23l13 13h-36z"/>
+        <path fill="#7294c4" d="M13 24h101v4H13zm0 28h101v4H13z"/>
+        <path fill="#243f78" d="M2 59h180v7H2z"/>
+        <circle cx="31" cy="67" r="10" fill="#152542"/><circle cx="104" cy="67" r="10" fill="#152542"/>
+        <circle cx="154" cy="67" r="10" fill="#152542"/>
+        <path fill="#dce7f7" d="M29 65h4v4h-4zm73 0h4v4h-4zm50 0h4v4h-4z"/>
+      </svg></header>
     <dl>${field('Origem',order.origin)}${field('Data da ordem',order.date)}
       ${field('Veículo',order.plate)}${field('Motorista',order.driver)}
       <div class="route"><dt>Rota</dt><dd>${esc(order.route || 'Consulte a sequência de destinos abaixo.')}</dd></div></dl>
@@ -3797,7 +3811,10 @@ function cargoOpenDeliveryOrder(id) {
   preview.document.open();
   preview.document.write(cargoDeliveryOrderHtml(order));
   preview.document.close();
-  preview.document.getElementById('deliveryOrderPrint').addEventListener('click', () => preview.print());
+  preview.document.getElementById('deliveryOrderPrint').addEventListener('click', async () => {
+    await preview.document.querySelector('.print-logo').decode().catch(() => {});
+    preview.print();
+  });
 }
 
 function cargoRouteQueue(d, finished) {
@@ -3805,7 +3822,7 @@ function cargoRouteQueue(d, finished) {
   const today=transportToday();
   const candidates=d.montages.filter(m=>finished?
     m.status===CARGO_FINAL&&cargoFinalizedInPeriod(m,period,start,end,today):m.status===CARGO_PENDING);
-  const stamp=finished?'finalizedAt':'routingAt';
+  const stamp=finished?'finalizedAt':'routingAt', editDelivery=finished&&canLog('formation','edit');
   const stopCounts = new Map();
   for (const order of d.orders) {
     if (!order.montageId) continue;
@@ -3819,7 +3836,8 @@ function cargoRouteQueue(d, finished) {
     ${finished?`<div class="panel cargo-period"><label>Data de finalização <select id="cargoFinalPeriod">${biOptions({
       '7':'Últimos 7 dias','15':'Últimos 15 dias',month:'Último mês','3months':'Últimos 3 meses','6months':'Últimos 6 meses',custom:'Período personalizado'
     },period)}</select></label>${period==='custom'?`<label>De <input id="cargoFinalStart" type="date" value="${esc(start)}"></label>
-      <label>Até <input id="cargoFinalEnd" type="date" value="${esc(end)}"></label>`:''}</div>`:''}
+      <label>Até <input id="cargoFinalEnd" type="date" value="${esc(end)}"></label>`:''}
+      ${editDelivery&&candidates.length?`<button type="button" class="btn" id="cargoBulkDelivery" disabled>Atualizar data das selecionadas</button>`:''}</div>`:''}
     ${candidates.map(m=>{
       const expanded=FEXP.routeExpanded===m.id;
       const counts=stopCounts.get(m.id);
@@ -3827,9 +3845,12 @@ function cargoRouteQueue(d, finished) {
       return `<article class="panel cargo-queue-card"><header class="cargo-detail-header"><div>${cargoStatus(m)}
         <h3>${esc(m.name)}</h3><p>${m.orders} pedidos · ${esc(m.driver||'Motorista a definir')} · ${esc(m.vehicle?.plate||m.vehicleId||'Placa a definir')}</p>
         <small>${cargoDate(m[stamp])} · ${esc(finished?m.finalizedBy:m.routingBy)}</small>
+        ${finished?`<p>Data de entrega · <strong>${m.deliveryDate?transportDate(m.deliveryDate):'Não informada'}</strong></p>`:''}
+        ${editDelivery?`<label class="cargo-confirm"><input type="checkbox" data-cargo-delivery-select="${esc(m.id)}">Selecionar ${esc(m.name)}</label>`:''}
         ${expanded?'':`<div class="cargo-route-state">${cargoRouteBadge(m)}
           ${missing>0?`<small class="cargo-route-missing-label">${cargoRouteMissingLabel(missing)}</small>`:''}</div>`}</div>
         <div class="cargo-actions">${expanded?'':`<button type="button" class="btn primary" data-cargo-route="${esc(m.id)}">${finished||!canLog('formation','edit')?'Consultar roteiro':'Roteirizar'}</button>`}
+        ${editDelivery?`<button type="button" class="btn" data-cargo-delivery-edit="${esc(m.id)}">Atualizar data de entrega</button>`:''}
         ${finished&&m.route?.confirmed?`<button type="button" class="btn" data-cargo-delivery-order="${esc(m.id)}">Emitir Ordem de Entregas</button>`:''}
         ${canLog('formation','edit')?`<button type="button" class="btn" data-cargo-reopen="${esc(m.id)}">Reabrir montagem</button>`:''}</div></header>
         ${expanded?cargoRouteMarkup(m):''}</article>`;
@@ -3837,7 +3858,25 @@ function cargoRouteQueue(d, finished) {
   </section>`;
 }
 
+function cargoDeliveryDateDialog(ids) {
+  if(!ids.length||ids.length>100){formationNotice('Selecione de 1 a 100 montagens.');return;}
+  const targets=FEXP.data.montages.filter(m=>ids.includes(m.id));
+  const date=targets.length===1?targets[0].deliveryDate||'':'';
+  cargoForm('Atualizar data de entrega',`
+    <p>${targets.length===1?esc(targets[0].name):targets.length+' montagens selecionadas'}</p>
+    <label>Data de entrega <input type="date" name="deliveryDate" value="${esc(date)}" max="${transportToday()}" required></label>`,
+    form=>({operation:'ENTREGA_DATA_SALVAR',montageIds:ids,deliveryDate:form.elements.deliveryDate.value}));
+}
+
 function cargoBindWorkflow() {
+  $$('[data-cargo-delivery-edit]').forEach(button=>button.onclick=()=>cargoDeliveryDateDialog([button.dataset.cargoDeliveryEdit]));
+  const bulk=$('#cargoBulkDelivery');
+  if(bulk){
+    const checks=$$('[data-cargo-delivery-select]');
+    const selected=()=>checks.filter(input=>input.checked).map(input=>input.dataset.cargoDeliverySelect);
+    checks.forEach(input=>input.onchange=()=>{bulk.disabled=!selected().length;});
+    bulk.onclick=()=>cargoDeliveryDateDialog(selected());
+  }
   $$('[data-cargo-route]').forEach(b=>b.onclick=()=>cargoRouteOpen(b.dataset.cargoRoute));
   $$('[data-cargo-delivery-order]').forEach(b=>b.onclick=()=>cargoOpenDeliveryOrder(b.dataset.cargoDeliveryOrder));
   $$('[data-cargo-reopen]').forEach(b=>b.onclick=()=>{
@@ -3890,13 +3929,15 @@ function cargoHistoryEvents(d) {
     REMOVER:'Pedidos retirados',RENOMEAR:'Montagem renomeada',CONFIGURAR_CARGA:'Veículo e motorista definidos',
     PESOS_PEDIDOS:'Pesos informados',FINALIZAR:'Montagem enviada para roteirização',ENVIAR_ROTEIRO:'Montagem enviada para roteirização',REABRIR:'Montagem reaberta',
     VEICULO_SALVAR:'Cadastro de veículo atualizado',MOTORISTA_SALVAR:'Cadastro de motorista atualizado',
-    UNIDADE_SALVAR:'Unidade de saída atualizada',ROTEIRIZACAO_CONFIGURAR:'Padrões do roteiro atualizados'};
+    UNIDADE_SALVAR:'Unidade de saída atualizada',ROTEIRIZACAO_CONFIGURAR:'Padrões do roteiro atualizados',ENTREGA_DATA_SALVAR:'Data de entrega atualizada'};
   return `<section class="panel"><h2>Histórico de movimentações</h2><div class="cargo-history">${d.events.map(e => {
     const title = e.type==='ROTEIRO_SALVAR' ? (e.confirmed?'Roteiro confirmado':'Rascunho do roteiro salvo') : titles[e.type]||e.type;
-    return `<article><strong>${esc(title)}</strong><p>${esc(d.montages.find(m=>m.id===e.to)?.name||'Cadastro')}
+    const names=e.montageIds?.map(id=>d.montages.find(m=>m.id===id)?.name).filter(Boolean);
+    return `<article><strong>${esc(title)}</strong><p>${esc(names?.length?names.join(', '):d.montages.find(m=>m.id===e.to)?.name||'Cadastro')}
       ${e.keys.length?' · '+e.keys.length+' pedidos':''}</p><small>${cargoDate(e.at)} · ${esc(e.by)}</small>
       ${e.capacitySnapshot&&e.alerts?.length?`<p>Peso informado: ${cargoKg(e.capacitySnapshot.knownWeightKg)}
         · Capacidade: ${e.capacitySnapshot.capacityKg==null?'Não informada':cargoKg(e.capacitySnapshot.capacityKg)}</p>`:''}
+      ${e.deliveryDate?`<p>Data de entrega · ${transportDate(e.deliveryDate)}</p>`:''}
       ${e.overweight?cargoStatus({status:CARGO_FINAL,overweightOccurrences:[{...e.overweight,at:e.at,by:e.by}]}):''}
       ${cargoAlertList(e.alerts,'Alertas no momento da transição')}</article>`;
   }).join('') || '<p>Nenhuma movimentação registrada.</p>'}</div></section>`;
@@ -4282,8 +4323,8 @@ function logPageAllowed(page) {
   if(page==='formation')return canLog('formation');
   if(page==='agenda')return canLog('agenda');
   if(page==='transport')return canLog('sac');
+  if(page==='settings')return !state.user?.transportOnly&&canLog('formation');
   if(state.user?.formationOnly||state.user?.transportOnly)return false;
-  if(page==='settings')return canLog('formation');
   if(page==='sources')return state.user?.perfil==='ADMIN';
   return logAllowed()&&(page==='overview'||canLog('formation')&&Object.hasOwn(LOG_PAGES,page));
 }
