@@ -1,0 +1,244 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -283,9 +283,11 @@
+ const AUTH = {
+   usersUrl: 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/main/supervisao/usuarios.json',
+   sessionTtlSeconds: 21600,
++  temporaryPasswordMs: 24 * 60 * 60 * 1000,
++  passwordChangeSessionSeconds: 600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/cf61ac7ad25b3f559ab0a7926d66326f1a60c91c/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/f521d52d6e848a38c7b29b791105ea49d39d4b10/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -351,12 +353,16 @@
+     if (action === 'login') return loginDashboard_(payload);
+     if (action === 'session') {
+       const user = sessionUser_(token);
+-      return user ? { ok: true, authenticated: true, user: user } : { ok: true, authenticated: false };
++      if (user) return { ok: true, authenticated: true, user };
++      return { ok: true, authenticated: false, passwordChangeRequired: !!passwordChangeSession_(token) };
+     }
+     if (action === 'logout') {
+-      if (token) CacheService.getScriptCache().remove('DASH_SESSION_' + token);
++      if (/^[a-f0-9]{64}$/i.test(String(token || ''))) {
++        CacheService.getScriptCache().removeAll(['DASH_SESSION_' + token, 'DASH_PASSWORD_CHANGE_' + token]);
++      }
+       return { ok: true };
+     }
++    if (action === 'changeTemporaryPassword') return changeTemporaryDashboardPassword_(token, payload);
+     const user = sessionUser_(token);
+     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
+     if(action==='logistics')return logisticsApi_(user,payload);
+@@ -401,8 +407,10 @@
+       throw new Error('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
+     }
+     const record = loadUsers_()[login];
++    const temporary = record?.temporaryPasswordExpiresAt != null;
+     timing.mark('cadastro');
+-    const verified = record?.ativo === true && verifyPassword_(password, record);
++    const verified = record?.ativo === true && (!temporary || record.temporaryPasswordExpiresAt > Date.now())
++      && verifyPassword_(password, record);
+     timing.mark('verificacao');
+     if (!verified) {
+       status = 'recusado';
+@@ -410,8 +418,15 @@
+       throw new Error('Usuário ou senha inválidos.');
+     }
+     cache.remove(throttleKey);
+-    const user = publicUser_(login,record);
+     const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
++    if (temporary) {
++      cache.put('DASH_PASSWORD_CHANGE_' + token, JSON.stringify({login, accessVersion:record.accessVersion}),
++        AUTH.passwordChangeSessionSeconds);
++      status = 'troca_obrigatoria';
++      timing.mark('sessao');
++      return {ok:true, token, passwordChangeRequired:true};
++    }
++    const user = publicUser_(login,record);
+     cache.put('DASH_SESSION_' + token, JSON.stringify(user), AUTH.sessionTtlSeconds);
+     timing.mark('sessao');
+     status = 'ok';
+@@ -421,12 +436,75 @@
+   }
+ }
+ 
+-function sessionUser_(token) {
++function dashboardSessionRecord_(token, prefix) {
+   token = String(token || '');
+   if (!/^[a-f0-9]{64}$/i.test(token)) return null;
+-  const value = CacheService.getScriptCache().get('DASH_SESSION_' + token);
++  const value = CacheService.getScriptCache().get(prefix + token);
+   if (!value) return null;
+-  try { const saved=JSON.parse(value),record=loadUsers_()[saved.login];if(!record||record.ativo!==true||String(record.accessVersion||'')!==String(saved.accessVersion||''))return null;return publicUser_(saved.login,record); } catch (err) { return null; }
++  try {
++    const {login, accessVersion} = JSON.parse(value), record = loadUsers_()[login];
++    if (record?.ativo !== true || String(record.accessVersion || '') !== String(accessVersion || '')) return null;
++    return {login, record};
++  } catch (err) {
++    return null;
++  }
++}
++
++function sessionUser_(token) {
++  const session = dashboardSessionRecord_(token, 'DASH_SESSION_');
++  return session && session.record.temporaryPasswordExpiresAt == null ? publicUser_(session.login, session.record) : null;
++}
++
++function passwordChangeSession_(token) {
++  const session = dashboardSessionRecord_(token, 'DASH_PASSWORD_CHANGE_');
++  return session && session.record.temporaryPasswordExpiresAt > Date.now() ? session : null;
++}
++
++function setDashboardCredential_(record, credential) {
++  const {algorithm, iterations, salt, hash} = credential;
++  if (algorithm !== 'pbkdf2_sha256' || iterations !== 100000 || !/^[a-f0-9]{32}$/.test(salt) || !/^[a-f0-9]{64}$/.test(hash)) {
++    throw new Error('Credencial inválida.');
++  }
++  Object.assign(record, {senha_algo:algorithm, iterations, salt, senha_hash:hash});
++}
++
++function setTemporaryDashboardCredential_(record, credential) {
++  setDashboardCredential_(record, credential);
++  record.temporaryPasswordExpiresAt = Date.now() + AUTH.temporaryPasswordMs;
++}
++
++function saveDashboardUserRecord_(login, record) {
++  const overrides = rbnLoadState_('DASH_USER_OVERRIDES') || {};
++  overrides[login] = record;
++  rbnSaveState_('DASH_USER_OVERRIDES', overrides);
++}
++
++function changeTemporaryDashboardPassword_(token, payload) {
++  const expired = 'Sua sessão de troca expirou. Entre novamente com a senha provisória ou peça outra ao administrador.';
++  const session = passwordChangeSession_(token);
++  if (!session) throw new Error(expired);
++  const password = payload.password;
++  if (typeof password !== 'string' || password.length < 12 || password.length > 128 || !password.trim()) {
++    throw new Error('Use entre 12 e 128 caracteres para a nova senha.');
++  }
++  if (verifyPassword_(password, session.record)) throw new Error('Escolha uma senha diferente da provisória.');
++  const salt = Utilities.getUuid().replace(/-/g, '');
++  const passwordBytes = Uint8Array.from(Utilities.newBlob(password).getBytes());
++  const hash = bytesHex_(Array.from(centralPasswordCrypto_.pbkdf2(passwordBytes, Uint8Array.from(hexBytes_(salt)), 100000, 32)));
++  const lock = LockService.getScriptLock();
++  if (!lock.tryLock(5000)) throw new Error('Aguarde a atualização em andamento e tente salvar novamente.');
++  try {
++    const current = passwordChangeSession_(token);
++    if (!current || current.record.accessVersion !== session.record.accessVersion) throw new Error(expired);
++    const record = {...current.record, accessVersion:Utilities.getUuid()};
++    setDashboardCredential_(record, {algorithm:'pbkdf2_sha256', iterations:100000, salt, hash});
++    delete record.temporaryPasswordExpiresAt;
++    saveDashboardUserRecord_(session.login, record);
++    CacheService.getScriptCache().remove('DASH_PASSWORD_CHANGE_' + token);
++    return {ok:true};
++  } finally {
++    lock.releaseLock();
++  }
+ }
+ 
+ function loadUsers_() {
+@@ -1512,46 +1590,68 @@
+  return index!=null&&userAllowsRca_(user,row[index]);
+ }
+ 
++function assertDashboardAdmin_(actor,users){
++ const record=users[actor.login];
++ if(record?.ativo!==true||String(record.perfil||'').toUpperCase()!=='ADMIN'||record.temporaryPasswordExpiresAt!=null||
++    String(record.accessVersion||'')!==actor.accessVersion)throw new Error('Sua sessão administrativa expirou. Entre novamente.');
++}
++
+ function manageUsers_(actor,payload){
+  if(actor.perfil!=='ADMIN')throw new Error('Apenas o administrador pode configurar usuários.');
+- const users=loadUsers_(),aux=readAuxiliary_();
++ if(payload.issueTemporaryPassword){
++  const input=payload.issueTemporaryPassword,login=String(input.login||'').trim().toLowerCase();
++  if(login===actor.login)throw new Error('Peça a outro administrador para gerar sua senha provisória.');
++  const lock=LockService.getScriptLock();
++  if(!lock.tryLock(5000))throw new Error('Aguarde a atualização em andamento e tente novamente.');
++  try{
++   const users=loadUsers_();
++   assertDashboardAdmin_(actor,users);
++   if(!Object.prototype.hasOwnProperty.call(users,login)||users[login]?.ativo!==true)throw new Error('Selecione um usuário ativo.');
++   const record={...users[login],accessVersion:Utilities.getUuid()};
++   setTemporaryDashboardCredential_(record,input.credential||{});
++   saveDashboardUserRecord_(login,record);
++   return {ok:true,expiresAt:record.temporaryPasswordExpiresAt};
++  }finally{lock.releaseLock();}
++ }
++ const aux=readAuxiliary_();
+  if(payload.save){
+   const input=payload.save,login=String(input.login||'').trim().toLowerCase();
+   if(!/^[a-z0-9][a-z0-9._@-]{2,99}$/.test(login))throw new Error('Login: use de 3 a 100 caracteres, sem espaços.');
+   const perfil=String(input.perfil||'').toUpperCase();
+   if(['ADMIN','DIRETOR','GERENTE','SUPERVISOR','RCA','SAC','INTERNO',FORMATION_ROLE].indexOf(perfil)<0)throw new Error('Perfil inválido.');
+-  const old=users[login],record=Object.assign({},old||{},{nome:String(input.nome||'').trim().slice(0,120),perfil:perfil,ativo:input.ativo===true,cod_rca:perfil==='RCA'?Number(input.cod_rca):null,supervisor:perfil==='SUPERVISOR'?String(input.supervisor||''):''});
+-  record.areas=['ADMIN','DIRETOR'].includes(perfil)?['commercial','logistics']:Array.isArray(input.areas)?[...new Set(input.areas)].filter(a=>['commercial','logistics'].includes(a)):[];
+-  if(['SAC','INTERNO',FORMATION_ROLE].includes(perfil))record.areas=['logistics'];
+-  if(perfil==='RCA')record.areas=['commercial'];
+-  if(!record.areas.length)throw new Error('Selecione pelo menos uma área.');
+-  const scope=input.logisticsScope||{},clean=k=>Array.isArray(scope[k])?[...new Set(scope[k].map(x=>String(x).trim()).filter(Boolean))].slice(0,100):[];
+-  record.logisticsScope={carriers:clean('carriers'),sellers:['SAC','INTERNO'].includes(perfil)?[]:clean('sellers'),regions:['SAC','INTERNO'].includes(perfil)?[]:clean('regions')};
+-  if(perfil===FORMATION_ROLE)record.logisticsScope={carriers:[],sellers:[],regions:[]};
+-  if(input.permissions&&typeof input.permissions==='object'){
+-   record.permissions=Object.fromEntries(LOG_PERMISSION_KEYS.map(key=>{
+-    const view=input.permissions[key]?.view===true;
+-    return [key,{view,edit:view&&input.permissions[key]?.edit===true}];
+-   }));
+-  }else if(old?.perfil!==perfil)delete record.permissions;
+-  if(typeof input.editTransport==='boolean')record.editTransport=perfil==='SAC'&&input.editTransport;
+-  record.editTransport=platformAccess_(record).permissions.sac.edit;
+-  if(perfil==='SUPERVISOR'&&record.areas.includes('logistics')&&!Object.values(record.logisticsScope).some(a=>a.length))throw new Error('Defina o recorte logístico do supervisor.');
+-  if(!record.nome)throw new Error('Informe o nome.');
+-  if(perfil==='RCA'&&!aux.rcas.some(r=>Number(r.code)===record.cod_rca))throw new Error('Selecione um RCA válido.');
+-  if(perfil==='SUPERVISOR'&&record.areas.includes('commercial')&&!aux.rcas.some(r=>r.supervisor===record.supervisor&&!!record.supervisor))throw new Error('Selecione uma supervisão válida.');
+-  if(login===actor.login&&(perfil!=='ADMIN'||!record.ativo))throw new Error('Você não pode remover seu próprio acesso administrativo.');
+-  if(input.credential){
+-   const p=input.credential;
+-   if(p.algorithm!=='pbkdf2_sha256'||p.iterations!==100000||!/^[a-f0-9]{32}$/.test(p.salt)||!/^[a-f0-9]{64}$/.test(p.hash))throw new Error('Credencial inválida.');
+-   record.senha_algo=p.algorithm;record.iterations=p.iterations;record.salt=p.salt;record.senha_hash=p.hash;
+-  }else if(!old)throw new Error('Defina uma senha para o novo usuário.');
+-  record.accessVersion=Utilities.getUuid();
+-  if(login===actor.login)record.accessVersion=old.accessVersion||'';
+-  const lock=LockService.getScriptLock();if(!lock.tryLock(5000))throw new Error('Aguarde a atualização em andamento e tente salvar novamente.');
+-  try{const overrides=rbnLoadState_('DASH_USER_OVERRIDES')||{};overrides[login]=record;rbnSaveState_('DASH_USER_OVERRIDES',overrides);}finally{lock.releaseLock();}
+-  CacheService.getScriptCache().remove('DASH_USERS_JSON');
+-  console.log('Usuário atualizado: '+login+' por '+actor.login);
++  const lock=LockService.getScriptLock();
++  if(!lock.tryLock(5000))throw new Error('Aguarde a atualização em andamento e tente salvar novamente.');
++  try{
++   const users=loadUsers_();
++   assertDashboardAdmin_(actor,users);
++   const old=Object.prototype.hasOwnProperty.call(users,login)?users[login]:null,record=Object.assign({},old||{},{nome:String(input.nome||'').trim().slice(0,120),perfil:perfil,ativo:input.ativo===true,cod_rca:perfil==='RCA'?Number(input.cod_rca):null,supervisor:perfil==='SUPERVISOR'?String(input.supervisor||''):''});
++   record.areas=['ADMIN','DIRETOR'].includes(perfil)?['commercial','logistics']:Array.isArray(input.areas)?[...new Set(input.areas)].filter(a=>['commercial','logistics'].includes(a)):[];
++   if(['SAC','INTERNO',FORMATION_ROLE].includes(perfil))record.areas=['logistics'];
++   if(perfil==='RCA')record.areas=['commercial'];
++   if(!record.areas.length)throw new Error('Selecione pelo menos uma área.');
++   const scope=input.logisticsScope||{},clean=k=>Array.isArray(scope[k])?[...new Set(scope[k].map(x=>String(x).trim()).filter(Boolean))].slice(0,100):[];
++   record.logisticsScope={carriers:clean('carriers'),sellers:['SAC','INTERNO'].includes(perfil)?[]:clean('sellers'),regions:['SAC','INTERNO'].includes(perfil)?[]:clean('regions')};
++   if(perfil===FORMATION_ROLE)record.logisticsScope={carriers:[],sellers:[],regions:[]};
++   if(input.permissions&&typeof input.permissions==='object'){
++    record.permissions=Object.fromEntries(LOG_PERMISSION_KEYS.map(key=>{
++     const view=input.permissions[key]?.view===true;
++     return [key,{view,edit:view&&input.permissions[key]?.edit===true}];
++    }));
++   }else if(old?.perfil!==perfil)delete record.permissions;
++   if(typeof input.editTransport==='boolean')record.editTransport=perfil==='SAC'&&input.editTransport;
++   record.editTransport=platformAccess_(record).permissions.sac.edit;
++   if(perfil==='SUPERVISOR'&&record.areas.includes('logistics')&&!Object.values(record.logisticsScope).some(a=>a.length))throw new Error('Defina o recorte logístico do supervisor.');
++   if(!record.nome)throw new Error('Informe o nome.');
++   if(perfil==='RCA'&&!aux.rcas.some(r=>Number(r.code)===record.cod_rca))throw new Error('Selecione um RCA válido.');
++   if(perfil==='SUPERVISOR'&&record.areas.includes('commercial')&&!aux.rcas.some(r=>r.supervisor===record.supervisor&&!!record.supervisor))throw new Error('Selecione uma supervisão válida.');
++   if(login===actor.login&&(perfil!=='ADMIN'||!record.ativo))throw new Error('Você não pode remover seu próprio acesso administrativo.');
++   if(!old)setTemporaryDashboardCredential_(record,input.credential||{});
++   else if(input.credential)throw new Error('Use Gerar senha provisória para redefinir a senha.');
++   record.accessVersion=login===actor.login?old.accessVersion||'':Utilities.getUuid();
++   saveDashboardUserRecord_(login,record);
++   console.log('Usuário atualizado: '+login+' por '+actor.login);
++   if(!old)return {ok:true,expiresAt:record.temporaryPasswordExpiresAt};
++  }finally{lock.releaseLock();}
+  }
+  const updated=loadUsers_();
+  return {ok:true,users:Object.keys(updated).map(login=>{const r=updated[login];return publicUser_(login,r);}),rcas:aux.rcas.map(r=>({code:r.code,name:r.name,supervisor:r.supervisor}))};
