@@ -1,0 +1,151 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -280,7 +280,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/39329426608e6699c16aaaba651f5b7fdfd10876/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/fc27261a21029bbe8d8f7d66e2e415acfbb332ce/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -2316,19 +2316,27 @@
+ 
+ function formDirectSnapshot_(st){const out={};for(const e of st.events)for(const [key,o]of Object.entries(e.data.orders||{}))out[key]=o;return out;}
+ 
++function formDirectVolumes_(order) {
++ const products=order.products||[];
++ if(!products.length||products.some(item=>!Number.isFinite(item.quantity)||item.quantity<0))return null;
++ return products.reduce((total,item)=>total+item.quantity,0);
++}
++
+ function formDirectView_(st,catalog,user){
+  const saved=formDirectSnapshot_(st),orders=[],byKey={},canonical={};
+  const reserved=new Set(Object.keys(st.assignments).map(key=>{const {client,order}=formExpParseKey_(key);return client+'|'+order;}));for(const o of Object.values(catalog)){const k=o.clientCode+'|'+o.order;canonical[k]=(canonical[k]||0)+1;}
+  for(const key of new Set([...Object.keys(catalog),...Object.keys(st.assignments)])){const fresh=catalog[key],o=fresh||saved[key];if(!o||!formDirectAllowed_(user,o))continue;const a=st.assignments[key],duplicate=canonical[o.clientCode+'|'+o.order]>1,aliasReserved=!a&&reserved.has(o.clientCode+'|'+o.order),issue=!fresh?'Pedido não está mais em aberto na base comercial':duplicate?'Pedido repetido em mais de um ano; conferir origem':aliasReserved?'Pedido vinculado a uma montagem em outro ano':'';
+-  const row={sourceKey:key,orderKey:key,client:o.client,city:o.city,cityLabel:o.city,uf:o.uf,date:o.date,region:'',seller:String(o.rca||''),product:o.products.map(p=>p.description).join(' / '),status:o.statuses.join(' / '),weight:null,volumes:null,availableWeight:null,mountedWeight:null,awaitingFormation:!!fresh&&!duplicate&&!aliasReserved&&!a,delivered:false,linked:true,montageId:a?a.montageId:''};
+-  const entry={...o,blocked:!fresh||duplicate||aliasReserved,sourceIssue:issue,sourceKeys:[key],sourceRows:[row],originalStatuses:o.statuses,montageId:a?a.montageId:'',internalStatus:a?(st.montages[a.montageId].status===FORM_FINAL?'Montagem finalizada':st.montages[a.montageId].status):st.last[key]&&st.last[key].type==='REMOVER'?'Removido da montagem':'Disponível',sourceDate:o.date};orders.push(entry);byKey[key]=entry;
++  const volumeOrder=a&&st.montages[a.montageId].status===FORM_FINAL?saved[key]||o:o;
++  const volumes=formDirectVolumes_(volumeOrder);
++  const row={sourceKey:key,orderKey:key,client:o.client,city:o.city,cityLabel:o.city,uf:o.uf,date:o.date,region:'',seller:String(o.rca||''),product:o.products.map(p=>p.description).join(' / '),status:o.statuses.join(' / '),weight:null,volumes,availableWeight:null,mountedWeight:null,awaitingFormation:!!fresh&&!duplicate&&!aliasReserved&&!a,delivered:false,linked:true,montageId:a?a.montageId:''};
++  const entry={...o,volumes,blocked:!fresh||duplicate||aliasReserved,sourceIssue:issue,sourceKeys:[key],sourceRows:[row],originalStatuses:o.statuses,montageId:a?a.montageId:'',internalStatus:a?(st.montages[a.montageId].status===FORM_FINAL?'Montagem finalizada':st.montages[a.montageId].status):st.last[key]&&st.last[key].type==='REMOVER'?'Removido da montagem':'Disponível',sourceDate:o.date};orders.push(entry);byKey[key]=entry;
+  }
+  const grouped=new Map();for(const [key,a] of Object.entries(st.assignments)){if(!grouped.has(a.montageId))grouped.set(a.montageId,[]);grouped.get(a.montageId).push(key);}
+- const montages=[];for(const m of Object.values(st.montages)){const keys=grouped.get(m.id)||[];if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!formWideScope_(user)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]);montages.push({...m,orderKeys:keys,orders:keys.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.map(o=>o.city+'|'+o.uf)).size,weight:keys.length?null:0,volumes:keys.length?null:0,sourceIssues:members.filter(o=>o.blocked).length});}
++ const montages=[];for(const m of Object.values(st.montages)){const keys=grouped.get(m.id)||[];if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!formWideScope_(user)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]);montages.push({...m,orderKeys:keys,orders:keys.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.map(o=>o.city+'|'+o.uf)).size,weight:keys.length?null:0,volumes:members.some(o=>o.volumes==null)?null:members.reduce((total,o)=>total+o.volumes,0),sourceIssues:members.filter(o=>o.blocked).length});}
+  const visibleMontages=new Set(montages.map(m=>m.id));
+  const events=st.events.slice().reverse().filter(e=>e.keys.length?e.keys.every(k=>byKey[k]):visibleMontages.has(e.to)||['VEICULO_SALVAR','MOTORISTA_SALVAR','UNIDADE_SALVAR','ROTEIRIZACAO_CONFIGURAR'].includes(e.type)).slice(0,200).map(formDirectEvent_);
+- const view=formFleetEnhance_({ok:true,experimental:true,direct:true,orders,montages,events,mapRows:orders.map(o=>o.sourceRows[0]),revision:st.revision,sequence:st.sequence,sourceVersion:digestHex_(JSON.stringify(orders.map(o=>[o.key,o.version,o.blocked]).sort())).slice(0,32),updatedAt:new Date().toISOString(),source:'Força de Vendas · base sincronizada',missingFields:['Peso','Volumes']},st);
+- view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey])).slice(0,24);
++ const view=formFleetEnhance_({ok:true,experimental:true,direct:true,orders,montages,events,mapRows:orders.map(o=>o.sourceRows[0]),revision:st.revision,sequence:st.sequence,sourceVersion:digestHex_(JSON.stringify(orders.map(o=>[o.key,o.version,o.blocked]).sort())).slice(0,32),updatedAt:new Date().toISOString(),source:'Força de Vendas · base sincronizada',missingFields:['Peso']},st);
++ view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey,'qtPedidaVolumes','routingOperationalAlerts'])).slice(0,24);
+  return view;
+ }
+ 
+@@ -2733,6 +2741,10 @@
+ 
+ function formFleetWarnings_(m) {
+   const alerts = [];
++  if (!m.vehicle) alerts.push({code:'VEICULO_NAO_DEFINIDO'});
++  if (!m.driver) alerts.push({code:'MOTORISTA_NAO_DEFINIDO'});
++  if (m.vehicle && !m.vehicle.type) alerts.push({code:'TIPO_VEICULO_NAO_INFORMADO'});
++  if (m.sourceIssues) alerts.push({code:'PEDIDOS_COM_PENDENCIA_NA_ORIGEM', orders:m.sourceIssues});
+   if (m.vehicle && !formFleetValidPlate_(m.vehicle.plate)) {
+     alerts.push({code:'PLACA_FORA_DO_PADRAO',plate:m.vehicle.plate});
+   }
+@@ -2780,10 +2792,6 @@
+     m.alerts = closed && stored.capacitySnapshot ? stored.finalAlerts : formFleetWarnings_(m);
+     m.finishReasons = [];
+     if (!m.orders) m.finishReasons.push('Adicione pedidos');
+-    if (!vehicle) m.finishReasons.push('Escolha o veículo');
+-    if (!m.driver) m.finishReasons.push('Escolha o motorista');
+-    if (vehicle && !vehicle.type) m.finishReasons.push('Cadastre o tipo do veículo');
+-    if (m.sourceIssues) m.finishReasons.push('Revise pedidos alterados na origem');
+     m.canFinalize = !closed && !m.finishReasons.length;
+   }
+   view.mapRows = view.orders.map(o => o.sourceRows[0]);
+@@ -2858,16 +2866,24 @@
+   return {weights, orderVersions};
+ }
+ 
+-function formFleetFinish_(st, catalog, user, p, target, sourceState) {
++function formFleetRoutingView_(st, catalog, user) {
++  if (catalog) return formDirectView_(st, catalog, user);
++  const saved = formDirectSnapshot_(st), assigned = {};
++  for (const key of Object.keys(st.assignments)) {
++    if (saved[key]) assigned[key] = saved[key];
++  }
++  return formDirectView_(st, assigned, user);
++}
++
++function formFleetFinish_(st, catalog, user, p, target) {
+   if (p.confirmed !== true) throw new Error('Confirme o envio para roteirização.');
+-  if (formDirectSourceState_() !== sourceState) throw new Error('A base foi atualizada. Confira a montagem novamente.');
+-  const item = formDirectView_(st, catalog, user).montages.find(m => m.id === target);
+-  if (!item?.canFinalize) throw new Error(item ? item.finishReasons.join(' · ') : 'Montagem indisponível.');
++  const item = formFleetRoutingView_(st, catalog, user).montages.find(m => m.id === target);
++  if (!item?.canFinalize) throw new Error(item?.finishReasons.join(' · ') || 'Montagem indisponível para roteirização.');
+   const {knownWeightKg,totalWeightKg,unknownOrders,capacityKg,overCapacity,remainingKg} = item;
+   return {
+-    vehicleSnapshot:{...item.vehicle, driver:item.driver, totalWeightKg},
++    vehicleSnapshot:item.vehicle ? {...item.vehicle, driver:item.driver, totalWeightKg} : null,
+     capacitySnapshot:{knownWeightKg,totalWeightKg,unknownOrders,capacityKg,overCapacity,remainingKg},
+-    alerts:item.alerts
++    alerts:catalog ? item.alerts : [...item.alerts,{code:'ORIGEM_NAO_CONFERIDA'}]
+   };
+ }
+ 
+@@ -2882,6 +2898,7 @@
+     throw new Error('Operação inválida.');
+   }
+   const editingSettings=settings.includes(operation), target=editingSettings?'':String(p.target||'');
++  const sendingToRouting=['FINALIZAR','ENVIAR_ROTEIRO'].includes(operation);
+   if(editingSettings&&(platformAccess_(user).formationOnly||platformAccess_(user).transportOnly))throw new Error('Configurações fora do seu perfil.');
+   const timing=centralTiming_('formacao.'+operation);
+   let status='erro';
+@@ -2892,12 +2909,7 @@
+       return formAssemblyRetry_(initial,p.requestId);
+     }
+     let catalog=null, sourceState='';
+-    if (['FINALIZAR','ENVIAR_ROTEIRO'].includes(operation)) {
+-      formFleetCanManage_(user,initial,target);
+-      sourceState=formDirectSourceState_();
+-      catalog=formDirectReadCatalog_(sourceState,false,formDirectTargetKeys_(initial,target));
+-      formDirectGuard_(sourceState);
+-    } else if (!editingSettings) {
++    if (!editingSettings) {
+       // O retorno imediato reaproveita o catálogo se estiver disponível.
+       try {
+         sourceState=formDirectSourceState_();
+@@ -2939,7 +2951,13 @@
+         data = {vehicleId:vehicle.plate, driver:driver.name};
+       }
+       if (operation === 'PESOS_PEDIDOS') data = formFleetSaveWeights_(p, keys);
+-      if (['FINALIZAR','ENVIAR_ROTEIRO'].includes(operation)) data = formFleetFinish_(st, catalog, user, p, target, sourceState);
++      if (sendingToRouting) {
++        // A montagem já guarda os pedidos selecionados. A atualização comercial pode terminar depois do envio.
++        if (catalog) {
++          try { formDirectGuard_(sourceState); } catch (error) { catalog=null; }
++        }
++        data = formFleetFinish_(st, catalog, user, p, target);
++      }
+       if (operation === 'REABRIR') {
+         if (m.status === FORM_OPEN || p.confirmed !== true) throw new Error('Confirme a reabertura da montagem.');
+         data = {};
+@@ -2960,6 +2978,7 @@
+     let view=null, settingsView=null;
+     try {
+       if(editingSettings) settingsView=formRouteSettingsView_(st);
++      else if(sendingToRouting) view=formFleetRoutingView_(st,catalog,user);
+       else if(catalog){
+         formDirectGuard_(sourceState);
+         view=formDirectView_(st,catalog,user);
+@@ -3271,7 +3290,7 @@
+       ...FORM_EXP_SCHEMA.MONTAGEM_PEDIDOS,'CLIENTE_CODIGO','CLIENTE','CIDADE','UF','DATA_PEDIDO','STATUS_COMERCIAL','PESO_KG','VOLUMES','ITENS_JSON','FONTE','VERSAO_FONTE','ORDEM_ENTREGA','ENDERECO_ENTREGA'
+     ],Object.entries(st.assignments).map(([key,a])=>{
+       const o=saved[key], route=routeOrders[key], base=[a.montageId,formExpParseKey_(key).order,key,a.at,a.by];
+-      return o?base.concat([o.clientCode,o.client,o.city,o.uf,o.date,o.statuses.join(' / '),st.orderWeights[key]?.weight??o.weight??'',o.volumes??'',JSON.stringify(o.products),'FORCA_DE_VENDAS',o.version,route?.number||'',route?.address||'']):base.concat(Array(13).fill(''));
++      return o?base.concat([o.clientCode,o.client,o.city,o.uf,o.date,o.statuses.join(' / '),st.orderWeights[key]?.weight??o.weight??'',formDirectVolumes_(o)??'',JSON.stringify(o.products),'FORCA_DE_VENDAS',o.version,route?.number||'',route?.address||'']):base.concat(Array(13).fill(''));
+     }));
+   }
+   if (tables.includes('VEICULOS')) formProjectionWrite_(ss,'VEICULOS',
