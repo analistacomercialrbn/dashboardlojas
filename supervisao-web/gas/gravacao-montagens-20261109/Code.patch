@@ -1,0 +1,25 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -280,7 +280,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/b428a215bd52dd2fa29e00aa6e0c726b9db22d9a/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/938e15614023ac01d52f97aa568e251d4fde9a3c/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -2568,8 +2568,12 @@
+   formDirectGuard_(sourceState);
+   timing.mark('origem');
+   const lock=LockService.getScriptLock();
+-  if(!lock.tryLock(3000))throw new Error('Outra gravação está em andamento. A seleção foi mantida. Tente salvar novamente em instantes.');
++  const locked=lock.tryLock(12000);
+   timing.mark('fila');
++  if(!locked){
++   status='fila_ocupada';
++   return {ok:false,code:'FORMATION_WRITE_BUSY',message:'A gravação ainda está ocupada. A seleção foi mantida. Tente salvar novamente em instantes.'};
++  }
+   let st, to, projectionWarning, message;
+   try{
+    st=formExpState_(ss);
