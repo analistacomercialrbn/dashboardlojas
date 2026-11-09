@@ -1,0 +1,214 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -280,7 +280,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/fc27261a21029bbe8d8f7d66e2e415acfbb332ce/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/b428a215bd52dd2fa29e00aa6e0c726b9db22d9a/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -2067,7 +2067,14 @@
+  const st=formExpEmpty_();for(const row of rows){if(!row[0])continue;const e={id:String(row[0]),revision:Number(row[1]),at:String(row[2]),by:String(row[3]),type:String(row[4]),keys:JSON.parse(row[5]||'[]'),from:JSON.parse(row[6]||'{}'),to:String(row[7]||''),data:JSON.parse(row[8]||'{}')};if(e.revision!==st.revision+1||st.requests[e.id])throw new Error('Histórico auxiliar inconsistente. Nenhuma movimentação foi aplicada.');formExpApply_(st,e);st.events.push(e);st.requests[e.id]=true;st.revision=e.revision;}return st;
+ }
+ 
++const FORM_FLEET_SETTINGS = ['VEICULO_SALVAR','MOTORISTA_SALVAR','UNIDADE_SALVAR','ROTEIRIZACAO_CONFIGURAR'];
++
+ function formExpApply_(st,e){
++ if(e.type==='INICIAR_OPERACAO_REAL'){
++  Object.assign(st,{montages:{},links:{},assignments:{},last:{},sequence:0});
++  st.events=st.events.filter(event=>FORM_FLEET_SETTINGS.includes(event.type));
++  return;
++ }
+  if(e.type==='CRIAR'){if(st.montages[e.to])throw new Error('Montagem duplicada.');st.sequence++;st.montages[e.to]={id:e.to,name:e.data.name,createdAt:e.at,owner:e.by,status:'Em montagem'};}
+  if(e.type==='RENOMEAR'){if(!st.montages[e.to])throw new Error('Montagem inexistente.');st.montages[e.to].name=e.data.name;}
+  if(e.type==='VINCULAR'){for(const key of e.keys){st.links[key]={sourceKeys:e.data.sourceKeys.slice(),at:e.at,by:e.by};}}
+@@ -2334,15 +2341,16 @@
+  const grouped=new Map();for(const [key,a] of Object.entries(st.assignments)){if(!grouped.has(a.montageId))grouped.set(a.montageId,[]);grouped.get(a.montageId).push(key);}
+  const montages=[];for(const m of Object.values(st.montages)){const keys=grouped.get(m.id)||[];if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!formWideScope_(user)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]);montages.push({...m,orderKeys:keys,orders:keys.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.map(o=>o.city+'|'+o.uf)).size,weight:keys.length?null:0,volumes:members.some(o=>o.volumes==null)?null:members.reduce((total,o)=>total+o.volumes,0),sourceIssues:members.filter(o=>o.blocked).length});}
+  const visibleMontages=new Set(montages.map(m=>m.id));
+- const events=st.events.slice().reverse().filter(e=>e.keys.length?e.keys.every(k=>byKey[k]):visibleMontages.has(e.to)||['VEICULO_SALVAR','MOTORISTA_SALVAR','UNIDADE_SALVAR','ROTEIRIZACAO_CONFIGURAR'].includes(e.type)).slice(0,200).map(formDirectEvent_);
++ const events=st.events.slice().reverse().filter(e=>e.keys.length?e.keys.every(k=>byKey[k]):visibleMontages.has(e.to)||e.data.montageIds?.every(id=>visibleMontages.has(id))||FORM_FLEET_SETTINGS.includes(e.type)).slice(0,200).map(formDirectEvent_);
+  const view=formFleetEnhance_({ok:true,experimental:true,direct:true,orders,montages,events,mapRows:orders.map(o=>o.sourceRows[0]),revision:st.revision,sequence:st.sequence,sourceVersion:digestHex_(JSON.stringify(orders.map(o=>[o.key,o.version,o.blocked]).sort())).slice(0,32),updatedAt:new Date().toISOString(),source:'Força de Vendas · base sincronizada',missingFields:['Peso']},st);
+- view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey,'qtPedidaVolumes','routingOperationalAlerts'])).slice(0,24);
++ view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey,'qtPedidaVolumes','routingOperationalAlerts','montageDeliveryDate'])).slice(0,24);
+  return view;
+ }
+ 
+ function formDirectEvent_(e) {
+  return {id:e.id,at:e.at,by:e.by,type:e.type,keys:e.keys,from:e.from,to:e.to,name:e.data.name||'',
+   alerts:e.data.alerts||[],capacitySnapshot:e.data.capacitySnapshot||null,overweight:e.data.overweight||null,
++  deliveryDate:e.data.deliveryDate||'',montageIds:e.data.montageIds||[],
+   confirmed:e.data.route?.confirmed||false};
+ }
+ 
+@@ -2352,7 +2360,7 @@
+  formFleetCanManage_(user,st,id);
+  const snapshots=formDirectSnapshot_(st);
+  return {ok:true,events:st.events.slice().reverse()
+-  .filter(e=>(e.to===id||Object.values(e.from).includes(id))
++  .filter(e=>(e.to===id||Object.values(e.from).includes(id)||e.data.montageIds?.includes(id))
+    && e.keys.every(key=>snapshots[key]&&formDirectAllowed_(user,snapshots[key])))
+   .map(formDirectEvent_)};
+ }
+@@ -2455,7 +2463,7 @@
+ 
+ function formationDirectApi_(user,p) {
+  if(p.action==='fleetSave')return formFleetApi_(user,p);
+- if(p.action==='settingsRead'){if(platformAccess_(user).formationOnly||platformAccess_(user).transportOnly)throw new Error('Configurações fora do seu perfil.');return formRouteSettingsRead_(user);}
++ if(p.action==='settingsRead'){if(platformAccess_(user).transportOnly)throw new Error('Configurações fora do seu perfil.');return formRouteSettingsRead_(user);}
+  if(p.action==='montageHistory')return formDirectMontageHistory_(user,p);
+  if(p.action==='priorityRead'){if(platformAccess_(user).formationOnly||platformAccess_(user).transportOnly)throw new Error('Fonte fora do seu perfil.');return formPriorityRead_(user);}
+  formExpAccess_(user);
+@@ -2633,7 +2641,7 @@
+   for (const m of Object.values(st.montages)) {
+     Object.assign(m, { status: FORM_OPEN, vehicleId: '', driver: '', routingAt: '', routingBy: '', finalizedAt: '', finalizedBy: '',
+       statusAt:m.createdAt, statusBy:m.owner, overweightOccurrences: [],
+-      vehicleSnapshot: null, capacitySnapshot: null, finalAlerts: [], route: null });
++      vehicleSnapshot: null, capacitySnapshot: null, finalAlerts: [], route: null, deliveryDate: '' });
+   }
+   for (const e of st.events) {
+     const d = e.data || {};
+@@ -2673,6 +2681,14 @@
+     if (e.type === 'UNIDADE_SALVAR') st.routeUnits[d.unit.id] = d.unit;
+     if (e.type === 'ROTEIRIZACAO_CONFIGURAR') st.routePreferences = d.preferences;
+ 
++    if (e.type === 'ENTREGA_DATA_SALVAR') {
++      for (const id of d.montageIds) {
++        const montage=st.montages[id];
++        if(montage) montage.deliveryDate=d.deliveryDate;
++      }
++      continue;
++    }
++
+     if (!Object.prototype.hasOwnProperty.call(st.montages,e.to)) continue;
+     const m = st.montages[e.to];
+     if (e.type === 'CRIAR' && d.company) m.company = d.company;
+@@ -2887,19 +2903,35 @@
+   };
+ }
+ 
++function formMontageDelivery_(st,user,p) {
++  const montageIds=p.montageIds;
++  if(!Array.isArray(montageIds)||!montageIds.length||montageIds.length>100||
++     montageIds.some(id=>typeof id!=='string')||new Set(montageIds).size!==montageIds.length) {
++    throw new Error('Selecione de 1 a 100 montagens distintas.');
++  }
++  const date=p.deliveryDate;
++  deliveryDate_(date,'America/Fortaleza');
++  for(const id of montageIds){
++    const montage=formFleetCanManage_(user,st,id);
++    if(montage.status!==FORM_FINAL)throw new Error('Atualize a data somente em montagens finalizadas.');
++  }
++  return {montageIds,deliveryDate:date};
++}
++
+ function formFleetApi_(user, p) {
+   formExpAccess_(user,'edit');
+   if (p.action!=='fleetSave'||!/^[a-zA-Z0-9_-]{16,100}$/.test(String(p.requestId||''))) {
+     throw new Error('Identificador de operação inválido.');
+   }
+   const operation=p.operation;
+-  const settings=['VEICULO_SALVAR','MOTORISTA_SALVAR','UNIDADE_SALVAR','ROTEIRIZACAO_CONFIGURAR'];
+-  if (![...settings,'CONFIGURAR_CARGA','PESOS_PEDIDOS','FINALIZAR','ENVIAR_ROTEIRO','REABRIR','ROTEIRO_SALVAR'].includes(operation)) {
++  const settings=FORM_FLEET_SETTINGS;
++  if (![...settings,'CONFIGURAR_CARGA','PESOS_PEDIDOS','FINALIZAR','ENVIAR_ROTEIRO','REABRIR','ROTEIRO_SALVAR','ENTREGA_DATA_SALVAR'].includes(operation)) {
+     throw new Error('Operação inválida.');
+   }
+-  const editingSettings=settings.includes(operation), target=editingSettings?'':String(p.target||'');
++  const editingSettings=settings.includes(operation), savingDelivery=operation==='ENTREGA_DATA_SALVAR';
++  const target=editingSettings||savingDelivery?'':String(p.target||'');
+   const sendingToRouting=['FINALIZAR','ENVIAR_ROTEIRO'].includes(operation);
+-  if(editingSettings&&(platformAccess_(user).formationOnly||platformAccess_(user).transportOnly))throw new Error('Configurações fora do seu perfil.');
++  if(editingSettings&&platformAccess_(user).transportOnly)throw new Error('Configurações fora do seu perfil.');
+   const timing=centralTiming_('formacao.'+operation);
+   let status='erro';
+   try {
+@@ -2936,7 +2968,8 @@
+     if (operation === 'MOTORISTA_SALVAR') data = formFleetSaveDriver_(formFleetOptions_(st, true), p);
+     if (operation === 'UNIDADE_SALVAR') data = {unit:formRouteUnit_(st, p.unit || {})};
+     if (operation === 'ROTEIRIZACAO_CONFIGURAR') data = {preferences:formRoutePreferences_(st, p.preferences || {})};
+-    if (!settings.includes(operation)) {
++    if (savingDelivery) data = formMontageDelivery_(st,user,p);
++    if (!editingSettings && !savingDelivery) {
+       const m = formFleetCanManage_(user, st, target);
+       keys = Object.keys(st.assignments).filter(k => st.assignments[k].montageId === target);
+       if (m.status !== FORM_OPEN && !['REABRIR','ROTEIRO_SALVAR'].includes(operation)) {
+@@ -2978,7 +3011,7 @@
+     let view=null, settingsView=null;
+     try {
+       if(editingSettings) settingsView=formRouteSettingsView_(st);
+-      else if(sendingToRouting) view=formFleetRoutingView_(st,catalog,user);
++      else if(sendingToRouting||savingDelivery) view=formFleetRoutingView_(st,catalog,user);
+       else if(catalog){
+         formDirectGuard_(sourceState);
+         view=formDirectView_(st,catalog,user);
+@@ -2992,6 +3025,7 @@
+       FINALIZAR:'Montagem enviada para roteirização.',
+       ENVIAR_ROTEIRO:'Montagem enviada para roteirização.',
+       REABRIR:'Montagem reaberta para ajustes.',
++      ENTREGA_DATA_SALVAR:'Data de entrega salva.',
+       ROTEIRO_SALVAR:st.montages[target]?.route?.confirmed?'Roteiro confirmado. Montagem finalizada.':'Rascunho do roteiro salvo.'
+     }[operation]||'Informações salvas.';
+     return {ok:true,revision:st.revision,montageId:target,projectionWarning,message,view,settings:settingsView,
+@@ -3234,7 +3268,39 @@
+ // ── 21. Resumos da planilha auxiliar ──
+ // Atualiza os resumos das montagens e permite reconstruí-los a partir dos eventos gravados.
+ 
++function iniciarOperacaoRealRebanho_() {
++  const owner=Session.getEffectiveUser().getEmail();
++  if(!owner||Session.getActiveUser().getEmail()!==owner)throw new Error('Execute com a conta responsável pelo projeto.');
++  const lock=LockService.getScriptLock();
++  if(!lock.tryLock(10000))throw new Error('Outra gravação está em andamento.');
++  try {
++    const ss=formExpAux_(true),st=formExpState_(ss);
++    const id='inicio_operacao_real_20261109';
++    if(st.requests[id]){
++      const active=st.events.find(e=>e.id===id);
++      console.log(JSON.stringify({alreadyApplied:true,backup:active?.data.backup||'',montagensAtivas:Object.keys(st.montages).length}));
++      return;
++    }
++    const journal=ss.getSheetByName('HISTORICO_MOVIMENTACOES');
++    const at=new Date();
++    const backup=journal.copyTo(ss).setName('ARQUIVO_MONTAGENS_'+Utilities.formatDate(at,'America/Fortaleza','yyyyMMdd_HHmmss'));
++    SpreadsheetApp.flush();
++    if(backup.getLastRow()!==journal.getLastRow())throw new Error('A cópia do histórico não foi confirmada.');
++    const archived=Object.keys(st.montages).length;
++    const event={id,revision:st.revision+1,at:at.toISOString(),by:owner,type:'INICIAR_OPERACAO_REAL',
++      keys:[],from:{},to:'',data:{backup:backup.getName(),archived}};
++    const timing=centralTiming_('formacao.inicioOperacaoReal');
++    const projectionWarning=formProjectionCommit_(ss,st,event,timing);
++    timing.finish(projectionWarning?'abas_pendentes':'ok');
++    console.log(JSON.stringify({ok:true,backup:backup.getName(),archived,montagensAtivas:Object.keys(st.montages).length,sequencial:st.sequence,projectionWarning}));
++  } finally {
++    lock.releaseLock();
++  }
++}
++
+ const FORM_PROJECTION_TABLES = {
++  INICIAR_OPERACAO_REAL: ['MONTAGENS','MONTAGEM_PEDIDOS','ROTEIROS_PARADAS','VINCULOS_FONTES'],
++  ENTREGA_DATA_SALVAR: ['MONTAGENS'],
+   CRIAR: ['MONTAGENS','MONTAGEM_PEDIDOS'],
+   ADICIONAR: ['MONTAGEM_PEDIDOS'],
+   TRANSFERIR: ['MONTAGEM_PEDIDOS'],
+@@ -3273,15 +3339,17 @@
+ }
+ 
+ function formProjectionUpdate_(ss, st, tables) {
++  if(tables.includes('VINCULOS_FONTES'))formProjectionWrite_(ss,'VINCULOS_FONTES',FORM_EXP_SCHEMA.VINCULOS_FONTES,
++    Object.entries(st.links).flatMap(([key,link])=>link.sourceKeys.map(source=>[key,source,link.at,link.by])));
+   if (tables.includes('MONTAGENS')) {
+     const vehicles = new Map(formFleetOptions_(st,true).vehicles.map(vehicle=>[vehicle.plate,vehicle]));
+     formProjectionWrite_(ss,'MONTAGENS',[
+-      ...FORM_EXP_SCHEMA.MONTAGENS,'PLACA','TIPO_VEICULO','MOTORISTA','CAPACIDADE_KG','FINALIZADO_EM','SITUACAO_ROTEIRO','EMPRESA_SAIDA','ROTEIRIZACAO_INICIADA_EM','ROTEIRIZACAO_INICIADA_POR','FINALIZADO_POR','STATUS_ATUALIZADO_EM','STATUS_ATUALIZADO_POR','EXCESSO_PESO_JSON'
++      ...FORM_EXP_SCHEMA.MONTAGENS,'PLACA','TIPO_VEICULO','MOTORISTA','CAPACIDADE_KG','FINALIZADO_EM','SITUACAO_ROTEIRO','EMPRESA_SAIDA','ROTEIRIZACAO_INICIADA_EM','ROTEIRIZACAO_INICIADA_POR','FINALIZADO_POR','STATUS_ATUALIZADO_EM','STATUS_ATUALIZADO_POR','EXCESSO_PESO_JSON','DATA_ENTREGA'
+     ],Object.values(st.montages).map(m=>{
+       const v=m.vehicleSnapshot||vehicles.get(m.vehicleId)||{};
+       const routeStatus=m.status===FORM_FINAL?'Confirmado':m.status===FORM_ROUTING?(m.route?'Rascunho':'Pendente'):'';
+       return [m.id,m.name,m.createdAt,m.owner,m.status,m.vehicleId,v.type||'',m.driver,v.capacityKg||'',m.finalizedAt,routeStatus,FORM_COMPANIES[m.company]||'',m.routingAt,m.routingBy,m.finalizedBy,m.statusAt,m.statusBy,
+-        JSON.stringify(m.overweightOccurrences).length<=44000?JSON.stringify(m.overweightOccurrences):'Consultar ocorrências no histórico'];
++        JSON.stringify(m.overweightOccurrences).length<=44000?JSON.stringify(m.overweightOccurrences):'Consultar ocorrências no histórico',m.deliveryDate||''];
+     }));
+   }
+   if (tables.includes('MONTAGEM_PEDIDOS')) {
