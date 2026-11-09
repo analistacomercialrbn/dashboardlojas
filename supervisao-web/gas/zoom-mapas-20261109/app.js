@@ -88,7 +88,12 @@ function api(url, opts={}){
   if(action==='logout') action='logout';
   return new Promise((resolve,reject)=>{
     google.script.run.withSuccessHandler(result=>{
-      if(!result || result.ok===false){reject(new Error(result?.message||'Falha na comunicação com o Apps Script.'));return;}
+      if (!result || result.ok===false) {
+        const error = new Error(result?.message || 'Falha na comunicação com o Apps Script.');
+        error.code = result?.code;
+        reject(error);
+        return;
+      }
       if(action==='login' && result.token) sessionStorage.setItem('dashboardSession',result.token);
       if(action==='logout') sessionStorage.removeItem('dashboardSession');
       resolve(result);
@@ -2650,7 +2655,17 @@ async function formationSave(payload,dialog,status,requestId) {
   status.textContent = 'Conferindo os pedidos e salvando a montagem…';
   let result;
   try {
-    result = await formationApi({action:'save',requestId,...payload});
+    const request = {action:'save',requestId,...payload};
+    for (let attempt = 0; ; attempt++) {
+      try {
+        result = await formationApi(request);
+        break;
+      } catch (error) {
+        if (error.code !== 'FORMATION_WRITE_BUSY' || attempt >= 2) throw error;
+        status.textContent = 'Aguardando a liberação da gravação. Sua seleção foi mantida…';
+        await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+      }
+    }
   } catch (error) {
     status.textContent = error.message;
     dialog.querySelectorAll('button').forEach(button=>button.disabled=false);
