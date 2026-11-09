@@ -1,0 +1,105 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -98,15 +98,20 @@
+ // ── 03. Bases comerciais e leitura do cache ──
+ // Reúne referências de clientes e vendas e fornece os dados paginados ao painel.
+ 
+-function readAuxiliary_() {
+-  const ss = SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId);
+-  const rcaSheet = ss.getSheetByName('RCA'), clientSheet = ss.getSheetByName('CLIENTES'), goalSheet = ss.getSheetByName('METAS'), routeSheet = ss.getSheetByName('ROTAS');
+-  if (!rcaSheet || !clientSheet || !goalSheet || !routeSheet) throw new Error('A base auxiliar precisa ter as abas RCA, CLIENTES, METAS e ROTAS.');
++function readRcaMap_(rcaSheet) {
+   const rcaValues = rcaSheet.getDataRange().getValues(), rcaIx = headerIndex_(rcaValues.shift() || []), rcaMap = new Map();
+   rcaValues.forEach(row => {
+     const c = code_(cell_(row, rcaIx, 'COD_RCA')), name = String(cell_(row, rcaIx, 'RCA') || '').trim();
+     if (c != null && name) rcaMap.set(c, { code: c, name: name, supervisor: String(cell_(row, rcaIx, 'SUPERVISOR') || '').trim(), active: norm_(cell_(row, rcaIx, 'ATIVO') || 'S') === 'S' });
+   });
++  return rcaMap;
++}
++
++function readAuxiliary_() {
++  const ss = SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId);
++  const rcaSheet = ss.getSheetByName('RCA'), clientSheet = ss.getSheetByName('CLIENTES'), goalSheet = ss.getSheetByName('METAS'), routeSheet = ss.getSheetByName('ROTAS');
++  if (!rcaSheet || !clientSheet || !goalSheet || !routeSheet) throw new Error('A base auxiliar precisa ter as abas RCA, CLIENTES, METAS e ROTAS.');
++  const rcaMap = readRcaMap_(rcaSheet);
+   const clientValues = clientSheet.getDataRange().getValues(), clientIx = headerIndex_(clientValues.shift() || []), clients = [];
+   clientValues.forEach(row => { const c = code_(cell_(row, clientIx, 'CODCLI')); if (c != null) clients.push([c, { code: c, name: String(cell_(row, clientIx, 'CLIENTE') || c).trim(), rca: code_(cell_(row, clientIx, 'COD_RCA')) }]); });
+   const routeValues = routeSheet.getDataRange().getValues(), routeIx = headerIndex_(routeValues.shift() || []), routeMap = new Map();
+@@ -280,7 +285,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/938e15614023ac01d52f97aa568e251d4fde9a3c/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/e8b50392488932dfa2e3137a586b25209c0676d6/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -2390,24 +2395,63 @@
+  });
+ }
+ 
++function formDeliverySellerDirectory_() {
++ try {
++  const cache=CacheService.getScriptCache(), key='FORM_DELIVERY_SELLERS_'+CFG.auxiliarySpreadsheetId;
++  const cached=centralCacheRead_(cache,key);
++  if(cached)return cached;
++  const sheet=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId).getSheetByName('RCA');
++  if(!sheet)return {};
++  const names=Object.fromEntries([...readRcaMap_(sheet)].map(([code,rca])=>[code,rca.name]));
++  centralCacheWrite_(cache,key,JSON.stringify(names),300);
++  return names;
++ }catch(error){
++  console.warn('Cadastro de vendedores indisponível para a Ordem de Entregas.');
++  return {};
++ }
++}
++
++function formDeliverySeller_(order,names) {
++ const rawCode=code_(order.seller);
++ const rawName=logText_(order.seller).replace(/^\d+\s*[-–—]\s*/,'').trim();
++ const codes=new Set([...(order.rcas||[]).map(code_),rawCode]);
++ codes.delete(null);
++ const labels=[];
++ for(const code of codes){
++  const label=logText_(names[code]);
++  if(/\p{L}/u.test(label))labels.push(label);
++  else if(code===rawCode&&/\p{L}/u.test(rawName))labels.push(rawName);
++ }
++ if(!labels.length&&rawCode===null&&/\p{L}/u.test(rawName))labels.push(rawName);
++ return [...new Set(labels)].join(' / ');
++}
++
+ function formDirectView_(st,catalog,user,forceTransport=false){
+- const saved=formDirectSnapshot_(st),orders=[],byKey={},canonical={};
++ const saved=formDirectSnapshot_(st),orders=[],byKey={},canonical={},deliverySellers=[];
++ let sellerNames;
+  const transportCandidates=Object.values(catalog).some(o=>!st.assignments[o.key]&&o.invoices?.some(nf=>sacImportNotes_(nf).length));
+  const transport=transportCandidates?formTransportInvoiceSnapshot_(forceTransport):null;
+  const reserved=new Set(Object.keys(st.assignments).map(key=>{const {client,order}=formExpParseKey_(key);return client+'|'+order;}));for(const o of Object.values(catalog)){const k=o.clientCode+'|'+o.order;canonical[k]=(canonical[k]||0)+1;}
+  for(const key of new Set([...Object.keys(catalog),...Object.keys(st.assignments)])){const fresh=catalog[key],o=fresh||saved[key];if(!o||!formDirectAllowed_(user,o))continue;const a=st.assignments[key],duplicate=canonical[o.clientCode+'|'+o.order]>1,aliasReserved=!a&&reserved.has(o.clientCode+'|'+o.order),issue=!fresh?'Pedido não está mais em aberto na base comercial':duplicate?'Pedido repetido em mais de um ano; conferir origem':aliasReserved?'Pedido vinculado a uma montagem em outro ano':'';
+   if(!a&&transport?.size&&formDirectAlreadyInTransport_(o,transport))continue;
+-  const volumeOrder=a&&st.montages[a.montageId].status===FORM_FINAL?saved[key]||o:o;
+-  const volumes=formDirectVolumes_(volumeOrder);
++  const finalized=a&&st.montages[a.montageId].status===FORM_FINAL;
++  const recordedOrder=finalized?saved[key]||o:o;
++  const volumes=formDirectVolumes_(recordedOrder);
+   const row={sourceKey:key,orderKey:key,client:o.client,city:o.city,cityLabel:o.city,uf:o.uf,date:o.date,region:'',seller:String(o.rca||''),product:o.products.map(p=>p.description).join(' / '),status:o.statuses.join(' / '),weight:null,volumes,availableWeight:null,mountedWeight:null,awaitingFormation:!!fresh&&!duplicate&&!aliasReserved&&!a,delivered:false,linked:true,montageId:a?a.montageId:''};
+-  const entry={...o,volumes,blocked:!fresh||duplicate||aliasReserved,sourceIssue:issue,sourceKeys:[key],sourceRows:[row],originalStatuses:o.statuses,montageId:a?a.montageId:'',internalStatus:a?(st.montages[a.montageId].status===FORM_FINAL?'Montagem finalizada':st.montages[a.montageId].status):st.last[key]&&st.last[key].type==='REMOVER'?'Removido da montagem':'Disponível',sourceDate:o.date};orders.push(entry);byKey[key]=entry;
++  const entry={...o,volumes,blocked:!fresh||duplicate||aliasReserved,sourceIssue:issue,sourceKeys:[key],sourceRows:[row],originalStatuses:o.statuses,montageId:a?a.montageId:'',internalStatus:a?(st.montages[a.montageId].status===FORM_FINAL?'Montagem finalizada':st.montages[a.montageId].status):st.last[key]&&st.last[key].type==='REMOVER'?'Removido da montagem':'Disponível',sourceDate:o.date};
++  if(finalized){
++   if(!sellerNames)sellerNames=formDeliverySellerDirectory_();
++   entry.deliverySeller=formDeliverySeller_(recordedOrder,sellerNames);
++   deliverySellers.push([key,entry.deliverySeller]);
++  }
++  orders.push(entry);byKey[key]=entry;
+  }
+  const grouped=new Map();for(const [key,a] of Object.entries(st.assignments)){if(!grouped.has(a.montageId))grouped.set(a.montageId,[]);grouped.get(a.montageId).push(key);}
+  const montages=[];for(const m of Object.values(st.montages)){const keys=grouped.get(m.id)||[];if(keys.some(k=>!byKey[k]))continue;if(!keys.length&&!formWideScope_(user)&&m.owner!==user.login)continue;const members=keys.map(k=>byKey[k]);montages.push({...m,orderKeys:keys,orders:keys.length,clients:new Set(members.map(o=>o.clientCode)).size,cities:new Set(members.map(o=>o.city+'|'+o.uf)).size,weight:keys.length?null:0,volumes:members.some(o=>o.volumes==null)?null:members.reduce((total,o)=>total+o.volumes,0),sourceIssues:members.filter(o=>o.blocked).length});}
+  const visibleMontages=new Set(montages.map(m=>m.id));
+  const events=st.events.slice().reverse().filter(e=>e.keys.length?e.keys.every(k=>byKey[k]):visibleMontages.has(e.to)||e.data.montageIds?.every(id=>visibleMontages.has(id))||FORM_FLEET_SETTINGS.includes(e.type)).slice(0,200).map(formDirectEvent_);
+  const view=formFleetEnhance_({ok:true,experimental:true,direct:true,orders,montages,events,mapRows:orders.map(o=>o.sourceRows[0]),revision:st.revision,sequence:st.sequence,sourceVersion:digestHex_(JSON.stringify(orders.map(o=>[o.key,o.version,o.blocked]).sort())).slice(0,32),updatedAt:new Date().toISOString(),source:'Força de Vendas · base sincronizada',missingFields:['Peso']},st);
+- view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey,'qtPedidaVolumes','routingOperationalAlerts','montageDeliveryDate'])).slice(0,24);
++ view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey,'qtPedidaVolumes','routingOperationalAlerts','montageDeliveryDate',deliverySellers.sort()])).slice(0,24);
+  return view;
+ }
+ 
