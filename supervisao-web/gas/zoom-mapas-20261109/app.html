@@ -402,6 +402,20 @@
 }
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ece8ead2f378f3f29225e22191ad55f63f3e9351/supervisao-web/gas/sac-importacao-20261108/tower.css">
+<style>
+.history-annual-scroll{overflow-x:auto;max-width:100%}
+.history-annual-scroll .history-chart{min-width:820px}
+.history-annual-scroll:focus-visible{outline:2px solid #84a7da;outline-offset:2px}
+.history-map-body .history-map-stage{height:auto}
+.history-map-stage #historyEvolutionMap{
+ width:100%;height:clamp(320px,39vw,495px);min-height:0;
+ padding:0;box-sizing:border-box;overflow:hidden
+}
+.history-map-marker{transform:scale(var(--history-marker-scale,1))}
+.history-map-stage .history-time-stamp,.history-map-stage .history-map-legend,.history-map-stage .history-city-focus{position:static}
+.history-map-stage .history-time-stamp{padding:8px 14px 4px}
+.history-map-stage .history-map-legend{margin:5px 14px 10px}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
@@ -1278,6 +1292,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@6b6f827d2cd7a1e13c7bc7d950c186fc28f84194/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@48bbb53d2cf6efe512888127bbd871b06bb0e228/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
