@@ -3730,7 +3730,7 @@ function cargoDeliveryOrderData(m, orders) {
       stop: index + 1,
       order: order.order,
       client: order.client,
-      seller: order.seller || (order.rcas || []).filter(value => value != null).join(' / '),
+      seller: order.deliverySeller,
       city: [order.city,order.uf].filter(Boolean).join(' / '),
       address: stop.address,
       weight: !order.weightIncomplete && Number.isFinite(order.weight) && order.weight >= 0 ? order.weight : null,
