@@ -514,10 +514,10 @@ function destroyCharts(){
   for(const c of state.charts){try{c.$motionCleanup?.();c.destroy()}catch{}}
   state.charts=[];
 }
-function chart(canvas,type,data,options={}){
+function chart(canvas,type,data,options={},plugins=[]){
   const horizontal=options.indexAxis==='y';
   const moneyTick=value=>money(value,true);
-  const c=new Chart(canvas,{type,data,options:{responsive:true,maintainAspectRatio:false,animation:chartMotionOptions(),plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:horizontal,color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(horizontal?{callback:moneyTick}:{})}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(!horizontal?{callback:moneyTick}:{})}}},...options}});
+  const c=new Chart(canvas,{type,data,plugins,options:{responsive:true,maintainAspectRatio:false,animation:chartMotionOptions(),plugins:{legend:{display:false,labels:{boxWidth:9,usePointStyle:true,font:{size:10}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>money(ctx.raw,true)}}},scales:{x:{grid:{display:horizontal,color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(horizontal?{callback:moneyTick}:{})}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},...(!horizontal?{callback:moneyTick}:{})}}},...options}});
   state.charts.push(c);installChartMotion(c);return c;
 }
 function toggleCrossFilter(key,value){
@@ -1442,6 +1442,50 @@ function stopHistoryMotion(){
 }
 function historyCityKey(city,uf){return aliasCity(city).replace(/[^A-Z0-9]/g,'')+'|'+String(uf||'').toUpperCase();}
 function historyPercent(now,before){return before>0?(now/before-1)*100:null;}
+function historyGrowthLabel(change) {
+ return (change>0?'+':'')+pct(change);
+}
+
+function historyAnnualArrows(changes) {
+ return {id:'historyAnnualArrows',afterDatasetsDraw(chart){
+  if(!chart.isDatasetVisible(0))return;
+  const {ctx}=chart,bars=chart.getDatasetMeta(0).data;
+  ctx.save();
+  ctx.lineWidth=1.5;
+  ctx.lineJoin='round';
+  ctx.font='600 12px system-ui, sans-serif';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  const labels=[];
+  for(let i=1;i<bars.length;i++){
+   const change=changes[i];
+   if(!Number.isFinite(change))continue;
+   const previous=bars[i-1],current=bars[i];
+   const x1=previous.x+4,y1=Math.min(previous.y,previous.base)-11;
+   const x2=current.x-4,y2=Math.min(current.y,current.base)-11;
+   const angle=Math.atan2(y2-y1,x2-x1);
+   const color=change>0?'#196452':change<0?'#9b3036':'#4b5974';
+   ctx.strokeStyle=color;
+   ctx.beginPath();
+   ctx.moveTo(x1,y1);
+   ctx.lineTo(x2,y2);
+   ctx.moveTo(x2-7*Math.cos(angle-.55),y2-7*Math.sin(angle-.55));
+   ctx.lineTo(x2,y2);
+   ctx.lineTo(x2-7*Math.cos(angle+.55),y2-7*Math.sin(angle+.55));
+   ctx.stroke();
+   labels.push([historyGrowthLabel(change),(x1+x2)/2,(y1+y2)/2-11,color]);
+  }
+  for(const [label,x,y,color] of labels){
+   ctx.lineWidth=5;
+   ctx.strokeStyle='#fff';
+   ctx.strokeText(label,x,y);
+   ctx.fillStyle=color;
+   ctx.fillText(label,x,y);
+  }
+  ctx.restore();
+ }};
+}
+
 function historyMonthLabel(key){return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(key.slice(5,7))-1]+'/'+key.slice(0,4);}
 function buildHistoryExperience(rows,geoRows){
  const byMonth=new Map(rows.map(r=>[r.month,r])),latest=rows.at(-1)?.month;
@@ -1471,14 +1515,33 @@ async function renderMacroHistory(payload){
  $('#content').innerHTML=`<section class="history-hero"><div class="history-hero-copy"><span class="history-eyebrow">REBANHO · EVOLUÇÃO COMERCIAL</span><h2>Uma trajetória em movimento.</h2><p>Explore os resultados no tempo e veja como as vendas se distribuem pelo território.</p></div><div class="history-hero-facts"><div><span>Vendas registradas desde 2017</span><strong>${money(total,true)}</strong><small>Somatório dos períodos disponíveis</small></div><div><span>Maior ano completo</span><strong>${esc(record?.year||'—')}</strong><small>${record?money(record.value,true):'Sem base completa'}</small></div></div></section>
  <section class="panel history-year-panel"><div class="history-section-head"><div><span class="history-eyebrow">PANORAMA ANUAL</span><h2>O ritmo de crescimento da Rebanho</h2><p class="panel-sub">Clique em um ano para explorar seus meses. Anos parciais são identificados no gráfico.</p></div><label>Ano em análise<select id="macroYear">${model.years.map(y=>`<option value="${y.year}" ${y.year===year.year?'selected':''}>${y.year}${y.partial?' · parcial':''}</option>`).join('')}</select></label></div>
  <div class="history-kpis">${kpi('Vendas em '+year.year,money(year.value,true),year.partial?'Período com cobertura parcial':'12 meses com registros')}${kpi('Variação comparável',year.growth===null?'Sem base':pct(year.growth),year.growth===null?'Sem registros completos para o período anterior':year.period+' vs. mesmos meses do ano anterior')}${kpi('Melhor mês do ano',peak?historyMonthLabel(peak.month):'—',peak?money(peak.value,true):'')}${kpi('Meses com registros',integer(year.months.length),year.sources.join(' + '))}</div>
- <div class="chart-wrap history-chart"><canvas id="macroAnnual"></canvas></div></section>
+ <div class="history-annual-scroll" role="region" aria-label="Gráfico anual de vendas" tabindex="0"><div class="chart-wrap history-chart"><canvas id="macroAnnual" aria-describedby="historyAnnualCaption"></canvas></div></div>
+ <p class="panel-sub" id="historyAnnualCaption">As setas comparam o total de cada barra com a anterior. * Ano parcial. Para comparar os mesmos meses, consulte o indicador Variação comparável.</p></section>
  <section class="history-map-shell" id="historyMapShell"><div class="history-map-head"><div><span class="history-eyebrow">EVOLUÇÃO TERRITORIAL</span><h2>O crescimento ganha espaço.</h2><p>Azul mais escuro representa maior valor de vendas. As setas mostram crescimento ou queda frente ao período anterior.</p></div><div class="history-map-options"><label>Território<select id="historyUf"></select></label><div class="history-segment" role="group" aria-label="Passo da linha do tempo"><button data-history-mode="year" aria-pressed="${state.historyMode==='year'}">Ano a ano</button><button data-history-mode="month" aria-pressed="${state.historyMode==='month'}">Mês a mês</button></div></div></div>
  <div id="historyMapLoading" class="history-map-loading">Preparando municípios…</div><div class="history-map-body"><div class="history-map-stage"><div class="history-time-stamp"><strong id="historyFrameLabel">—</strong><span id="historyFramePeriod"></span></div><svg id="historyEvolutionMap" viewBox="0 0 900 650" role="group" aria-label="Evolução geográfica das vendas"></svg><div class="history-map-legend"><span>Menor valor</span><i></i><span>Maior valor</span></div><div id="historyCityFocus" class="history-city-focus">Toque em um município para ver seu resultado.</div></div><aside class="history-map-aside"><span class="history-eyebrow">VENDAS LOCALIZADAS NO MAPA</span><strong id="historyAreaValue" class="history-area-value">—</strong><span id="historyAreaGrowth" class="history-area-growth"></span><p id="historyComparisonCaption"></p><h3>Cidades em destaque</h3><div id="historyMovingRanks" class="history-moving-ranks"></div></aside></div>
  <div class="history-timeline"><button id="historyToggle" class="history-play" aria-label="Pausar evolução" title="Pausar evolução">Ⅱ</button><label class="history-scrubber">Período<input id="historyScrubber" type="range" min="0" max="1" value="0" step="1"><span id="historyTimelineEnds"></span></label><output id="historyTimelineValue"></output></div><p class="history-map-note" id="historyMapMethod"></p></section>
  <div class="grid equal-col history-details-grid"><section class="panel"><div class="history-section-head"><div><span class="history-eyebrow">${year.year}</span><h2>Vendas mês a mês</h2></div></div><div class="chart-wrap"><canvas id="macroMonthly"></canvas></div><p class="panel-sub">Linha clara: mesmo mês do ano anterior, quando houver registros completos nos mesmos meses.</p></section><section class="panel"><span class="history-eyebrow">SAZONALIDADE</span><h2>Onde o crescimento se concentra</h2><p class="panel-sub">Variação de cada mês sobre o mesmo mês do ano anterior. Células neutras indicam ausência de comparação válida.</p><div class="history-heatmap-scroll"><div id="historyHeatmap" class="history-heatmap"></div></div></section></div>
  <details class="panel history-data-detail"><summary>Consultar valores anuais e critérios</summary><div class="table-wrap"><table><thead><tr><th>Ano</th><th>Vendas registradas</th><th>Variação comparável</th><th>Cobertura / origem</th></tr></thead><tbody>${model.years.map(y=>`<tr><td><button class="history-year-link" data-macro-year="${y.year}">${y.year}</button></td><td>${money(y.value)}</td><td>${y.growth===null?'Sem base comparável':pct(y.growth)}</td><td>${y.months.length} meses${y.partial?' · parcial':''} · ${esc(y.sources.join(' + '))}</td></tr>`).join('')}</tbody></table></div><p>Shop Control recuperado: jun/2017 a jul/2024, valores de venda incluindo negativos, sem conciliação contábil confirmada. WinThor/BI: desde ago/2024 por data de faturamento. Comparamos os valores registrados independentemente da fonte de origem. No mapa anual usamos os meses completos disponíveis e comparamos o mesmo conjunto de meses; a visão mensal não compara meses parciais. As áreas representam municípios de venda e não a atuação histórica de vendedores ou RCAs. Valores sem município identificado permanecem no total geral, sem distribuição fictícia no mapa.</p></details>`;
  const pick=value=>{state.historyYear=String(value);destroyCharts();renderMacroHistory(payload);};$('#macroYear').onchange=e=>pick(e.target.value);Array.from(document.querySelectorAll('[data-macro-year]')).forEach(b=>b.onclick=()=>pick(b.dataset.macroYear));
- chart($('#macroAnnual'),'bar',{labels:model.years.map(y=>y.year+(y.partial?' *':'')),datasets:[{label:'Vendas registradas',data:model.years.map(y=>y.value),backgroundColor:model.years.map(y=>y.year===year.year?'#1D2A68':'#84A7DA'),borderRadius:8,barPercentage:.62}]},{onClick:(_e,els)=>{if(els.length)pick(model.years[els[0].index].year)},plugins:{tooltip:{callbacks:{afterLabel:ctx=>{const y=model.years[ctx.dataIndex];return (y.partial?'Cobertura parcial. ':'')+(y.growth===null?'Sem período anterior completo':pct(y.growth)+' · '+y.period);}}}},scales:{x:{grid:{display:false},ticks:{font:{size:12}}},y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}});
+ const annualChanges=model.years.map((y,i)=>i?historyPercent(y.value,model.years[i-1].value):null);
+ chart($('#macroAnnual'),'bar',{
+  labels:model.years.map(y=>y.year+(y.partial?' *':'')),
+  datasets:[{label:'Vendas registradas',data:model.years.map(y=>y.value),backgroundColor:model.years.map(y=>y.year===year.year?'#1D2A68':'#84A7DA'),borderRadius:8,barPercentage:.62}]
+ },{
+  onClick:(_e,els)=>{if(els.length)pick(model.years[els[0].index].year)},
+  layout:{padding:{top:26}},
+  plugins:{tooltip:{callbacks:{
+   label:ctx=>'Vendas registradas · '+money(ctx.raw,true),
+   afterLabel:ctx=>{
+    const i=ctx.dataIndex,y=model.years[i],previous=model.years[i-1],change=annualChanges[i],lines=[];
+    if(y.partial)lines.push('Cobertura parcial');
+    if(previous)lines.push((change===null?'Sem base':historyGrowthLabel(change))+' vs. barra de '+previous.year+(previous.partial?' (parcial)':''));
+    if(y.growth!==null)lines.push('Mesmos meses · '+historyGrowthLabel(y.growth)+' · '+y.period);
+    return lines;
+   }
+  }}},
+  scales:{x:{grid:{display:false},ticks:{font:{size:12},autoSkip:false}},y:{beginAtZero:true,ticks:{callback:v=>money(v,true)}}}
+ },[historyAnnualArrows(annualChanges)]);
  const monthNames=Array.from({length:12},(_,i)=>historyMonthLabel(year.year+'-'+String(i+1).padStart(2,'0')).split('/')[0]);
  const yr=Number(year.year),point=i=>model.byMonth.get(year.year+'-'+String(i+1).padStart(2,'0'));
  chart($('#macroMonthly'),'line',{labels:monthNames,datasets:[{label:year.year,data:monthNames.map((_,i)=>point(i)?.value??null),borderColor:'#265EA8',backgroundColor:'rgba(50,115,208,.14)',fill:true,tension:.3},{label:String(yr-1),data:monthNames.map((_,i)=>{const r=point(i),old=model.byMonth.get(String(yr-1)+'-'+String(i+1).padStart(2,'0'));return r&&old&&model.complete(r)&&model.complete(old)?old.value:null;}),borderColor:'#94AED1',borderDash:[5,5],tension:.3}]},{plugins:{legend:{display:true}},scales:{y:{ticks:{callback:v=>money(v,true)}}}});
@@ -1490,6 +1553,7 @@ async function renderMacroHistory(payload){
 function bindHistoryMapWheelZoom(svg) {
  const bounds = svg.viewBox.baseVal;
  const minX = bounds.x, minY = bounds.y, maxWidth = bounds.width, maxHeight = bounds.height;
+ svg.style.removeProperty('--history-marker-scale');
  svg.onwheel = event => {
   if (!event.deltaY) return;
   const transform = svg.getScreenCTM();
@@ -1508,6 +1572,7 @@ function bindHistoryMapWheelZoom(svg) {
   const nextX = Math.max(minX,Math.min(minX + maxWidth - nextWidth,anchor.x - (anchor.x - x) * ratio));
   const nextY = Math.max(minY,Math.min(minY + maxHeight - nextHeight,anchor.y - (anchor.y - y) * ratio));
   svg.setAttribute('viewBox',[nextX,nextY,nextWidth,nextHeight].join(' '));
+  svg.style.setProperty('--history-marker-scale',String(nextWidth / maxWidth));
  };
 }
 async function mountHistoryMap(model,epoch){
@@ -1550,7 +1615,7 @@ async function mountHistoryMap(model,epoch){
   const ordered=current.filter(c=>c.value>0).sort((a,b)=>b.value-a.value).slice(0,8),order=new Map(ordered.map((c,i)=>[c.key,i]));
   for(const [key,el]of ranks){const index=order.get(key),row=f.current.cities.get(key),v=f.comparable?historyPercent(row?.value||0,f.previous.cities.get(key)?.value||0):null;el.style.opacity=index===undefined||(window.innerWidth<700&&index>=6)?'0':'1';el.style.transform='translateY('+((index??9)*48)+'px)';el.style.pointerEvents=index===undefined?'none':'auto';el.querySelector('.history-rank-name').textContent=row?.city||byKey.get(key)?.name||key;el.querySelector('strong').textContent=money(row?.value||0,true);el.querySelector('i').style.width=Math.max(0,(row?.value||0)/maxValue*100)+'%';el.querySelector('small').textContent=pctText(v);}
   const changes=[...byKey.keys()].map(key=>{const r=frameCity(f,key),v=f.comparable?historyPercent(r.now,r.before):null;return {key,...r,v};}).filter(c=>c.v!==null&&c.v!==0).sort((a,b)=>Math.abs(b.now-b.before)-Math.abs(a.now-a.before)).slice(0,6);
-  $('#historyMapArrows').innerHTML=changes.map((c,i)=>{const p=byKey.get(c.key).point,up=c.v>0,color=up?'#9df0d3':'#ffc0b9';return '<g transform="translate('+p[0].toFixed(1)+' '+p[1].toFixed(1)+')"><g class="history-arrow-motion '+(up?'up':'down')+'" style="animation-delay:'+i*65+'ms"><rect x="-33" y="-19" width="66" height="24" rx="12" fill="#081a3b" fill-opacity=".9"/><text text-anchor="middle" y="-3" fill="'+color+'" font-size="13" font-weight="700">'+(up?'↑':'↓')+' '+Math.abs(c.v).toFixed(0)+'%</text></g></g>';}).join('');
+  $('#historyMapArrows').innerHTML=changes.map((c,i)=>{const p=byKey.get(c.key).point,up=c.v>0,color=up?'#9df0d3':'#ffc0b9';return '<g transform="translate('+p[0].toFixed(1)+' '+p[1].toFixed(1)+')"><g class="history-map-marker"><g class="history-arrow-motion '+(up?'up':'down')+'" style="animation-delay:'+i*65+'ms"><rect x="-33" y="-19" width="66" height="24" rx="12" fill="#081a3b" fill-opacity=".9"/><text text-anchor="middle" y="-3" fill="'+color+'" font-size="13" font-weight="700">'+(up?'↑':'↓')+' '+Math.abs(c.v).toFixed(0)+'%</text></g></g></g>';}).join('');
   const missing=[...f.current.cities.values()].filter(c=>c.uf===state.historyUf&&!byKey.has(c.key)).reduce((a,c)=>a+c.value,0);
   $('#historyMapMethod').textContent=f.source+' · '+state.historyUf+'. Escala de cor fixa em todos os períodos desta visualização. Setas: variação de vendas, sem atribuição a vendedores. '+(state.historyMode==='year'?'Meses completos disponíveis em cada ano. ':'Meses parciais não geram percentuais. ')+(missing?'Sem correspondência municipal nesta UF: '+money(missing)+'. ':'')+(f.current.unlocated?'Sem localização na base geral deste período: '+money(f.current.unlocated)+'. ':'')+'Comparações incluem fontes diferentes, conforme os valores registrados.';
   focus();
