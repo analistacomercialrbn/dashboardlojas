@@ -1,0 +1,1281 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1D2A68" />
+  <title>Central Rebanho · Comercial e Logística</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@0d7b4bb1e0acaa3a66c81407489ac620f1fb5cdb/supervisao-web/gas/gas-app.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<style>
+.log-status-labels{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px;padding:14px 4px 4px}.log-status-labels button{display:grid;grid-template-columns:10px 1fr;gap:5px 9px;align-items:center;text-align:left;border:1px solid #f0dfd0;border-radius:9px;background:#fffaf5;color:#724a2e;padding:10px;min-width:0;cursor:pointer}.log-status-labels i{width:9px;height:9px;border-radius:50%}.log-status-labels span{overflow-wrap:anywhere;font-size:12px}.log-status-labels strong{grid-column:2;font-size:13px}.log-map-weight-label{background:rgba(255,252,247,.95);color:#6f3518;border:1px solid #c98b57;border-radius:6px;box-shadow:0 1px 5px #6f351826;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;line-height:1.2;white-space:nowrap;pointer-events:none}.log-map-weight-label span{max-width:160px;overflow:hidden;text-overflow:ellipsis}.log-map-weight-label strong{font-size:12px;color:#873c10}.log-map-total{padding:10px 0;font-size:15px;font-weight:700;color:#994b1c}.log-map-scale{display:flex;align-items:center;gap:10px;font-size:11px;color:#8c6040;padding-bottom:12px}.log-map-scale i{height:9px;width:160px;border-radius:8px;background:linear-gradient(90deg,#ffebd3,#ae450f)}.log-overview-scope{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:15px}.log-overview-scope label{font-weight:700;color:#874d29}.log-overview-scope select{min-height:38px;padding:8px;border:1px solid #dfbd9e;border-radius:8px;background:#fff;color:#7b4826}.log-overview-scope small{color:#8d7768}.log-identity-note{font-size:12px;line-height:1.6;color:#836d5c;padding:16px}.log-identity-note summary{cursor:pointer;font-weight:700;color:#9a5427}.log-overview-links{padding:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}.log-overview-links h3{width:100%;margin:0 0 6px}.logistics-content .kpi-label{overflow-wrap:anywhere}.logistics-content .log-kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}@media(max-width:600px){.log-status-labels{grid-template-columns:1fr}.log-map-weight-label{font-size:9px}.log-map-weight-label strong{font-size:11px}.log-overview-scope select{width:100%}}
+</style>
+<style>
+.formation-test-banner{display:flex;gap:16px;align-items:center;background:#fff0d9;border:1px solid #e0ae67;border-radius:14px;padding:14px 18px;margin-bottom:14px;color:#7a421f}.formation-test-banner span{flex:1;font-size:12px}.formation-workspace{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start;margin-top:18px}.formation-workspace>.panel{padding:18px;min-width:0}.formation-selection{position:sticky;top:18px}.formation-selection>strong{display:block;color:#a3501c;font-size:20px;line-height:1.5}.formation-actions{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0;align-items:center}.formation-actions .btn{white-space:normal}.formation-selection .formation-actions{flex-direction:column;align-items:stretch}.formation-map-controls{display:flex;gap:10px;padding:12px;align-items:center;flex-wrap:wrap}.formation-sort{border:0;background:transparent;color:inherit;font-weight:700;text-align:left;cursor:pointer}.formation-warning{display:block;color:#a5501c;background:#fff2dd;border-radius:8px;padding:9px;line-height:1.5;font-size:12px}.formation-orders input[type=checkbox],.formation-confirm input{width:18px;height:18px;accent-color:#b65c21}.formation-montages{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:15px;margin:18px 0}.formation-montage-card{text-align:left;padding:20px;cursor:pointer;color:#724727;border:2px solid #f0dfcf;background:#fffdf9}.formation-montage-card.is-active{border-color:#c56b28;background:#fff3e5}.formation-montage-card h3{margin:7px 0}.formation-montage-card strong{display:block;font-size:18px}.formation-montage-card small{display:block;line-height:1.6;overflow-wrap:anywhere}.formation-dialog{max-width:1100px;width:92vw;padding:24px;color:#67442d}.formation-dialog>header{display:flex;justify-content:space-between;align-items:center}.formation-dialog label{display:block;margin:12px 0;line-height:1.5}.formation-dialog input:not([type=checkbox]),.formation-dialog select,.formation-search input{display:block;width:100%;padding:11px;border:1px solid #daba9c;border-radius:8px;margin:6px 0;color:#67442d;background:#fff;box-sizing:border-box}.formation-link-sources{max-height:340px;overflow:auto}.formation-confirm{padding:12px;background:#fff2dd;border-radius:9px}.formation-confirm input{margin-right:8px}.formation-raw{max-height:280px;overflow:auto;white-space:pre-wrap;background:#faf7f2;padding:14px;font-size:12px}.formation-experimental .log-map-panel #logMapMetric{display:none}.formation-counter{color:#8e5c39}.formation-dialog form footer{margin-top:18px}@media(max-width:1100px){.formation-workspace{grid-template-columns:minmax(0,1fr)}.formation-selection{position:static}.formation-test-banner{flex-wrap:wrap}}@media(max-width:600px){.formation-dialog{padding:14px}.formation-montages{grid-template-columns:1fr}}
+</style>
+<style>
+/* Área de trabalho da montagem — compacta, responsiva e sem identificadores técnicos. */
+.formation-workspace-v2{--cargo-orange:#a95018;--cargo-ink:#263544;--cargo-muted:#697684;display:block!important;max-width:1360px;margin:auto;color:var(--cargo-ink)}
+.formation-workspace-v2 *,.formation-dialog *{box-sizing:border-box}
+.formation-workspace-v2 .panel{padding:22px;border:1px solid #e6e3df;border-radius:16px;background:#fff;box-shadow:none;margin-bottom:18px;min-width:0}
+.formation-workspace-v2 h2{font-size:21px;line-height:1.3;margin:0 0 5px;color:#263544}.formation-workspace-v2 h3{font-size:17px;margin:0}.formation-workspace-v2 p{font-size:14px;line-height:1.5;color:#697684;margin:6px 0}
+.formation-workspace-v2 .btn,.formation-dialog .btn{min-height:42px;padding:10px 14px;border:1px solid #d7dce1;border-radius:9px;font-size:14px;font-weight:650;line-height:1.3;white-space:normal;background:white;color:#354352;cursor:pointer}
+.formation-workspace-v2 .btn.primary,.formation-dialog .btn.primary{background:#a95018;color:white;border-color:#a95018}.formation-workspace-v2 button:disabled,.formation-dialog button:disabled{opacity:.45;cursor:not-allowed}.formation-workspace-v2 button:focus-visible,.formation-workspace-v2 input:focus-visible,.formation-workspace-v2 select:focus-visible{outline:3px solid #efbf96;outline-offset:2px}
+.cargo-workspace-top,.cargo-section-heading,.cargo-detail-header,.cargo-list-toolbar,.cargo-order-top,.cargo-order-bottom,.cargo-pagination,.cargo-selection,.cargo-finalize{display:flex;align-items:center;justify-content:space-between;gap:14px}.cargo-workspace-top{margin-bottom:20px;align-items:stretch}.cargo-tabs{display:flex;gap:4px;padding:4px;background:#ece9e5;border-radius:12px;flex-wrap:wrap}.cargo-tabs button{border:0;border-radius:9px;background:transparent;font-size:14px;font-weight:650;color:#65717e;padding:11px 14px;cursor:pointer}.cargo-tabs button.active{background:white;box-shadow:0 1px 4px #24314114;color:#a95018}.cargo-tabs button span{font-size:11px;background:#f2e4d7;padding:2px 5px;border-radius:5px}.cargo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.cargo-link{border:0;background:transparent;color:#a95018;text-decoration:underline;text-underline-offset:3px;font-size:14px;line-height:1.3;padding:10px 3px;cursor:pointer;font-weight:600}
+.cargo-section-heading{margin-bottom:18px;align-items:flex-start}.cargo-search,.cargo-dispatch label,.cargo-form label{display:flex;flex-direction:column;gap:7px;font-size:14px;font-weight:600}.cargo-search input,.cargo-dispatch select,.cargo-form input,.cargo-form select{width:100%;min-width:0;min-height:46px;border:1px solid #cfd6dd;border-radius:9px;padding:10px 12px;font-size:16px;background:#fff;color:#263544}.cargo-search{margin-bottom:16px}.cargo-map-details{margin-bottom:18px;border:1px solid #e7e4df;border-radius:10px;padding:12px}.cargo-map-details summary,.cargo-products summary{font-size:14px;cursor:pointer;font-weight:650;color:#5c6672;min-height:24px}.cargo-map-details #logMap{height:380px!important}
+.cargo-list-toolbar{font-size:13px;color:#697684;margin:12px 0}.cargo-list-toolbar label{display:flex;align-items:center;gap:7px}.formation-workspace-v2 input[type=checkbox],.formation-dialog input[type=checkbox]{width:20px!important;height:20px!important;min-height:20px;padding:0;accent-color:#a95018;flex-shrink:0;cursor:pointer}.cargo-order-list{border:1px solid #e1e5e8;border-radius:12px;overflow:hidden}.cargo-order{display:grid;grid-template-columns:24px minmax(0,1fr);gap:13px;padding:17px 18px;background:#fff;border-bottom:1px solid #e8ebed}.cargo-order:last-child{border-bottom:0}.cargo-order.is-selected{background:#fff7ed;box-shadow:inset 3px 0 #c26729}.cargo-order-check{padding-top:2px}.cargo-order-top{font-size:14px;flex-wrap:wrap;gap:8px}.cargo-order h4{font-size:15px;line-height:1.4;color:#253949;margin:7px 0 3px;overflow-wrap:anywhere}.cargo-order p{font-size:13px;margin:3px 0}.cargo-order p span{color:#86909a}.cargo-order-bottom{font-size:12px;color:#75818c;margin-top:6px;flex-wrap:wrap;gap:4px}.cargo-order-bottom .cargo-link{font-size:13px;padding:6px 0}.cargo-status{display:inline-flex;font-size:11px;letter-spacing:.02em;font-weight:650;line-height:1.4;border-radius:6px;background:#eff3f5;color:#61727f;padding:4px 7px}.cargo-status.reserved{background:#fff0de;color:#9f541d}.cargo-status.finished{background:#e2f2e8;color:#246244}.cargo-pagination{margin-top:16px;font-size:13px;color:#697684}.cargo-selection{position:sticky;bottom:12px;border-color:#e4c6a9!important;box-shadow:0 4px 25px #3d28141c!important;z-index:5}.cargo-selection small{font-size:10px;letter-spacing:.12em;color:#a95018}.cargo-selection h3{margin:4px 0}.cargo-selection p{margin:0}.cargo-empty{text-align:center;padding:32px;font-size:14px;color:#697684}
+.cargo-montage-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:20px}.cargo-montage-choice{text-align:left;border:1px solid #dddfe0;background:#fff;border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:flex-start;gap:9px;cursor:pointer;color:#263544}.cargo-montage-choice.active{border:2px solid #b55f24;padding:15px;background:#fffaf4}.cargo-montage-choice strong{font-size:16px}.cargo-montage-choice small{font-size:12px;color:#697684}.cargo-detail-header{align-items:flex-start;margin-bottom:20px}.cargo-detail-header h2{margin-top:8px}.cargo-steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid #eee}.cargo-steps span{font-size:12px;color:#7a6a5b;background:#f7f2ec;padding:8px 12px;border-radius:7px}.cargo-steps span.complete{background:#e2f2e8;color:#246244}.cargo-dispatch{background:#f7f8fa;border:1px solid #e6e9ed;border-radius:12px;padding:17px;margin-bottom:16px}.cargo-dispatch .cargo-section-heading{margin-bottom:12px;align-items:center}.cargo-dispatch form{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}.cargo-dispatch small{font-size:12px;color:#697684}.cargo-capacity{border:1px solid #e7d7c5;background:#fffbf5;border-radius:12px;padding:18px;margin:16px 0 24px}.cargo-capacity>div:first-child{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.cargo-capacity strong{font-size:24px;color:#a95018}.cargo-capacity span{font-size:13px;color:#776d61}.cargo-capacity-track{height:9px;background:#eee5db;border-radius:20px;overflow:hidden;margin:12px 0}.cargo-capacity-track i{display:block;height:100%;background:#bc682a;border-radius:20px}.cargo-capacity p{font-size:13px;margin-bottom:0}.cargo-capacity.is-over{background:#fff1ef;border-color:#e6a399}.cargo-capacity.is-over strong,.cargo-alert{color:#b63d29!important}.cargo-capacity.is-over i{background:#c14730}.cargo-selected-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:#fff2e4;padding:12px;border-radius:10px;margin-bottom:12px;font-size:13px}.cargo-products{padding:18px 0}.cargo-products .table-wrap{margin-top:12px}.formation-workspace-v2 .table-wrap,.formation-dialog .table-wrap{max-width:100%;overflow:auto}.formation-workspace-v2 table th,.formation-workspace-v2 table td,.formation-dialog table th,.formation-dialog table td{font-size:13px;padding:12px!important}.cargo-finalize{border-top:1px solid #e4e7e9;padding-top:20px;margin-top:5px}.cargo-finalize strong{font-size:16px}.cargo-finalize p{font-size:13px;max-width:650px}.cargo-finalize .btn{min-width:180px}
+.cargo-fleet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:26px}.cargo-vehicle{padding:18px;border:1px solid #e3e7e9;border-radius:12px}.cargo-vehicle>div{display:flex;justify-content:space-between;gap:8px;align-items:start}.cargo-vehicle h3{font-size:16px;line-height:1.4}.cargo-vehicle p{font-size:13px}.cargo-vehicle .btn{margin-top:12px}.cargo-driver-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.cargo-driver-chips span{padding:8px 12px;background:#f0f3f5;border-radius:8px;font-size:13px}.cargo-history article{border-bottom:1px solid #e6e9ec;padding:16px 0;font-size:14px}.cargo-history small{font-size:12px;color:#8b959e}.formation-dialog{width:min(650px,calc(100vw - 24px))!important;max-width:650px!important;max-height:90vh;padding:24px!important;border:1px solid #e1e2e4;border-radius:16px!important;color:#263544}.formation-dialog::backdrop{background:#17212bb3;backdrop-filter:blur(3px)}.formation-dialog header{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:22px}.formation-dialog header h2{font-size:22px;line-height:1.25;margin:0}.formation-dialog h3{font-size:17px}.formation-dialog p{font-size:14px;line-height:1.5}.cargo-form{display:grid;gap:16px}.cargo-form footer{display:flex;justify-content:flex-end;border-top:1px solid #e6e9ed;padding-top:16px}.cargo-help{color:#697684;font-size:13px!important;margin:0}.cargo-form-status{color:#b63d29;margin:0}.cargo-confirm{display:flex!important;flex-direction:row!important;align-items:center;font-weight:500!important;line-height:1.5}.cargo-weight-input{display:grid!important;grid-template-columns:1fr 130px;align-items:center;padding-bottom:12px;border-bottom:1px solid #eee}.cargo-weight-input span{display:flex;flex-direction:column;gap:4px;min-width:0}.cargo-weight-input small{font-size:12px;font-weight:400;color:#697684;line-height:1.4}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:760px){.formation-workspace-v2 .panel{padding:16px;border-radius:12px}.cargo-workspace-top{flex-wrap:wrap;gap:9px}.cargo-tabs{width:100%;display:grid;grid-template-columns:1fr 1fr}.cargo-tabs button{font-size:12px;padding:10px 7px}.cargo-workspace-top>#formationRefresh{margin-left:auto;min-height:36px;padding:7px 12px;font-size:12px}.cargo-section-heading,.cargo-detail-header{flex-wrap:wrap;gap:12px}.cargo-section-heading{margin-bottom:14px}.cargo-section-heading h2{font-size:19px}.cargo-section-heading>div{min-width:0}.cargo-dispatch{padding:13px}.cargo-dispatch form{grid-template-columns:1fr}.cargo-dispatch form .btn{width:100%;margin-top:3px}.cargo-order{padding:14px 12px;gap:9px;grid-template-columns:22px minmax(0,1fr)}.cargo-order-top strong{font-size:13px}.cargo-order-top .cargo-status{font-size:10px}.cargo-order h4{font-size:14px}.cargo-order p span{display:block}.cargo-order-bottom{font-size:12px}.cargo-capacity strong{font-size:23px}.cargo-selection{flex-direction:column;align-items:stretch;bottom:8px;gap:10px}.cargo-selection h3{font-size:16px}.cargo-selection .cargo-actions{display:grid;grid-template-columns:1fr 1fr}.cargo-selection .cargo-actions .cargo-link{grid-column:1/-1;padding:3px}.cargo-selection .btn{font-size:12px}.cargo-finalize{flex-direction:column;align-items:stretch}.cargo-finalize .btn{width:100%}.cargo-montage-list{display:flex;overflow:auto;scroll-snap-type:x mandatory;padding-bottom:4px}.cargo-montage-choice{min-width:240px;scroll-snap-align:start}.cargo-detail-header .cargo-actions{width:100%;justify-content:space-between}.cargo-steps{gap:5px}.cargo-steps span{font-size:10px;padding:7px 6px}.cargo-fleet-grid{grid-template-columns:1fr}.formation-dialog{padding:18px!important}.formation-dialog header h2{font-size:21px}.cargo-weight-input{grid-template-columns:minmax(0,1fr) 100px}.cargo-search{font-size:13px}.cargo-history article{overflow-wrap:anywhere}}
+
+</style>
+<style>
+/* Selects nativos com área de texto suficiente no Safari do iPhone. */
+.formation-workspace-v2 select,.formation-dialog select{
+  box-sizing:border-box;
+  height:52px!important;
+  min-height:52px!important;
+  max-height:none!important;
+  line-height:normal!important;
+  padding:0 38px 0 12px!important;
+  font-size:16px!important;
+  -webkit-appearance:none;
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='m3 5 4 4 4-4' fill='none' stroke='%23354352' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E")!important;
+  background-position:right 13px center!important;
+  background-repeat:no-repeat!important;
+}
+.formation-workspace-v2 [data-selected-label]{overflow-wrap:anywhere;line-height:1.4}
+.formation-workspace-v2 [data-selected-label]:empty{display:none}
+.formation-workspace-v2 h2,.formation-workspace-v2 h3,.formation-workspace-v2 .cargo-vehicle p,
+.formation-dialog h2,.formation-dialog li{overflow-wrap:anywhere}
+.formation-workspace-v2 .cargo-status.inactive{background:#f2e8e7;color:#803d39}
+.formation-workspace-v2 .cargo-vehicle>.cargo-actions{justify-content:flex-start}
+.cargo-weight-alerts{background:#fff2e4;color:#7b481b;border:1px solid #f0d6bd;border-radius:9px;
+  padding:12px 14px;margin-top:10px;font-size:14px;line-height:1.45}
+.cargo-weight-alerts ul{margin:5px 0 0;padding-left:20px}
+.cargo-weight-alerts li+li{margin-top:4px}
+.cargo-capacity.is-over .cargo-weight-alerts{background:#fff1ef;color:#983c2d;border-color:#e7b3a9}
+.cargo-route-settings{display:flex;align-items:end;gap:16px;flex-wrap:wrap;padding:14px;background:#f7f8fa;border-radius:12px;margin:16px 0 22px}
+.cargo-route-settings>label{display:flex;flex-direction:column;gap:7px;font-size:14px;font-weight:600}
+.cargo-route-settings>.cargo-confirm{align-self:center}
+.cargo-route-settings select{width:100%;min-width:180px;max-width:100%;border:1px solid #cfd6dd;border-radius:9px;background-color:#fff;color:#263544}
+.cargo-route-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:20px;align-items:start}
+.cargo-route-layout>div{min-width:0}
+.cargo-route-map-column{position:sticky;top:12px;background:#f7f8fa;border:1px solid #e6e9ed;border-radius:12px;padding:15px}
+.cargo-route-map-column a.btn{display:inline-flex;align-items:center;text-decoration:none}
+#cargoRouteMap{width:100%;height:440px;border-radius:9px;overflow:hidden;margin:12px 0}
+#cargoRouteMap[hidden]{display:none}
+.cargo-route-stops{padding:0;margin:0;list-style:none;display:grid;gap:10px}
+.cargo-stop{padding:14px;border:1px solid #e3e7e9;border-radius:12px;background:#fff;min-width:0}
+.cargo-stop.drop-target{border-color:#c26729;background:#fff6ec}
+.cargo-stop header{display:grid;grid-template-columns:32px minmax(0,1fr) 36px;align-items:center;gap:10px;margin-bottom:10px}
+.cargo-stop header strong,.cargo-stop header small{display:block;overflow-wrap:anywhere;line-height:1.4}
+.cargo-stop header small{font-size:12px;color:#697684}
+.cargo-stop-number{border-radius:50%;background:#a95018;color:white;width:30px;height:30px;display:grid;place-items:center;font-size:13px;font-weight:bold}
+.cargo-stop-grip{width:36px;height:36px;display:grid;place-items:center;touch-action:none;user-select:none;
+  -webkit-user-select:none;cursor:grab;border:1px solid #dce0e3;border-radius:7px;font-size:22px;color:#a95018}
+.cargo-stop-grip:active{cursor:grabbing}
+.cargo-stop label{font-size:13px;display:grid;gap:5px;font-weight:600}
+.cargo-stop textarea,.cargo-form textarea{width:100%;min-width:0;border:1px solid #cfd6dd;border-radius:8px;padding:9px 11px;font-size:16px;color:#263544;resize:vertical}
+.cargo-stop .cargo-actions{margin-top:8px}
+.cargo-stop .btn{font-size:12px;min-height:36px;padding:8px 10px}
+#cargoRouteSaveStatus{color:#a13b28}
+.cargo-route-panel .cargo-finalize{margin-top:20px}
+@media(max-width:760px){
+ .cargo-route-layout{display:flex;flex-direction:column-reverse}
+ .cargo-route-layout>div{width:100%}
+ .cargo-route-map-column{position:static}
+ #cargoRouteMap{height:300px}
+ .cargo-route-settings>label:first-child{width:100%}
+ .formation-workspace-v2 .cargo-tabs{min-width:0}
+ .cargo-route-panel .cargo-finalize .cargo-actions{width:100%}
+}
+
+</style>
+<style>
+.formation-workspace-v2 .cargo-order-list {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;
+  border:0; border-radius:0; overflow:visible;
+}
+.formation-workspace-v2 .cargo-order-list>.cargo-empty { grid-column:1/-1; }
+.formation-workspace-v2 .cargo-order {
+  position:relative; grid-template-columns:22px minmax(0,1fr);
+  align-content:start; gap:8px; padding:11px 12px 8px;
+  border:1px solid #e1e5e8; border-radius:10px;
+}
+.formation-workspace-v2 .cargo-order.is-selected { border-color:#d28b53; }
+.formation-workspace-v2 .cargo-order h4 { margin:4px 0 2px; font-size:14px; line-height:1.3; }
+.formation-workspace-v2 .cargo-order p { font-size:12px; line-height:1.35; }
+.formation-workspace-v2 .cargo-order-bottom { margin-top:2px; gap:6px 10px; justify-content:flex-start; }
+.cargo-order-products summary { padding:6px 0; cursor:pointer; color:#914516; font-weight:700; }
+.cargo-order-preview {
+  border:1px solid #e4d8cc; border-radius:9px; background:#fff;
+  padding:8px 10px; color:#263544; font-size:13px;
+}
+.cargo-order-product-list {
+  list-style:none; margin:0; padding:0; max-height:min(210px,28vh);
+  overflow:auto; overscroll-behavior:contain;
+}
+.cargo-order-product-list li {
+  display:flex; gap:10px; justify-content:space-between;
+  padding:5px 0; border-bottom:1px solid #efe9e3;
+}
+.cargo-order-product-list li span { overflow-wrap:anywhere; }
+.cargo-order-product-list li strong { flex-shrink:0; font-variant-numeric:tabular-nums; }
+@media (hover:hover) and (pointer:fine) {
+  .cargo-order:has(.cargo-order-products[open]) { z-index:8; }
+  .cargo-order-preview { position:absolute; z-index:1; top:calc(100% - 2px); left:-1px; right:-1px; box-shadow:0 6px 20px #31251c26; }
+  .cargo-order.preview-above .cargo-order-preview { top:auto; bottom:calc(100% - 2px); }
+}
+@media (max-width:1250px) {
+  .formation-workspace-v2 .cargo-order-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:620px) {
+  .formation-workspace-v2 .cargo-order-list { grid-template-columns:minmax(0,1fr); }
+}
+@media (hover:none), (pointer:coarse) {
+  .cargo-order-products summary { min-height:36px; }
+  .cargo-order-products[open] { flex:1 0 100%; }
+}
+</style>
+<style>
+.cargo-montage-board {
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start;
+}
+.cargo-montage-board>.cargo-empty { grid-column:1/-1; }
+.cargo-montage-panel { min-width:0; transition:background .15s,border-color .15s; }
+.cargo-montage-panel.drop-target {
+  background:#fff5e8; border-color:#bc682a; outline:2px dashed #bc682a; outline-offset:-4px;
+}
+.cargo-montage-panel>header { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.cargo-montage-panel>header .btn { flex-shrink:0; }
+.cargo-montage-panel h3 { margin:5px 0 0; overflow-wrap:anywhere; }
+.cargo-montage-panel header p { margin:2px 0 0; font-size:13px; }
+.cargo-montage-instruction { font-size:13px; }
+.cargo-montage-meta {
+  display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; margin:12px 0;
+  padding:9px 12px; background:#f6f3ef; border-radius:8px;
+}
+.cargo-montage-meta dt { color:#6b6057; font-size:12px; }
+.cargo-montage-meta dd { margin:1px 0 0; font-size:13px; font-weight:650; overflow-wrap:anywhere; }
+.cargo-montage-orders { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr)); }
+.cargo-montage-order {
+  display:grid; grid-template-columns:minmax(0,1fr) auto; align-content:start; gap:6px;
+  border:1px solid #e2e6e9; border-radius:8px; padding:8px 9px;
+  background:#fff; color:#263544; font-size:13px;
+}
+.cargo-montage-order[draggable=true] { cursor:grab; }
+.cargo-montage-order[draggable=true]:active { cursor:grabbing; }
+.cargo-montage-order p { margin:2px 0; font-size:13px; line-height:1.3; overflow-wrap:anywhere; }
+.cargo-montage-order small { display:block; font-size:12px; color:#5b6873; overflow-wrap:anywhere; }
+.cargo-montage-order-menu { position:relative; }
+.cargo-montage-order-menu[open] { z-index:8; }
+.cargo-montage-order-menu summary {
+  list-style:none; display:grid; place-items:center; width:38px; min-height:38px;
+  border:1px solid #e6ded5; border-radius:7px; cursor:pointer; color:#89451c; font-size:20px;
+}
+.cargo-montage-order-menu summary::-webkit-details-marker { display:none; }
+.cargo-montage-order-actions {
+  position:absolute; right:0; top:100%; width:max-content; max-width:min(220px,70vw);
+  padding:4px; border:1px solid #e6ded5; border-radius:8px;
+  background:#fff; box-shadow:0 6px 20px #31251c26;
+}
+.cargo-montage-order-actions .cargo-link { display:block; width:100%; text-align:left; padding:9px; min-height:38px; }
+.cargo-montage-empty { margin:4px 0; color:#697684; font-size:13px; }
+.cargo-move-targets { min-width:0; display:grid; gap:8px; border:0; margin:0; padding:0; }
+.cargo-move-targets legend { padding:0 0 6px; font-weight:700; }
+.cargo-form .cargo-move-target {
+  display:flex; flex-direction:row; align-items:center; gap:9px;
+  border:1px solid #e4d8cc; border-radius:8px; padding:8px 10px; cursor:pointer;
+}
+.cargo-move-target input[type=radio] { width:18px; height:18px; min-height:0; flex:none; accent-color:#a95018; }
+.cargo-move-target span { min-width:0; overflow-wrap:anywhere; }
+.cargo-move-meta { display:block; margin-top:2px; color:#5b6873; font-weight:400; font-size:13px; }
+@media (max-width:850px) {
+  .cargo-montage-board { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:450px) {
+  .cargo-montage-panel>header { flex-wrap:wrap; }
+}
+</style>
+<style>
+.cargo-priority { margin:0 0 20px; padding:14px; border:1px solid #e6dbce; border-radius:12px; background:#fdfaf6; }
+.cargo-priority .cargo-section-heading { margin-bottom:10px; }
+.cargo-priority .cargo-section-heading h3 { margin:0; }
+.cargo-priority .cargo-section-heading p { margin:4px 0 0; }
+.cargo-priority-layout { display:grid; grid-template-columns:minmax(0,2fr) minmax(230px,1fr); gap:12px; }
+.cargo-priority-layout>div,.cargo-priority-layout>aside { min-width:0; }
+.cargo-priority #cargoPriorityMap { height:340px; min-height:0; background:#f3eee8; border:1px solid #e6dbce; border-radius:9px; }
+.cargo-priority #cargoPriorityMap>p { padding:12px; }
+.cargo-priority .log-map-scale { max-width:280px; margin-top:7px; }
+.cargo-priority-side { display:flex; gap:5px 8px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+.cargo-priority-side .cargo-link { padding:5px 2px; }
+.cargo-priority-cities { display:grid; gap:4px; max-height:305px; overflow:auto; padding:4px 3px; }
+.cargo-priority-cities button {
+  display:flex; align-items:center; justify-content:space-between; gap:7px; padding:7px 9px;
+  width:100%; min-height:38px; border:1px solid #e8ded3; border-radius:7px;
+  background:#fff; text-align:left; color:#263544; font:inherit; font-size:13px; cursor:pointer;
+}
+.cargo-priority-cities button[aria-pressed=true] { border-color:#ae591e; background:#fff0de; color:#703810; }
+.cargo-priority-cities button span:first-child { min-width:0; overflow-wrap:anywhere; }
+.cargo-priority-cities button span:last-child { flex-shrink:0; }
+.cargo-priority-cities small { display:block; color:#576573; }
+.cargo-priority-note { margin:6px 0 0; font-size:12px; color:#6f6459; }
+.cargo-priority-note:empty { display:none; }
+.cargo-priority-filter { margin:0 0 6px; color:#854415; font-size:14px; font-weight:700; }
+#cargoPlanSelection { position:sticky; bottom:12px; z-index:5; }
+#cargoPlanSelection .cargo-selection { position:static; }
+@media (max-width:800px) {
+  .cargo-priority-layout { grid-template-columns:minmax(0,1fr); }
+  .cargo-priority #cargoPriorityMap { height:265px; }
+  .cargo-priority-cities { max-height:175px; }
+}
+</style>
+<style>
+.formation-workspace-v2 .cargo-plan .cargo-order {background:#fff5e9;border-color:#ead4bd}
+.formation-workspace-v2 .cargo-plan .cargo-order.is-selected {background:#fbe2c7;border-color:#af551d;box-shadow:inset 0 0 0 1px #af551d}
+.formation-workspace-v2 .cargo-montage-panel>header .btn {background:#fff8ef;color:#733311}
+.cargo-state-line,.cargo-state {display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap}
+.cargo-state {font-size:.82rem;font-weight:750;line-height:1.25}
+.cargo-state-dot {display:inline-block;flex:none;width:12px;height:12px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.cargo-state-dot:not(.red),.overview-note>.red{animation:cargo-pulse 1.8s ease-in-out infinite}
+.cargo-state-dot.yellow {color:#dfa600}.cargo-state-dot.orange {color:#e66e1f}.cargo-state-dot.green {color:#169550}.cargo-state-dot.red {color:#cf242d}
+@keyframes cargo-pulse {0%,100%{opacity:.6;box-shadow:0 0 3px currentColor}50%{transform:scale(1.18);box-shadow:0 0 13px currentColor}}
+@media(prefers-reduced-motion:reduce){.cargo-state-dot{animation:none!important}}
+.cargo-incident {position:relative;display:inline-block}
+.cargo-incident summary {list-style:none;display:grid;place-items:center;width:32px;height:32px;cursor:pointer}
+.cargo-incident summary::-webkit-details-marker {display:none}
+.cargo-incident-info {z-index:40;position:absolute;top:100%;left:0;width:min(300px,70vw);max-height:240px;overflow:auto;background:#fff;border:1px solid #debbb7;border-radius:9px;color:#492622;padding:10px;box-shadow:0 6px 18px #43241729}
+.cargo-incident-info ul {padding-left:18px;margin:6px 0}
+.cargo-incident-info li {overflow-wrap:anywhere}
+.cargo-queue {display:grid;gap:12px}
+.cargo-queue-card {min-width:0;overflow:visible}
+.cargo-queue-card .cargo-route-panel {margin-top:14px;box-shadow:none}
+.cargo-period {display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+.cargo-period label {display:grid;gap:4px}
+.cargo-period input,.cargo-period select {min-height:42px;padding:6px;border:1px solid #d3b7a2;border-radius:6px;color:#51361f;background:#fff}
+.cargo-history-row {border-top:1px solid #eadbce}
+.cargo-history-row>summary {display:grid;grid-template-columns:1fr 1.35fr .8fr 1.2fr 1.2fr 1.7fr;gap:8px;align-items:center;padding:10px 4px;cursor:pointer}
+.cargo-history-row>summary span,.cargo-history-row>summary strong {min-width:0;overflow-wrap:anywhere}
+.cargo-history-row>summary:hover,.cargo-history-row>summary:focus-visible {background:#fff6ec}
+.cargo-history-body {padding:8px 10px 15px}
+.cargo-history-movements {margin-top:12px}
+.cargo-history-movements summary {cursor:pointer;font-weight:700}
+.cargo-stop-orders {display:flex;gap:5px;flex-wrap:wrap}
+.cargo-priority-layout {grid-template-columns:minmax(0,1fr) minmax(170px,235px)}
+.cargo-priority #cargoPriorityMap {height:clamp(440px,61vh,660px)}
+.cargo-priority-cities {max-height:clamp(390px,56vh,600px)}
+@media(max-width:800px){
+ .cargo-priority-layout {grid-template-columns:minmax(0,1fr)}
+ .cargo-priority #cargoPriorityMap {height:clamp(330px,57vh,530px)}
+ .cargo-priority-cities {max-height:158px}
+ .cargo-history-row>summary {grid-template-columns:repeat(2,minmax(0,1fr));font-size:.85rem}
+ .cargo-incident-info {left:auto;right:-45px}
+ .cargo-queue-card .cargo-route-panel {padding:10px}
+}
+</style>
+<style>
+.user-log-permissions{grid-column:1/-1;display:grid;gap:8px;max-width:640px}
+.user-log-permissions>div{display:grid;grid-template-columns:minmax(130px,1fr) auto auto;gap:14px;align-items:center}
+.user-log-permissions label{display:flex;gap:6px;align-items:center;font-weight:500}
+.driver-agenda{margin-block:14px;min-width:0}
+.driver-agenda-heading{display:flex;align-items:start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.driver-agenda-heading h2{margin:0;text-transform:none}
+#driverAgendaMonth h2::first-letter{text-transform:uppercase}
+.driver-agenda-heading p{margin:5px 0 0;color:#68584e}
+.driver-agenda-actions{display:flex;gap:7px;flex-wrap:wrap}
+.driver-agenda-actions .btn{min-height:42px}
+.driver-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid #e6d4c2;border-radius:10px;overflow:hidden}
+.driver-calendar-weekday{padding:8px 2px;text-align:center;font-size:.8rem;background:#fff3e7;font-weight:750;color:#793a19}
+.driver-calendar-day{border:1px solid #f1e4d8;min-width:0;min-height:110px;padding:4px;display:flex;flex-direction:column;gap:3px;align-items:stretch}
+.driver-calendar-day.is-adjacent{background:#f7f5f3;color:#706960}
+.driver-calendar-day.is-today{background:#fff1e4}
+.driver-day-number,.driver-calendar-more,.driver-calendar-event{background:transparent;color:inherit;border:0;text-align:left;cursor:pointer;border-radius:5px}
+.driver-day-number{width:34px;height:34px;text-align:center;font-weight:750}
+.driver-day-number:hover,.driver-day-number:focus-visible{background:#edd2b6}
+.is-today .driver-day-number{background:#9e461c;color:#fff}
+.driver-calendar-event{display:block;width:100%;padding:4px 5px;background:#f9dfc6;color:#693516;font-weight:700;font-size:.77rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.driver-calendar-event small{display:block;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.driver-calendar-more{font-size:.76rem;color:#934317;padding:3px}
+.driver-program-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(225px,100%),1fr));gap:10px}
+.driver-week-day h3{text-transform:capitalize;font-size:.95rem;margin:14px 0 5px}
+.driver-program{min-width:0;border:1px solid #ead4c2;background:#fff8ef;border-radius:10px;padding:10px;overflow-wrap:anywhere}
+.driver-program-link{display:grid;gap:3px;width:100%;text-align:left;color:#513421;background:transparent;border:0;padding:2px;cursor:pointer}
+.driver-program-link small{white-space:pre-line}
+.driver-program-link time{color:#984617}
+.driver-program-montage{border-top:1px solid #ead4c2;margin-top:6px;padding-top:5px}
+.driver-agenda-form-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.driver-agenda-form input,.driver-agenda-form textarea,.driver-agenda-form select{width:100%;min-width:0}
+.driver-agenda-notes{white-space:pre-line}
+@media(max-width:620px){
+ .driver-calendar-day{min-height:77px;padding:2px}
+ .driver-day-number{width:100%;height:30px}
+ .driver-calendar-event{font-size:.66rem;min-height:22px;padding:2px}
+ .driver-agenda-actions .btn{padding:6px 9px}
+ .user-log-permissions>div{grid-template-columns:1fr 1fr;gap:5px}
+ .user-log-permissions>div strong{grid-column:1/-1}
+}
+</style>
+<style>
+/* Visão Geral da Logística */
+.logistics-overview .overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;margin-block:16px}
+.logistics-overview .overview-grid>:only-child{grid-column:1/-1}
+.logistics-overview .overview-grid.overview-widgets>:only-child{grid-column:auto}
+.logistics-overview .overview-metrics{border:1px solid #e5c9b0;border-radius:16px;padding:14px;background:#fbebdc;min-width:0}
+.logistics-overview .overview-metrics h2{font-size:1rem;margin:0 0 10px;color:#5b3828}
+.logistics-overview .overview-metrics .log-kpis{grid-template-columns:repeat(2,minmax(0,1fr));margin:0;gap:8px}
+.logistics-overview .overview-metrics .kpi-card{background:#fffaf5;min-width:0;min-height:0;padding:12px}
+.logistics-overview .overview-metrics .kpi-value{font-size:clamp(1rem,2vw,1.55rem);overflow-wrap:anywhere}
+.logistics-overview .overview-charts{align-items:stretch}
+.logistics-overview .overview-charts .panel{min-width:0;margin:0}
+.logistics-overview .overview-compact{margin:0;min-width:0;padding:15px}
+.overview-compact .driver-agenda-heading{margin-bottom:9px;gap:7px}
+.overview-compact .driver-agenda-heading h2{font-size:1.02rem}
+.overview-compact .driver-agenda-heading p{font-size:.82rem}
+.overview-compact .driver-agenda-actions .btn{min-height:34px;padding:4px 9px}
+.overview-scroll{max-height:226px;overflow:auto;margin:0;padding:2px 4px;list-style:none;scrollbar-gutter:stable}
+.overview-agenda-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin:0 0 8px}
+.overview-agenda-days button{padding:4px 2px;border:1px solid #e8d4c2;border-radius:6px;background:#fff9f2;color:#623a27;font:inherit;font-size:.74rem;min-height:35px;cursor:pointer}
+.overview-agenda-days button[aria-pressed=true]{background:#f2d7bd;border-color:#b76738;color:#482c1f}
+.overview-agenda-items .driver-program{padding:6px 8px;margin-bottom:4px;border-radius:6px}
+.overview-agenda-items .driver-program-link{display:flex;gap:4px 9px;flex-wrap:wrap;align-items:baseline;font-size:.79rem}
+.overview-agenda-items .driver-program-link strong{color:#452a1c}
+.overview-agenda-items .driver-program-montage{font-size:.77rem;margin-top:4px;padding-top:2px}
+.overview-compact .cargo-incident-info{position:static;margin-block:3px;width:min(100%,360px)}
+.overview-cargo-row{display:flex;align-items:center;flex-wrap:wrap;gap:4px 9px;padding:7px 2px;border-bottom:1px solid #eddccf;font-size:.81rem}
+.overview-cargo-row>strong{min-width:5.7em;overflow-wrap:anywhere}
+.overview-cargo-row .cargo-state{font-size:.74rem}
+.overview-cargo-balance{flex-basis:100%;color:#624a3e;font-weight:650;font-size:inherit}
+.overview-cargo-capacity{margin-left:auto;display:inline-flex;gap:5px;align-items:center;color:#624a3e}
+.overview-cargo-capacity meter{width:40px;accent-color:#b65b29}
+.overview-cargo-capacity meter::-webkit-meter-optimum-value{background:#b65b29}
+.overview-cargo-capacity meter.is-exceeded::-webkit-meter-optimum-value{background:#b82d37}
+.overview-overdue{margin-block:16px!important}
+.overview-note{display:grid;grid-template-columns:auto minmax(135px,1fr) minmax(0,2fr);align-items:center;gap:9px;width:100%;padding:8px 10px;border:1px solid #ebddd3;border-radius:6px;margin-bottom:4px;text-align:left;font:inherit;font-size:.84rem;background:#fff9f5;color:#4f3127;cursor:pointer}
+.overview-note:hover,.overview-note:focus-visible{background:#f9eadd;border-color:#c79679}
+.overview-note small{display:block;color:#865344;font-size:.76rem}
+.overview-follow{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.overview-follow.needs-follow{color:#9e2831;font-weight:700}
+
+/* Calendário mensal */
+.driver-calendar .driver-calendar-day{position:relative;isolation:isolate}
+.driver-calendar-create{position:absolute;inset:0;z-index:0;background:none;border:0;cursor:pointer;padding:0;border-radius:0}
+.driver-calendar-create:hover{background:#f7dec34f}
+.driver-calendar-create:focus-visible{outline:2px solid #a84c23;outline-offset:-3px}
+.driver-calendar .driver-calendar-day>:not(.driver-calendar-create){position:relative;z-index:1}
+.driver-calendar-entry{display:flex;min-width:0;gap:1px;border-radius:5px;background:#f9dfc6}
+.driver-calendar-entry .driver-calendar-event{min-width:0;flex:1}
+.driver-calendar-entry .driver-calendar-alert{display:grid;place-items:center;flex:0 0 28px;border:0;border-radius:5px;background:none;cursor:pointer;padding:0}
+.driver-calendar-alert:hover,.driver-calendar-alert:focus-visible{background:#f3ceb7}
+.driver-calendar .driver-calendar-event small{display:block;font-size:.9em;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+
+/* Contraste nas montagens e cor nos gráficos logísticos */
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel{background:linear-gradient(145deg,#f8dfc5,#f2c699);border-color:#d29a68;color:#432a1f}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel>header h3{color:#492919}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel>header p,
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel .cargo-montage-empty{color:#593b2b}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel .cargo-montage-meta{background:#fff5e9}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel .cargo-montage-meta dt{color:#63483b}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel .cargo-montage-meta dd{color:#432a1f}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel .cargo-montage-order p{color:#644b3d}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-montage-panel.drop-target{background:#f3bb86;border-color:#974923;outline:2px dashed #974923}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-state-dot.yellow{color:#d59505;outline:1px solid #88600a}
+.logistics-content.formation-workspace-v2 .cargo-montage-board .cargo-state-dot.red{color:#bf303a}
+.logistics-content .panel.log-chart-panel[data-log-chart]{background:linear-gradient(145deg,#fff7ec,#f9e7d4);border-color:#e7c9ad}
+.logistics-content .panel.log-chart-panel:is([data-log-chart=logWait],[data-log-chart=logLateCity],[data-log-chart=logPendingRegion],[data-log-chart=logProblems],[data-log-chart=logTransportProblems],[data-log-chart=logOccurrence]){background:linear-gradient(145deg,#fff7ef,#f4dfd4);border-color:#e6c4b3}
+.logistics-content .panel.log-chart-panel:is([data-log-chart=logVehicle],[data-log-chart=logService],[data-log-chart=logOverviewService],[data-log-chart=logDailyDelivery],[data-log-chart=logCostDriver],[data-log-chart=logWaitRegion]){background:linear-gradient(145deg,#f5faf6,#e3efe8);border-color:#c6dcd3}
+.logistics-content .panel.log-chart-panel .panel-heading h3{color:#613c2b}
+.logistics-content .panel.log-chart-panel .panel-heading p{color:#6a5147}
+.logistics-content .panel.log-chart-panel .log-chart-wrap{background:#ffffff70;border-radius:9px}
+@media(max-width:760px){
+ .logistics-overview .overview-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+ .logistics-overview .overview-compact{padding:12px}
+ .overview-note{grid-template-columns:auto minmax(0,1fr);gap:4px 8px}
+ .overview-follow{grid-column:2}
+ .driver-calendar-entry .driver-calendar-alert{flex-basis:22px}
+ .driver-calendar .driver-calendar-event small{font-size:.92em}
+}
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ece8ead2f378f3f29225e22191ad55f63f3e9351/supervisao-web/gas/sac-importacao-20261108/tower.css">
+</head>
+<body>
+  <div id="loginView" class="login-shell hidden">
+    <div class="login-card">
+      <img class="login-logo" src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@d5fb43eaa176dbc3a68d0487c42153be84833d26/supervisao-web/assets/rebanho-horizontal-azul.png" alt="Rebanho" />
+      <h1>Central Rebanho</h1>
+      <p>Comercial e Logística. Uma central para acompanhar os resultados da Rebanho.</p>
+      <form id="loginForm">
+        <label>Usuário</label>
+        <input id="loginUser" autocomplete="username" required />
+        <label>Senha</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required />
+        <button class="btn primary" type="submit">Entrar</button>
+        <div id="loginError" class="form-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <header class="app-header"><button type="button" id="menuToggle" class="menu-toggle" aria-label="Abrir menu" aria-controls="appMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <a class="brand-lockup" href="#" aria-label="Rebanho — Supervisão Comercial">
+        <img class="brand-logo" src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@d5fb43eaa176dbc3a68d0487c42153be84833d26/supervisao-web/assets/rebanho-horizontal-azul.png" alt="Rebanho" />
+      </a>
+
+      <span id="activeMenuLabel" class="active-menu-label">Visão geral</span><div class="header-account"><div id="userCard" class="user-card"></div><button id="logoutBtn" class="btn ghost small" type="button">Sair</button></div>
+    </header>
+<div id="menuBackdrop" class="menu-backdrop" hidden></div><aside id="appMenu" class="app-menu" role="dialog" aria-modal="true" aria-label="Menu de navegação" hidden inert><div class="menu-heading"><div><small>REBANHO</small><strong>Inteligência comercial</strong></div><button id="menuClose" type="button" class="menu-close" aria-label="Fechar menu">×</button></div><p class="menu-caption">PAINEL COMERCIAL</p><nav class="nav" aria-label="Seções do dashboard"><button type="button" data-page="overview" class="nav-item active"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span><b>Visão geral</b></button>
+<button type="button" data-page="pedidos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 4H5v17h14V4h-3"/><rect x="8" y="2" width="8" height="5" rx="2"/><path d="M8 11h8M8 15h5"/></svg></span><b>Pedidos &amp; Previsão</b></button>
+<button type="button" data-page="carteira" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="3"/><path d="M8 6V3h8v3M3 12h18M10 12v3h4v-3"/></svg></span><b>Carteira</b></button>
+<button type="button" data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7Z"/><path d="m3 7 9 5 9-5M12 12v10M7 4.8l9 5"/></svg></span><b>Produtos</b></button>
+<button type="button" data-page="cidades" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg></span><b>Cidades</b></button>
+<button type="button" data-page="metas" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4"/><path d="m11 13 9-10M16 3h4v4"/></svg></span><b>Metas</b></button>
+<button type="button" data-page="history" class="nav-item hidden" id="historyNav"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2 8M3 4v7h7M12 7v5l3 2"/></svg></span><b>Histórico</b></button>
+
+</nav><div class="menu-footer">Dashboard de Supervisão</div></aside>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Dashboard de Supervisão</div>
+          <h1 id="pageTitle">Visão Geral</h1>
+          <div id="pageSubtitle" class="page-subtitle"></div>
+          <time id="lastBaseUpdate" style="display:block;margin-top:5px;font-size:10px;font-weight:400;line-height:1.4;color:#71809A"></time>
+        </div>
+        <div class="topbar-right">
+          <div id="periodChip" class="period-chip"></div>
+          <button id="refreshData" class="btn refresh-btn" type="button" title="Atualizar bases"><span aria-hidden="true">↻</span> Atualizar bases</button>
+        </div>
+      </header>
+
+      <div class="filterbar">
+        <div class="filterbar-top">
+          <div class="filter-intro"><span class="filter-icon">⌕</span><div><strong>Período da análise</strong><small>Comece pela área e refine o recorte</small></div></div>
+          <div class="filterbar-main">
+          <div class="filter-group period"><label for="filterYear">Ano</label><select id="filterYear"></select></div>
+          <div class="filter-group period"><label for="filterMonth">Mês</label><select id="filterMonth"></select></div>
+            <button id="toggleAdvancedFilters" class="filter-refine" type="button" aria-expanded="false" aria-controls="advancedFilters"><span>＋</span> Mais filtros <b id="advancedFilterCount" class="filter-count hidden"></b></button>
+            <button id="clearFilters" class="filter-clear" type="button">Limpar</button>
+          </div>
+        </div>
+        <div id="advancedFilters" class="filter-advanced hidden">
+            <div class="filter-group geo"><label>Estado</label><div id="filterUf" class="multi-select"></div></div>
+            <span class="filter-connector" aria-hidden="true">›</span>
+            <div class="filter-group geo"><label for="filterRegion">Região</label><select id="filterRegion"></select></div>
+            <span class="filter-connector" aria-hidden="true">›</span>
+            <div class="filter-group geo"><label for="filterCity">Cidade</label><select id="filterCity"></select></div>
+
+          <div class="filter-group grow"><label>Supervisor</label><div id="filterSupervisor" class="multi-select"></div></div>
+          <div class="filter-group grow"><label>RCA</label><div id="filterRca" class="multi-select"></div></div>
+          <div class="filter-group grow"><label>Departamento</label><div id="filterDepartment" class="multi-select"></div></div>
+
+
+          <div class="filter-advanced-hint"><span>⌁</span> As escolhas de equipe permitem selecionar mais de uma opção.</div>
+        </div>
+      </div>
+
+      <div id="dataStatus" class="status-card">
+        <div class="spinner"></div>
+        <div>
+          <strong>Carregando bases comerciais</strong>
+          <div id="dataStatusText">Conectando ao Drive…</div>
+        </div>
+      </div>
+
+      <section id="content"></section>
+    </main>
+  </div>
+
+  <template id="kpiTemplate">
+    <div class="kpi-card">
+      <div class="kpi-label"></div>
+      <div class="kpi-value"></div>
+      <div class="kpi-note"></div>
+    </div>
+  </template>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script id="workerSource" type="text/plain">/* Rebanho Supervisão Web — processamento das bases fora da thread principal. */
+let SALES = [];
+let OPEN_ORDERS = [];
+let ORDER_ENTRIES = [];
+let METAS = [];
+let RCAS = [];
+let CLIENTS = new Map();
+let RCA_BY_CODE = new Map();
+let CLIENT_HISTORY = new Map();
+let LATEST_DATE = null;
+let FORCE_REFRESH = false;
+let PREFER_FRESH = false;
+let READY_FROM_LOCAL = false;
+let SERVER_UPDATED_AT = null;
+let SERVER_INFO = null;
+let SERVER_REQUEST_ID = 0;
+const SERVER_REQUESTS = new Map();
+
+
+function secs(ms){return (ms/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'s';}
+function now(){return performance.now();}
+const CACHE_DB = 'rbn-supervisao-cache';
+const CACHE_STORE = 'snapshots';
+let CACHE_KEY = 'server-daily-all-orders-v2';
+const LOCAL_CACHE_FALLBACK_MS = 12 * 60 * 60 * 1000;
+
+function openCacheDb(){
+  return new Promise((resolve,reject)=>{
+    if(typeof indexedDB==='undefined') return resolve(null);
+    const req=indexedDB.open(CACHE_DB,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(CACHE_STORE))db.createObjectStore(CACHE_STORE);};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function loadLocalCache(){
+  try{
+    const db=await openCacheDb(); if(!db)return null;
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CACHE_STORE,'readonly');
+      const req=tx.objectStore(CACHE_STORE).get(CACHE_KEY);
+      req.onsuccess=()=>resolve(req.result||null);
+      req.onerror=()=>reject(req.error);
+    });
+  }catch{return null}
+}
+async function saveLocalCache(){
+  try{
+    const db=await openCacheDb(); if(!db)return;
+    const snapshot={
+      savedAt:Date.now(),
+      serverUpdatedAt:SERVER_UPDATED_AT,
+      sales:SALES,
+      openOrders:OPEN_ORDERS,
+      orderEntries:ORDER_ENTRIES,
+      metas:METAS,
+      rcas:RCAS,
+      clients:[...CLIENTS.entries()],
+      latest:LATEST_DATE
+    };
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CACHE_STORE,'readwrite');
+      tx.objectStore(CACHE_STORE).put(snapshot,CACHE_KEY);
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(err){console.warn('Falha ao persistir a cópia local do dashboard:',err?.name||'erro')}
+}
+function restoreLocalCache(snapshot){
+  SERVER_UPDATED_AT=snapshot?.serverUpdatedAt||null;
+  SALES=Array.isArray(snapshot?.sales)?snapshot.sales:[];
+  OPEN_ORDERS=Array.isArray(snapshot?.openOrders)?snapshot.openOrders:[];
+  ORDER_ENTRIES=Array.isArray(snapshot?.orderEntries)?snapshot.orderEntries:[];
+  METAS=Array.isArray(snapshot?.metas)?snapshot.metas:[];
+  RCAS=Array.isArray(snapshot?.rcas)?snapshot.rcas:[];
+  CLIENTS=new Map(Array.isArray(snapshot?.clients)?snapshot.clients:[]);
+  RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+  LATEST_DATE=snapshot?.latest?new Date(snapshot.latest):null;
+  buildHistory();
+}
+function emitReady(){
+  const catalog=rcaCatalog();
+  RCA_BY_CODE=new Map(catalog.map(r=>[r.code,r]));
+  for(const sale of SALES){const r=RCA_BY_CODE.get(sale.rca)||{};sale.rcaName=r.name||String(sale.rca??'');sale.supervisor=r.supervisor||'';}
+  const years=[...new Set(SALES.map(s=>s.year))].sort((a,b)=>b-a);
+  const departments=[...new Set(SALES.map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const supervisors=[...new Set(catalog.map(r=>r.supervisor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const visibleRcas=catalog.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  const geography=[...new Map(SALES.filter(s=>s.uf&&s.region&&s.city).map(s=>{const uf=String(s.uf).trim().toUpperCase(),region=String(s.region).trim(),city=String(s.city).trim();return [uf+'|'+norm(region)+'|'+norm(city),{uf,region,city}]})).values()];
+  postStage('Base pronta.',100);
+  postMessage({type:'ready',fromLocal:READY_FROM_LOCAL,serverUpdatedAt:SERVER_UPDATED_AT,updateInfo:SERVER_INFO,dimensions:{years,departments,supervisors,rcas:visibleRcas,geography,latest:LATEST_DATE?LATEST_DATE.toISOString():null}});
+}
+
+const MONTHS = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+function postStage(text, progress=0){ postMessage({type:'stage', text, progress}); }
+function norm(v){
+  return String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+}
+function num(v){
+  if(v === null || v === undefined || v === '') return 0;
+  if(typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  let s=String(v).trim();
+  if(!s) return 0;
+  if(s.includes(',') && s.includes('.')) s=s.replace(/\./g,'').replace(',','.');
+  else if(s.includes(',')) s=s.replace(',','.');
+  const n=Number(s.replace(/[^0-9.-]/g,''));
+  return Number.isFinite(n)?n:0;
+}
+function code(v){
+  const m=String(v ?? '').match(/^\s*(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+function parseDate(v){
+  if(v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  if(typeof v === 'number'){
+    const d=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000);
+    return Number.isNaN(d.getTime())?null:new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
+  }
+  if(!v) return null;
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/);
+  if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  m=s.match(/^(\d{1,2})[\/](-?\d{1,2})[\/](\d{4})/);
+  if(m) return new Date(+m[3],+m[2]-1,+m[1]);
+  const d=new Date(s);
+  return Number.isNaN(d.getTime())?null:d;
+}
+function monthKeyFrom(v){
+  const d=parseDate(v);
+  if(d) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  const s=String(v ?? '');
+  const m=s.match(/(20\d{2})[^0-9]?(0?[1-9]|1[0-2])/);
+  return m ? `${m[1]}-${String(+m[2]).padStart(2,'0')}` : '';
+}
+function productLabel(v){
+  const s=String(v ?? '').trim();
+  const name=s.replace(/^\s*\d+\s*-\s*/,'').trim();
+  return name || (code(v)!=null ? `Produto ${code(v)}` : 'Sem descrição');
+}
+function addSet(map,key,val){
+  if(!map.has(key)) map.set(key,new Set());
+  if(val!==null && val!==undefined) map.get(key).add(val);
+}
+function formatMonthKey(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`}
+
+function buildHistory(){
+  CLIENT_HISTORY=new Map();
+  for(const s of SALES){
+    if(s.client==null) continue;
+    if(!CLIENT_HISTORY.has(s.client)) CLIENT_HISTORY.set(s.client,[]);
+    CLIENT_HISTORY.get(s.client).push({date:s.date, value:s.value, rca:s.rca, department:s.department,city:s.city,uf:s.uf,region:s.region});
+  }
+  for(const arr of CLIENT_HISTORY.values()) arr.sort((a,b)=>a.date-b.date);
+}
+
+function serverRequest(action,payload={}){
+  const requestId=++SERVER_REQUEST_ID;
+  return new Promise((resolve,reject)=>{
+    SERVER_REQUESTS.set(requestId,{resolve,reject});
+    postMessage({type:'serverRequest',requestId,action,payload});
+  });
+}
+async function fetchServerDatasetInfo(){
+  return await serverRequest('info');
+}
+async function fetchServerDataset(force,knownInfo=null){
+  if(force){
+    postStage('Atualizando as bases no Apps Script…',10);
+    const result=await serverRequest('refresh');
+    if(!result?.ok)throw new Error(result?.message||'Não foi possível atualizar as bases.');
+    SERVER_INFO=await fetchServerDatasetInfo();
+    postStage(result.pending?'Atualização em andamento. Abrindo a última base disponível…':'Bases processadas. Carregando páginas do cache…',30);
+  }else{
+    SERVER_INFO=knownInfo||await fetchServerDatasetInfo();
+    if(!SERVER_INFO?.exists)throw new Error('A base preparada ainda não existe. Clique em “Atualizar bases” para criá-la.');
+  }
+  if(!SERVER_INFO?.exists)throw new Error('Não há snapshot preparado no cache do Apps Script.');
+  SERVER_UPDATED_AT=SERVER_INFO.updatedAt||null;
+  SALES=[];OPEN_ORDERS=[];ORDER_ENTRIES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
+  const pendingOpenOrders=serverRequest('openOrders').catch(()=>null);
+  let received=0,expected=Number(SERVER_INFO.recordCount)||0;
+  let compressed=typeof DecompressionStream==='function'&&typeof Response==='function'&&typeof Blob==='function';
+const pageSize=10000;
+const concurrency=4;
+  const consume=records=>{
+    for(const row of records||[]){
+      if(!row)continue;
+      if(typeof row==='string'){
+        const item=JSON.parse(row),v=item.value;
+        if(item.type==='meta')LATEST_DATE=v.latest?new Date(v.latest):null;
+        else if(item.type==='rca')RCAS.push(v);
+        else if(item.type==='goal')METAS.push(v);
+        else if(item.type==='client')CLIENTS.set(v[0],v[1]);
+        else if(item.type==='sale'){v.date=new Date(v.date);SALES.push(v);}
+        else if(item.type==='orderEntry'){v.date=new Date(v.date);ORDER_ENTRIES.push(v);}
+        else if(item.type==='openOrder'){v.date=new Date(v.date);OPEN_ORDERS.push(v);}
+      }else switch(row[0]){
+        case 0:{
+          const date=new Date(row[1]),year=date.getUTCFullYear(),month=date.getUTCMonth()+1,rca=RCA_BY_CODE.get(row[2])||{};
+          SALES.push({date,year,month,monthKey:year+'-'+String(month).padStart(2,'0'),rca:row[2],rcaName:rca.name||String(row[2]??''),supervisor:rca.supervisor||'',department:row[3],client:row[4],product:row[5],productName:row[6],order:row[7],city:row[8],uf:row[9],region:row[10],value:row[11],marginPct:null});
+          break;
+        }
+        case 5:{const date=new Date(row[1]);ORDER_ENTRIES.push({date,year:date.getUTCFullYear(),month:date.getUTCMonth()+1,rca:row[2],department:row[3],client:row[4],product:row[5],order:row[7],city:row[8],uf:row[9],region:row[10],value:row[11]});break;}
+        case 1:RCAS.push({code:row[1],name:row[2],supervisor:row[3],active:row[4]});break;
+        case 2:METAS.push({monthKey:row[1],year:row[2],month:row[3],rca:row[4],rcaName:row[5],supervisor:row[6],department:row[7],value:row[8]});break;
+        case 3:CLIENTS.set(row[1],{code:row[1],name:row[2],rca:row[3]});break;
+        case 4:LATEST_DATE=row[1]?new Date(row[1]):null;break;
+
+      }
+      received++;
+    }
+  };
+  const offsets=Array.from({length:Math.ceil(expected/pageSize)},(_,i)=>i*pageSize);
+  for(let start=0;start<offsets.length;start+=concurrency){
+    const batch=offsets.slice(start,start+concurrency);
+    postStage('Recebendo dados em lote '+(start+1)+'–'+Math.min(start+batch.length,offsets.length)+' de '+offsets.length+'…',30+Math.min(60,received/Math.max(expected,1)*60));
+    const pages=await Promise.all(batch.map(async offset=>{
+      let lastError=null;
+      for(let attempt=0;attempt<3;attempt++){
+        try{
+          const page=await serverRequest('page',{offset,limit:pageSize,compressed});
+          if(!page?.ok)throw new Error(page?.message||'Falha ao ler uma página do cache.');
+          if(page.gzip){
+            try{
+              const bytes=Uint8Array.from(atob(page.gzip),value=>value.charCodeAt(0));
+              const decoded=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+              page.records=await new Response(decoded).json();
+              delete page.gzip;
+            }catch(error){compressed=false;throw error;}
+          }
+          return page;
+        }catch(error){
+          lastError=error;
+          if(attempt===2)throw lastError;
+          postStage('Instabilidade temporária na página '+Math.floor(offset/pageSize+1)+'. Tentando novamente…',30+Math.min(60,received/Math.max(expected,1)*60));
+          await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+        }
+      }
+    }));
+    pages.sort((a,b)=>a.offset-b.offset).forEach(page=>consume(page.records));
+    postStage('Dados recebidos: '+Math.min(received,expected).toLocaleString('pt-BR')+' de '+expected.toLocaleString('pt-BR')+' registros',30+Math.min(60,received/Math.max(expected,1)*60));
+  }
+  if(!SALES.length)throw new Error('A base preparada não contém vendas fechadas.');
+  if(SALES.length!==Number(SERVER_INFO.salesCount))throw new Error('O cache chegou incompleto ('+SALES.length.toLocaleString('pt-BR')+' vendas). Clique em “Atualizar bases” e tente novamente.');
+  RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+  for(const sale of SALES){const r=RCA_BY_CODE.get(sale.rca)||{};sale.rcaName=r.name||String(sale.rca??'');sale.supervisor=r.supervisor||'';}
+  try{await fetchOpenOrders(await pendingOpenOrders);}catch(error){if(!OPEN_ORDERS.length)console.warn('Carteira de pedidos em aberto indisponível.',error);}
+}
+async function fetchOpenOrders(result=undefined){
+  if(result===undefined)result=await serverRequest('openOrders');
+  if(!result?.ok)throw new Error(result?.message||'Não foi possível carregar a carteira de pedidos.');
+  OPEN_ORDERS=(result.orders||[]).map(value=>{
+    const r=RCA_BY_CODE.get(Number(value.rca))||RCA_BY_CODE.get(value.rca)||{};
+    return {...value,date:value.date?new Date(value.date):null,rcaName:r.name||value.rcaName||String(value.rca??''),supervisor:r.supervisor||value.supervisor||''};
+  });
+}
+async function init(){
+  try{
+    let info=null;
+    if(!FORCE_REFRESH){
+      postStage('Abrindo base local…',4);
+      const cached=await loadLocalCache();
+      if(!PREFER_FRESH&&cached?.sales?.length&&cached?.serverUpdatedAt){
+        restoreLocalCache(cached);READY_FROM_LOCAL=true;emitReady();return;
+      }
+      postStage('Conferindo atualização do servidor…',6);
+      try{info=await fetchServerDatasetInfo();}
+      catch(err){
+        const cacheAge=Date.now()-Number(cached?.savedAt||0);
+        if(cached?.sales?.length&&cacheAge<LOCAL_CACHE_FALLBACK_MS&&(!err.status||err.status>=500)){
+          restoreLocalCache(cached);try{await fetchOpenOrders();}catch{}emitReady();return;
+        }
+        throw err;
+      }
+      if(cached?.sales?.length){
+        const cacheAge=Date.now()-Number(cached.savedAt||0);
+        const matchesServer=!!info?.updatedAt&&cached.serverUpdatedAt===info.updatedAt;
+        const recentFallback=!info&&cacheAge<LOCAL_CACHE_FALLBACK_MS;
+        if(matchesServer||recentFallback){restoreLocalCache(cached);try{await fetchOpenOrders();}catch{}emitReady();return;}
+      }
+    }
+    postStage('Conectando ao serviço de dados…',8);
+    await fetchServerDataset(FORCE_REFRESH,info);
+    postStage(SALES.length.toLocaleString('pt-BR')+' linhas preparadas recebidas. Montando histórico…',93);
+    const tHist=now();buildHistory();
+    postStage('Histórico comercial montado em '+secs(now()-tHist)+'.',98);
+    emitReady();saveLocalCache();
+  }catch(err){postMessage({type:'error',message:err?.message||String(err)})}
+}
+
+function multi(v){
+  if(Array.isArray(v))return v.map(String).filter(x=>x&&x!=='Todos');
+  if(v===null||v===undefined||v===''||v==='Todos')return [];
+  return [String(v)];
+}
+function rcaCatalog(){
+  const catalog=new Map(RCAS.map(r=>[String(r.code),{...r}]));
+  for(const rows of [SALES,OPEN_ORDERS,ORDER_ENTRIES,METAS])for(const row of rows){
+    const key=String(row.rca);
+    if(catalog.has(key))continue;
+    catalog.set(key,{code:row.rca,name:row.rcaName&&String(row.rcaName)!==key?row.rcaName:(row.rca==null?'Sem RCA':'RCA '+key),supervisor:row.supervisor||'Sem supervisor',active:false,fromTransactions:true});
+  }
+  return [...catalog.values()];
+}
+function allowedRca(filters){
+  const catalog=RCA_BY_CODE.size?[...RCA_BY_CODE.values()]:rcaCatalog();
+  const supervisors=multi(filters.supervisor);
+  const rcas=multi(filters.rca);
+  return new Set(catalog.filter(r=>{
+    if(supervisors.length && !supervisors.includes(String(r.supervisor))) return false;
+    if(rcas.length && !rcas.includes(String(r.code))) return false;
+    return true;
+  }).map(r=>r.code));
+}
+function filterSales(filters,{ignoreMonth=false, city=null}={}){
+  const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
+  const targetUfs=multi(filters.uf).map(value=>value.toUpperCase());
+  const targetRegion=filters.region&&filters.region!=='Todos'?norm(filters.region):null;
+  const targetCity=city?norm(city):(filters.city&&filters.city!=='Todos'?norm(filters.city):null);
+  return SALES.filter(s=>{
+    if(!allowed.has(s.rca)) return false;
+    if(targetYear!==null && s.year!==targetYear) return false;
+    if(targetMonth!==null && s.month!==targetMonth) return false;
+    if(departments.length && !departments.includes(String(s.department))) return false;
+    if(targetUfs.length && !targetUfs.includes(String(s.uf||'').toUpperCase())) return false;
+    if(targetRegion && norm(s.region||'')!==targetRegion) return false;
+    if(targetCity && norm(s.city)!==targetCity) return false;
+    return true;
+  });
+}
+function filterOpenOrders(filters,{ignoreMonth=false,source=OPEN_ORDERS}={}){
+  const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const targetYear=filters.year&&filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth&&filters.month&&filters.month!=='Todos'?Number(filters.month):null;
+  const targetUfs=multi(filters.uf).map(value=>value.toUpperCase());
+  const targetRegion=filters.region&&filters.region!=='Todos'?norm(filters.region):null;
+  const targetCity=filters.city&&filters.city!=='Todos'?norm(filters.city):null;
+  return source.filter(o=>{
+    if(!allowed.has(o.rca))return false;
+    if(targetYear!==null&&o.year!==targetYear)return false;
+    if(targetMonth!==null&&o.month!==targetMonth)return false;
+    if(departments.length&&!departments.includes(String(o.department)))return false;
+    if(targetUfs.length&&!targetUfs.includes(String(o.uf||'').toUpperCase()))return false;
+    if(targetRegion&&norm(o.region||'')!==targetRegion)return false;
+    if(targetCity&&norm(o.city||'')!==targetCity)return false;
+    return true;
+  });
+}
+function summarizeOrders(rows){
+  const groups=new Map();
+  for(const row of rows){
+    const key=[row.year,row.order,row.rca].join('|');
+    if(!groups.has(key))groups.set(key,{key:key,year:row.year,order:row.order,status:row.status,date:row.date,rca:row.rca,rcaName:row.rcaName,supervisor:row.supervisor,client:row.client,clientName:CLIENTS.get(row.client)?.name||String(row.client??''),city:row.city,uf:row.uf,value:0,lines:0,departments:new Set(),items:[]});
+    const group=groups.get(key);group.value+=Number(row.value)||0;group.lines++;if(row.department)group.departments.add(row.department);
+    group.items.push({product:row.product??null,productName:row.productName||'Produto sem descrição',quantity:Number(row.quantity)||0,stock:row.stock==null||row.stock===''?null:Number(row.stock),value:Number(row.value)||0});
+    if(row.date&&(!group.date||row.date>group.date))group.date=row.date;
+  }
+  return [...groups.values()].map(g=>({...g,department:[...g.departments].join(', ')})).sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0));
+}
+function openOrderSummary(rows,revenue,meta){
+  const active=rows.filter(x=>x.status==='PENDENTE'||x.status==='LIBERADO');
+  const blocked=rows.filter(x=>x.status==='BLOQUEADO');
+  const activeOrders=summarizeOrders(active),blockedOrders=summarizeOrders(blocked);
+  const openValue=activeOrders.reduce((sum,x)=>sum+x.value,0);
+  const blockedValue=blockedOrders.reduce((sum,x)=>sum+x.value,0);
+  const projected=revenue+openValue;
+  return {openValue,openCount:activeOrders.length,blockedValue,blockedCount:blockedOrders.length,totalOpenValue:openValue+blockedValue,totalOpenCount:activeOrders.length+blockedOrders.length,
+    shareRevenue:revenue?(openValue+blockedValue)/revenue*100:null,projected,projectedAttainment:meta?projected/meta*100:null,
+    orders:[...activeOrders,...blockedOrders].sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0)),
+    byStatus:['PENDENTE','LIBERADO','BLOQUEADO'].map(status=>{
+      const list=rows.filter(x=>x.status===status),orders=summarizeOrders(list);
+      return {status,count:orders.length,value:orders.reduce((sum,x)=>sum+x.value,0)};
+    })
+  };
+}
+function filterMetas(filters,{ignoreMonth=false}={}){
+  const allowed=allowedRca(filters);
+  const hasGeo=!!(multi(filters.uf).length||(filters.region&&filters.region!=='Todos')||(filters.city&&filters.city!=='Todos'));
+  const allowedByGeo=hasGeo?new Set(filterSales(filters,{ignoreMonth}).map(s=>s.rca)):null;
+  const departments=multi(filters.department);
+  const targetYear=filters.year && filters.year!=='Todos'?Number(filters.year):null;
+  const targetMonth=!ignoreMonth && filters.month && filters.month!=='Todos'?Number(filters.month):null;
+  return METAS.filter(m=>{
+    if(!allowed.has(m.rca)) return false;
+    if(allowedByGeo&&!allowedByGeo.has(m.rca)) return false;
+    if(targetYear!==null && m.year!==targetYear) return false;
+    if(targetMonth!==null && m.month!==targetMonth) return false;
+    if(departments.length && m.department && !departments.includes(String(m.department))) return false;
+    return true;
+  });
+}
+function metrics(rows){
+  const clients=new Set(),orders=new Set(),products=new Set();
+  const byClient=new Map();
+  let revenue=0, marginNum=0, marginBase=0;
+  for(const s of rows){
+    revenue+=s.value;
+    if(s.client!=null){clients.add(s.client);addSet(byClient,s.client,s.product);}
+    if(s.order) orders.add(s.order);
+    if(s.product!=null) products.add(s.product);
+    if(Number.isFinite(s.marginPct)){marginNum+=s.value*s.marginPct;marginBase+=s.value;}
+  }
+  let mix=0;
+  if(byClient.size) mix=[...byClient.values()].reduce((a,set)=>a+set.size,0)/byClient.size;
+  return {
+    revenue,clients:clients.size,orders:orders.size,products:products.size,mix,
+    ticket:orders.size?revenue/orders.size:0,
+    margin:marginBase?marginNum/marginBase:null
+  };
+}
+function totalMeta(rows){return rows.reduce((a,x)=>a+x.value,0)}
+function groupRevenue(rows,keyFn){
+  const m=new Map();
+  for(const s of rows){
+    const k=keyFn(s);
+    if(!m.has(k)) m.set(k,{key:k,revenue:0,clients:new Set(),orders:new Set(),products:new Set()});
+    const g=m.get(k);g.revenue+=s.value;
+    if(s.client!=null)g.clients.add(s.client);if(s.order)g.orders.add(s.order);if(s.product!=null)g.products.add(s.product);
+  }
+  return [...m.values()].map(g=>({key:g.key,revenue:g.revenue,clients:g.clients.size,orders:g.orders.size,products:g.products.size}));
+}
+function monthSeries(rows){
+  const g=groupRevenue(rows,s=>s.month);
+  return g.sort((a,b)=>a.key-b.key).map(x=>({month:x.key,label:MONTHS[x.key],revenue:x.revenue,clients:x.clients,orders:x.orders}));
+}
+function previousFilters(filters){
+  if(!filters.year || filters.year==='Todos' || !filters.month || filters.month==='Todos') return null;
+  let y=Number(filters.year),m=Number(filters.month)-1;if(m===0){m=12;y--}
+  return {...filters,year:y,month:m};
+}
+function compactInsights(filters,rows){
+  const out=[];
+  const pf=previousFilters(filters);
+  if(pf){
+    const prev=filterSales(pf);
+    const now=metrics(rows),before=metrics(prev);
+    if(before.revenue>0){
+      const v=(now.revenue/before.revenue-1)*100;
+      if(v<0)out.push({level:v<=-10?'critical':'attention',title:'Queda do faturamento',value:v,text:'versus mês anterior'});
+      else if(v>5)out.push({level:'opportunity',title:'Crescimento do faturamento',value:v,text:'versus mês anterior'});
+    }
+  }
+  const rcaGroups=groupRevenue(rows,s=>s.rca).sort((a,b)=>a.revenue-b.revenue);
+  if(rcaGroups.length>1){
+    const low=rcaGroups[0], rr=RCA_BY_CODE.get(low.key)||{};
+    out.push({level:'attention',title:'Menor faturamento por RCA',value:low.revenue,text:rr.name||String(low.key),kind:'money'});
+  }
+  const dep=groupRevenue(rows,s=>s.department).sort((a,b)=>b.revenue-a.revenue);
+  const total=rows.reduce((a,s)=>a+s.value,0);
+  if(dep.length && total){
+    const share=dep[0].revenue/total*100;
+    if(share>=45)out.push({level:'attention',title:'Concentração por departamento',value:share,text:dep[0].key,kind:'percent'});
+  }
+  return out.slice(0,4);
+}
+
+function commercialDayKey(value){
+  const date=value instanceof Date?value:new Date(value);
+  return Number.isNaN(date.getTime())?'':date.toISOString().slice(0,10);
+}
+function commercialToday(){
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const get=type=>parts.find(p=>p.type===type).value;
+  return get('year')+'-'+get('month')+'-'+get('day');
+}
+function dailyCommercial(filters,sales,open,today=commercialToday()){
+  const selectedYear=filters.year&&filters.year!=='Todos'?Number(filters.year):null;
+  const selectedMonth=filters.month&&filters.month!=='Todos'?Number(filters.month):null;
+  const current=(!selectedYear||selectedYear===Number(today.slice(0,4)))&&(!selectedMonth||selectedMonth===Number(today.slice(5,7)));
+  const mode=filters.dailyMode||'today';
+  const explicit=/^\d{4}-\d{2}-\d{2}$/.test(filters.dailyDate||'')?filters.dailyDate:'';
+  const yesterday=new Date(today+'T12:00:00Z');yesterday.setUTCDate(yesterday.getUTCDate()-1);
+  let date=mode==='custom'&&explicit?explicit:mode==='yesterday'?yesterday.toISOString().slice(0,10):today;
+  const dayFilters={...filters,year:date.slice(0,4),month:String(Number(date.slice(5,7)))};
+  const sold=filterSales(dayFilters).filter(row=>commercialDayKey(row.date)===date);
+  const pending=filterOpenOrders(dayFilters).filter(row=>commercialDayKey(row.date)===date);
+  const entries=filterOpenOrders(dayFilters,{ignoreMonth:true,source:ORDER_ENTRIES}).filter(row=>commercialDayKey(row.date)===date);
+  const earliest=ORDER_ENTRIES.reduce((min,row)=>{const key=commercialDayKey(row.date).slice(0,7);return !min||key<min?key:min},'');
+  const entriesAvailable=!!earliest&&date.slice(0,7)>=earliest;
+  const orderKey=row=>[row.year,row.order,row.rca].join('|');
+  const soldValue=sold.reduce((sum,row)=>sum+(Number(row.value)||0),0);
+  const openValue=pending.reduce((sum,row)=>sum+(Number(row.value)||0),0);
+  const clients=new Set([...sold,...pending].map(row=>row.client).filter(x=>x!=null)).size;
+  return {date,isToday:date===today,soldValue,openValue,clients,entriesAvailable,entryValue:entries.reduce((sum,row)=>sum+Number(row.value||0),0),entryCount:new Set(entries.map(orderKey)).size,soldOrders:new Set(sold.map(orderKey)).size,openOrders:new Set(pending.map(orderKey)).size};
+}
+
+
+function macroHistoryCurrent(){
+ const groups=new Map(),geography=new Map();
+ for(const row of SALES){
+  const date=commercialDayKey(row.date),month=date.slice(0,7);
+  if(!date||date<'2024-08-01')continue;
+  if(!groups.has(month))groups.set(month,{month,value:0,minDate:date,maxDate:date,source:'WinThor / BI'});
+  const item=groups.get(month);item.value+=Number(row.value)||0;if(date<item.minDate)item.minDate=date;if(date>item.maxDate)item.maxDate=date;
+  if(!geography.has(month))geography.set(month,{month,cities:new Map(),unlocated:0});const geo=geography.get(month);
+  if(row.city&&row.uf){const key=norm(row.city)+'|'+row.uf;if(!geo.cities.has(key))geo.cities.set(key,[row.city,row.uf,0]);geo.cities.get(key)[2]+=Number(row.value)||0;}else geo.unlocated+=Number(row.value)||0;
+ }
+ return {monthly:[...groups.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(x=>({...x,value:Math.round(x.value*100)/100})),geoMonthly:[...geography.values()].map(x=>({month:x.month,cities:[...x.cities.values()].map(c=>[c[0],c[1],Math.round(c[2]*100)/100]),unlocated:Math.round(x.unlocated*100)/100})),updatedAt:SERVER_UPDATED_AT};
+}
+
+function overview(filters){
+  const rows=filterSales(filters);
+  const yearRows=filterSales(filters,{ignoreMonth:true});
+  const k=metrics(rows);
+  const metaRows=filterMetas(filters),meta=totalMeta(metaRows);
+  const openRows=filterOpenOrders(filters);
+  const pipeline=openOrderSummary(openRows,k.revenue,meta);
+  const daily=dailyCommercial(filters,rows,openRows);
+  const rca=groupRevenue(rows,s=>s.rca).map(x=>({...x,name:(RCA_BY_CODE.get(x.key)||{}).name||String(x.key),meta:metaRows.filter(m=>String(m.rca)===String(x.key)).reduce((sum,m)=>sum+(Number(m.value)||0),0)})).sort((a,b)=>b.revenue-a.revenue);
+  const departments=groupRevenue(rows,s=>s.department).map(x=>({...x,meta:metaRows.filter(m=>String(m.department)===String(x.key)).reduce((sum,m)=>sum+(Number(m.value)||0),0)})).sort((a,b)=>b.revenue-a.revenue);
+  return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},pipeline,daily,updatedAt:SERVER_UPDATED_AT,monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
+}
+function ordersPage(filters){
+  const rows=filterOpenOrders(filters);
+  const revenue=metrics(filterSales(filters)).revenue;
+  const meta=totalMeta(filterMetas(filters));
+  return {...openOrderSummary(rows,revenue,meta),revenue,meta};
+}
+function carteira(filters){
+  const rows=filterSales(filters);
+  const k=metrics(rows);
+  const ref=LATEST_DATE||new Date(),year=filters.year&&filters.year!=='Todos'?Number(filters.year):ref.getFullYear(),month=filters.month&&filters.month!=='Todos'?Number(filters.month):ref.getMonth()+1;
+  const cutoff=new Date(Date.UTC(year,month-1,0,23,59,59,999));
+  if(!cutoff)return {kpis:{...k,newClients:0,short:0,long:0},byRca:[],inactive:[]};
+  const lim3=new Date(cutoff);lim3.setMonth(lim3.getMonth()-3);
+  const lim6=new Date(cutoff);lim6.setMonth(lim6.getMonth()-6);
+  const lim12=new Date(cutoff);lim12.setMonth(lim12.getMonth()-12);
+  const allowed=allowedRca(filters);
+  const departments=multi(filters.department);
+  const inactive=[];
+  const by=new Map();
+  let short=0,long=0;
+  for(const [client,hist] of CLIENT_HISTORY){
+    const reg=CLIENTS.get(client);
+    const owner=reg?.rca ?? hist[hist.length-1]?.rca;
+    if(!allowed.has(owner))continue;
+    const scopedHist=departments.length?hist.filter(h=>departments.includes(String(h.department))):hist;
+    if(!scopedHist.length)continue;
+    let last=null,rev12=0;
+    for(const h of scopedHist){
+      if(h.date<=cutoff) last=h.date;
+      if(h.date>=lim12 && h.date<=cutoff)rev12+=h.value;
+    }
+    if(!last)continue;
+    const location=[...hist].reverse().find(h=>h.date<=cutoff);
+    if(multi(filters.uf).length&&!multi(filters.uf).includes(String(location?.uf||'')))continue;
+    if(filters.region&&filters.region!=='Todos'&&norm(location?.region)!==norm(filters.region))continue;
+    if(filters.city&&filters.city!=='Todos'&&norm(location?.city)!==norm(filters.city))continue;
+    const days=Math.floor((Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth(),cutoff.getUTCDate())-Date.UTC(last.getUTCFullYear(),last.getUTCMonth(),last.getUTCDate()))/86400000);
+    const isShort=days>=90&&days<180;
+    const isLong=days>=180;
+    if(!isShort && !isLong)continue;
+
+    if(isShort)short++;if(isLong)long++;
+    const rr=RCA_BY_CODE.get(owner)||{};
+    if(!by.has(owner))by.set(owner,{rca:owner,name:rr.name||String(owner),short:0,long:0});
+    if(isShort)by.get(owner).short++;if(isLong)by.get(owner).long++;
+    inactive.push({client,name:reg?.name||String(client),rca:owner,rcaName:rr.name||String(owner),last:last.toISOString(),days,revenue12:rev12,isShort,isLong});
+  }
+  const periodClients=new Set(rows.map(s=>s.client).filter(x=>x!=null));
+  let newClients=0;
+  for(const cli of periodClients){
+    const hist=CLIENT_HISTORY.get(cli)||[];
+    if(!hist.length)continue;
+    const first=hist[0].date;
+    if(filters.year!=='Todos' && first.getFullYear()!==Number(filters.year))continue;
+    if(filters.month!=='Todos' && first.getMonth()+1!==Number(filters.month))continue;
+    newClients++;
+  }
+  inactive.sort((a,b)=>b.revenue12-a.revenue12);
+  return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),inactive:inactive};
+}
+function produtos(filters){
+  const rows=filterSales(filters);
+  const byProd=new Map();
+  const byRca=new Map();
+  for(const s of rows){
+    if(s.product==null)continue;
+    if(!byProd.has(s.product))byProd.set(s.product,{code:s.product,name:s.productName,revenue:0,clients:new Set(),orders:new Set(),rcas:new Set()});
+    const p=byProd.get(s.product);p.revenue+=s.value;if(s.client!=null)p.clients.add(s.client);if(s.order)p.orders.add(s.order);if(s.rca!=null)p.rcas.add(s.rca);
+    if(!byRca.has(s.rca))byRca.set(s.rca,new Map());
+    const rm=byRca.get(s.rca);
+    if(!rm.has(s.product))rm.set(s.product,{code:s.product,name:s.productName,revenue:0});
+    rm.get(s.product).revenue+=s.value;
+  }
+  const arr=[...byProd.values()].map(p=>({code:p.code,name:p.name,revenue:p.revenue,clients:p.clients.size,orders:p.orders.size,rcas:p.rcas.size}));
+  const top=[...arr].sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+  const bottom=[...arr].filter(x=>x.revenue>0).sort((a,b)=>a.revenue-b.revenue).slice(0,10);
+  const top2=[];
+  for(const [rca,map] of byRca){
+    const rr=RCA_BY_CODE.get(rca)||{};
+    const list=[...map.values()].sort((a,b)=>b.revenue-a.revenue);
+    const total=list.reduce((a,x)=>a+x.revenue,0), first=list[0],second=list[1];
+    if(first)top2.push({rca,name:rr.name||String(rca),first,second:second||null,share:total?((first.revenue+(second?.revenue||0))/total*100):0,total});
+  }
+  top2.sort((a,b)=>b.total-a.total);
+  return {kpis:{products:arr.length,clients:new Set(rows.map(s=>s.client).filter(x=>x!=null)).size},top,bottom,top2};
+}
+function coverageArea(filters,context){
+ const normCity=v=>{const n=norm(v);return ({ITAPAGE:'ITAPAJE',PINRETAMA:'PINDORETAMA'}[n]||n).replace(/[^A-Z0-9]/g,'');};
+ const key=row=>normCity(row.city)+'|'+row.uf;
+ const confirmed=(context.cities||[]).filter(row=>row.confirmed===true);
+ const area=new Map(confirmed.map(row=>[key(row),row]));
+ const city=context.city||'',selected=city?confirmed.find(row=>row.areaKey===city):null;
+ const inArea=row=>area.has(key(row))&&(!city||selected&&key(row)===key(selected));
+ const scope=row=>{const d=norm(row.department);return context.scope==='all'||context.scope==='health'?context.scope==='all'||d==='SAUDE ANIMAL':context.scope==='commercial'?d!=='SAUDE ANIMAL':['NUTRICAO - RUMINANTES','NUTRICAO - MONOGASTRICOS','RACOES','INGREDIENTES MINERAIS'].includes(d);};
+ const available=SALES.filter(scope),latest=SALES.reduce((a,r)=>r.date>a?r.date:a,new Date(0));
+ const year=filters.year!=='Todos'?Number(filters.year):latest.getUTCFullYear();
+ const month=filters.month!=='Todos'?Number(filters.month):null;
+ const yearLast=SALES.filter(r=>r.date.getUTCFullYear()===year).reduce((a,r)=>r.date>a?r.date:a,new Date(0));
+ const endMonth=month||Math.max(1,yearLast.getUTCMonth()+1);
+ let endDay=new Date(Date.UTC(year,endMonth,0)).getUTCDate();
+ if(yearLast.getUTCFullYear()===year&&endMonth===yearLast.getUTCMonth()+1)endDay=Math.min(endDay,yearLast.getUTCDate());
+ const range=y=>{const last=Math.min(endDay,new Date(Date.UTC(y,endMonth,0)).getUTCDate());return {start:Date.UTC(y,(month||1)-1,1),end:Date.UTC(y,endMonth-1,last,23,59,59,999)};};
+ const sum=rows=>({...metrics(rows),cities:new Set(rows.map(key)).size});
+ const scoped=available.filter(inArea),inRange=(row,r)=>row.date.getTime()>=r.start&&row.date.getTime()<=r.end;
+ const r=range(year),pr=range(year-1),rows=scoped.filter(x=>inRange(x,r)),before=scoped.filter(x=>inRange(x,pr));
+ const variation=(a,b)=>b>0?(a/b-1)*100:null;
+ const yearMonths=new Set(SALES.filter(r=>r.date.getUTCFullYear()===year).map(r=>r.month));
+ const oldMonths=new Set(SALES.filter(r=>r.date.getUTCFullYear()===year-1).map(r=>r.month));
+ const amount=(y,m,day=null)=>scoped.filter(x=>x.date.getUTCFullYear()===y&&x.month===m&&(day===null||x.date.getUTCDate()<=day)).reduce((a,x)=>a+x.value,0);
+ const requiredMonths=Array.from({length:endMonth-(month||1)+1},(_,i)=>(month||1)+i),previousAvailable=requiredMonths.every(m=>oldMonths.has(m)),currentAvailable=requiredMonths.every(m=>yearMonths.has(m));
+ const monthly=Array.from({length:12},(_,i)=>{const m=i+1,valid=m<=endMonth&&yearMonths.has(m),day=m===endMonth?endDay:null;const value=valid?amount(year,m,day):null,old=oldMonths.has(m)?amount(year-1,m,day):null,prevMonth=m===1?12:m-1,prevYear=m===1?year-1:year,prevDay=day===null?null:Math.min(day,new Date(Date.UTC(prevYear,prevMonth,0)).getUTCDate()),prev=amount(prevYear,prevMonth,prevDay);return {label:MONTHS[m],revenue:value,previous:m<=endMonth?old:null,yoy:value===null||old===null?null:variation(value,old),mom:value===null||!(m===1?oldMonths.has(12):yearMonths.has(m-1))?null:variation(value,prev)};});
+ const cities=[...area.values()].filter(x=>!city||selected&&key(x)===key(selected)).map(x=>{const sales=rows.filter(v=>key(v)===key(x));return {key:x.areaKey,city:x.city,uf:x.uf,revenue:sales.reduce((a,v)=>a+v.value,0),clients:new Set(sales.map(v=>v.client).filter(v=>v!=null)).size};}).sort((a,b)=>b.revenue-a.revenue);
+ const products=produtosForRows(rows).slice(0,10),current=sum(rows);
+ const dateText=n=>new Date(n).toLocaleDateString('pt-BR',{timeZone:'UTC'});
+ return {year,cityName:selected?selected.city+' · '+selected.uf:'',period:dateText(r.start)+' a '+dateText(r.end),previousPeriod:dateText(pr.start)+' a '+dateText(pr.end),previousAvailable,partial:!currentAvailable||endDay<new Date(Date.UTC(year,endMonth,0)).getUTCDate(),municipalities:city?(selected?1:0):area.size,current,previous:sum(before),monthly,cities,products,top3Share:current.revenue>0?products.slice(0,3).reduce((a,x)=>a+x.revenue,0)/current.revenue*100:null};
+}
+
+function cidades(filters, selectedCity=null){
+  const rows=filterSales(filters);
+  const cityMap=new Map();
+  for(const s of rows){
+    if(!s.city)continue;
+    const key=`${norm(s.city)}|${s.uf}`;
+    if(!cityMap.has(key))cityMap.set(key,{key,city:s.city,uf:s.uf,revenue:0,clients:new Set(),orders:new Set(),products:new Set()});
+    const c=cityMap.get(key);c.revenue+=s.value;if(s.client!=null)c.clients.add(s.client);if(s.order)c.orders.add(s.order);if(s.product!=null)c.products.add(s.product);
+  }
+  const list=[...cityMap.values()].map(c=>({key:c.key,city:c.city,uf:c.uf,revenue:c.revenue,clients:c.clients.size,orders:c.orders.size,products:c.products.size})).sort((a,b)=>b.revenue-a.revenue);
+  const chosen=selectedCity && selectedCity!=='Todos' ? list.find(c=>c.key===selectedCity) : null;
+  const focus=chosen?filterSales(filters,{city:chosen.city}):rows;
+  const yearFocus=chosen?filterSales(filters,{ignoreMonth:true,city:chosen.city}):filterSales(filters,{ignoreMonth:true});
+  const p=produtosForRows(focus);
+  const cli=clientRanking(focus);
+  const insights=cityInsights(filters,list,chosen);
+  return {cities:list,selected:chosen,monthly:monthSeries(yearFocus),products:p.slice(0,12),clients:cli.slice(0,20),insights};
+}
+function produtosForRows(rows){
+  const m=new Map();
+  for(const s of rows){
+    if(s.product==null)continue;
+    if(!m.has(s.product))m.set(s.product,{code:s.product,name:s.productName,revenue:0,clients:new Set(),orders:new Set()});
+    const x=m.get(s.product);x.revenue+=s.value;if(s.client!=null)x.clients.add(s.client);if(s.order)x.orders.add(s.order);
+  }
+  return [...m.values()].map(x=>({...x,clients:x.clients.size,orders:x.orders.size})).sort((a,b)=>b.revenue-a.revenue);
+}
+function clientRanking(rows){
+  const m=new Map();
+  for(const s of rows){
+    if(s.client==null)continue;
+    if(!m.has(s.client))m.set(s.client,{code:s.client,name:CLIENTS.get(s.client)?.name||String(s.client),revenue:0,orders:new Set(),products:new Set()});
+    const x=m.get(s.client);x.revenue+=s.value;if(s.order)x.orders.add(s.order);if(s.product!=null)x.products.add(s.product);
+  }
+  return [...m.values()].map(x=>({...x,orders:x.orders.size,products:x.products.size})).sort((a,b)=>b.revenue-a.revenue);
+}
+function cityInsights(filters,list,chosen){
+  const out=[];
+  if(!chosen && list.length>1){
+    const low=[...list].filter(x=>x.revenue>0).sort((a,b)=>a.revenue-b.revenue)[0];
+    if(low)out.push({level:'attention',title:'Menor faturamento por cidade',value:low.revenue,text:`${low.city} - ${low.uf}`,kind:'money'});
+  }
+  const pf=previousFilters(filters);
+  if(pf){
+    const prev=cidadesSimple(pf);
+    const prevMap=new Map(prev.map(x=>[x.key,x]));
+    const candidates=(chosen?[chosen]:list).map(c=>{
+      const p=prevMap.get(c.key);return p&&p.revenue>0?{...c,variation:(c.revenue/p.revenue-1)*100,prev:p.revenue}:null
+    }).filter(Boolean).sort((a,b)=>a.variation-b.variation);
+    if(candidates.length&&candidates[0].variation<0){
+      const x=candidates[0];out.push({level:x.variation<=-20?'critical':'attention',title:chosen?'Queda da cidade':'Cidade com maior queda',value:x.variation,text:`${x.city} - ${x.uf}`,kind:'percent',foot:`${x.prev}|${x.revenue}`});
+    }
+  }
+  const focus=chosen?filterSales(filters,{city:chosen.city}):filterSales(filters);
+  const prod=produtosForRows(focus);
+  const prevF=previousFilters(filters);
+  if(prevF && prod.length){
+    const prevProd=produtosForRows(chosen?filterSales(prevF,{city:chosen.city}):filterSales(prevF));
+    const pm=new Map(prevProd.map(x=>[x.code,x]));
+    const drops=prod.map(x=>{const p=pm.get(x.code);return p&&p.revenue>0?{...x,var:(x.revenue/p.revenue-1)*100,prev:p.revenue}:null}).filter(Boolean).sort((a,b)=>a.var-b.var);
+    if(drops.length&&drops[0].var<0){const x=drops[0];out.push({level:x.var<=-25?'critical':'attention',title:'Produto em queda',value:x.var,text:x.name,kind:'percent'});}
+  }
+  return out.slice(0,4);
+}
+function cidadesSimple(filters){
+  const rows=filterSales(filters),m=new Map();
+  for(const s of rows){
+    if(!s.city)continue;const key=`${norm(s.city)}|${s.uf}`;
+    if(!m.has(key))m.set(key,{key,city:s.city,uf:s.uf,revenue:0});m.get(key).revenue+=s.value;
+  }
+  return [...m.values()];
+}
+function metasPage(filters){
+  const rows=filterSales(filters,{ignoreMonth:true});
+  const metas=filterMetas(filters,{ignoreMonth:true});
+  const revMonths=monthSeries(rows);
+  const metaByMonth=new Map();
+  for(const m of metas)metaByMonth.set(m.month,(metaByMonth.get(m.month)||0)+m.value);
+  const monthly=Array.from({length:12},(_,i)=>({month:i+1,label:MONTHS[i+1],revenue:revMonths.find(x=>x.month===i+1)?.revenue||0,meta:metaByMonth.get(i+1)||0}));
+  const supMap=new Map();
+  for(const m of metas){
+    const k=m.supervisor||'Sem supervisor';supMap.set(k,(supMap.get(k)||0)+m.value);
+  }
+  return {monthly,supervisors:[...supMap].map(([name,meta])=>({name,meta})).sort((a,b)=>b.meta-a.meta),totalMeta:[...metaByMonth.values()].reduce((a,b)=>a+b,0),totalRevenue:rows.reduce((a,s)=>a+s.value,0)};
+}
+
+
+function biComponents_(filters,widgets){
+ const sales=filterSales(filters),open=filterOpenOrders(filters),goals=filterMetas(filters),cache=new Map();let portfolio;
+ const key=(row,dim)=>{if(dim==='none')return {key:'total',label:'Total'};if(dim==='month'){const k=row.monthKey||String(row.date?.getUTCFullYear()||row.year)+'-'+String(row.date?.getUTCMonth()+1||row.month).padStart(2,'0');return {key:k,label:k.slice(5,7)+'/'+k.slice(0,4)};}if(dim==='year'){const k=String(row.year||row.date?.getUTCFullYear());return {key:k,label:k};}if(dim==='rca'){return {key:String(row.rca),label:RCA_BY_CODE.get(row.rca)?.name||row.rcaName||String(row.rca)};}if(dim==='city')return {key:String(row.city||'Sem cidade')+'|'+String(row.uf||''),label:String(row.city||'Sem cidade')+' · '+String(row.uf||''),city:row.city,uf:row.uf};if(dim==='product')return {key:String(row.product),label:row.productName||String(row.product)};if(dim==='client')return {key:String(row.client),label:CLIENTS.get(row.client)?.name||String(row.client)};return {key:String(row[dim]||'Sem informação'),label:String(row[dim]||'Sem informação')};};
+ const groups=(source,dim)=>{const map=new Map();source.forEach(r=>{const k=key(r,dim);if(!map.has(k.key))map.set(k.key,{...k,rows:[]});map.get(k.key).rows.push(r)});return map;};
+ const aggregate=(f,metric,dim)=>{
+ const signature=JSON.stringify([f,metric,dim]);if(cache.has(signature))return cache.get(signature);
+ const same=f===filters,ss=same?sales:filterSales(f),oo=same?open:filterOpenOrders(f),gg=same?goals:filterMetas(f);
+ if(['inactiveShort','inactiveLong','newClients'].includes(metric)){
+  const p=same?(portfolio||(portfolio=carteira(f))):carteira(f);let out=[];
+  if(metric==='newClients'){const period=new Set(ss.map(s=>s.client));const m=new Map();period.forEach(c=>{const first=CLIENT_HISTORY.get(c)?.[0];if(!first)return;if(f.year!=='Todos'&&first.date.getFullYear()!==Number(f.year))return;if(f.month!=='Todos'&&first.date.getMonth()+1!==Number(f.month))return;const rca=CLIENTS.get(c)?.rca??first.rca;m.set(rca,(m.get(rca)||0)+1);});out=dim==='none'?[{key:'total',label:'Total',value:p.kpis.newClients}]:[...m].map(([rca,value])=>({key:String(rca),label:RCA_BY_CODE.get(rca)?.name||String(rca),value}));}
+  else{const field=metric==='inactiveShort'?'short':'long';out=dim==='none'?[{key:'total',label:'Total',value:p.kpis[field]}]:p.byRca.map(r=>({key:String(r.rca),label:r.name,value:r[field]}));}cache.set(signature,out);return out;
+ }
+ const sm=groups(ss,dim),om=groups(oo,dim),gm=groups(gg,dim),keys=new Set(metric==='goal'?[...gm.keys()]:['open','openCount','blocked','pending','released'].includes(metric)?[...om.keys()]:['projection','attainment'].includes(metric)?[...sm.keys(),...om.keys(),...gm.keys()]:[...sm.keys()]);if(dim==='none')keys.add('total');
+ const out=[...keys].map(k=>{const s=sm.get(k),o=om.get(k),g=gm.get(k),sr=s?.rows||[],or=o?.rows||[],gr=g?.rows||[],m=metrics(sr),goal=gr.reduce((a,r)=>a+Number(r.value||0),0),os=openOrderSummary(or,m.revenue,goal);let value;
+ switch(metric){case'revenue':value=m.revenue;break;case'orders':value=m.orders;break;case'clients':value=m.clients;break;case'products':value=m.products;break;case'ticket':value=m.ticket;break;case'mix':value=m.mix;break;case'goal':value=goal;break;case'attainment':value=goal?m.revenue/goal*100:null;break;case'open':value=os.totalOpenValue;break;case'openCount':value=os.totalOpenCount;break;case'blocked':value=os.blockedValue;break;case'pending':value=or.filter(x=>x.status==='PENDENTE').reduce((a,x)=>a+Number(x.value||0),0);break;case'released':value=or.filter(x=>x.status==='LIBERADO').reduce((a,x)=>a+Number(x.value||0),0);break;case'projection':value=os.projected;break;default:value=null;}
+ return {...(s||o||g||{key:k,label:'Total'}),rows:undefined,value};});cache.set(signature,out);return out;
+ };
+ return widgets.slice(0,100).map(w=>{try{
+  if(w.hidden||w.original)return {id:w.id,rows:[]};
+  if(!['none','month','year','rca','supervisor','department','city','uf','product','client','status'].includes(w.dimension))throw Error('Agrupamento inválido.');
+  let rows=aggregate(filters,w.metric,w.dimension).map(x=>({...x})),other=null;
+  if(w.comparison==='goal')other=aggregate(filters,'goal',w.dimension);
+  else if(w.comparison==='previous'||w.comparison==='year'){
+   if(filters.year==='Todos'||(w.comparison==='previous'&&filters.month==='Todos'))throw Error('Selecione ano e mês para esta comparação.');
+   const f={...filters};if(w.comparison==='year')f.year=String(Number(f.year)-1);else{let d=new Date(Date.UTC(Number(f.year),Number(f.month)-2,1));f.year=String(d.getUTCFullYear());f.month=String(d.getUTCMonth()+1);}other=aggregate(f,w.metric,w.dimension);
+  }
+  if(other){const map=new Map(other.map(x=>[x.key,x]));rows.forEach((r,i)=>{let x=map.get(r.key);if(['month','year'].includes(w.dimension))x=other.find(o=>w.dimension==='month'?o.key.slice(5)===r.key.slice(5):true);r.comparison=x?.value??null;r.change=r.comparison>0&&r.value!=null?(r.value/r.comparison-1)*100:null;});}
+  rows.sort((a,b)=>w.sort==='label'?a.key.localeCompare(b.key,'pt-BR',{numeric:true}):(Number(a.value)-Number(b.value))*(w.sort==='asc'?1:-1));
+  return {id:w.id,rows:rows.slice(0,w.type==='map'?600:w.limit||10),total:rows.length,updatedAt:SERVER_UPDATED_AT};
+ }catch(e){return {id:w.id,rows:[],error:e.message};}});
+}
+
+onmessage=async(e)=>{
+  const msg=e.data||{};
+  if(msg.type==='serverResponse'){
+    const pending=SERVER_REQUESTS.get(msg.requestId);if(!pending)return;
+    SERVER_REQUESTS.delete(msg.requestId);
+    if(msg.error)pending.reject(new Error(msg.error));else pending.resolve(msg.data);
+    return;
+  }
+  if(msg.type==='init'){CACHE_KEY='server-daily-all-orders-v2|'+String(msg.userScope||'');FORCE_REFRESH=!!msg.force;PREFER_FRESH=!!msg.preferFresh;return init();}
+  if(msg.type==='query'){
+    try{
+      const f=msg.filters||{};
+      let payload;
+      if(msg.page==='history')payload=macroHistoryCurrent();
+      else if(msg.page==='overview')payload=overview(f);
+      else if(msg.page==='carteira')payload=carteira(f);
+      else if(msg.page==='produtos')payload=produtos(f);
+      else if(msg.page==='cidades')payload=msg.coverageContext?{area:coverageArea(f,msg.coverageContext)}:cidades(f,msg.selectedCity);
+      else if(msg.page==='metas')payload=metasPage(f);
+      else if(msg.page==='pedidos')payload=ordersPage(f);
+      else payload={};
+      payload.bi=biComponents_(f,msg.biWidgets||[]);
+      postMessage({type:'result',requestId:msg.requestId,page:msg.page,payload});
+    }catch(err){postMessage({type:'queryError',requestId:msg.requestId,message:err?.message||String(err)});}
+  }
+};
+</script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@085e8e5020863e3c4058501b3ac9f45f13c60fba/supervisao-web/gas/ordem-entregas-20261109/app.js"></script>
+</body>
+</html>
