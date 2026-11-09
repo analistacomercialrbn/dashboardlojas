@@ -1,0 +1,11 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -285,7 +285,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/e8b50392488932dfa2e3137a586b25209c0676d6/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/0f6faa730ac725c170b96f68c1f206a3074dad2e/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
