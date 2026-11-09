@@ -1,0 +1,122 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -285,7 +285,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/0f6faa730ac725c170b96f68c1f206a3074dad2e/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/cf61ac7ad25b3f559ab0a7926d66326f1a60c91c/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -1683,6 +1683,15 @@
+  return parts[0]||'trf_'+digestHex_(JSON.stringify(parts.slice(1)));
+ }
+ 
++function logRegionMap_(values, defaultUf='') {
++ const regions=new Map();
++ for(const row of values.slice(1)){
++  const {city,uf}=logCity_(row[1]), region=logText_(row[2]);
++  if(city&&region)regions.set(city+(uf||defaultUf?'|'+(uf||defaultUf):''),region);
++ }
++ return regions;
++}
++
+ function logRecords_(values,kind,tz,regionValues){
+  const today=kind==='transport'?centralToday_(tz):'';
+  const header=kind==='operations'?1:kind==='formations'?3:0;
+@@ -1696,7 +1705,7 @@
+   return dates.get(key);
+  };
+  const get=(r,...keys)=>{for(const k of keys){const i=idx(k);if(i>=0&&r[i]!=null&&r[i]!=='')return r[i];}return '';};
+- const regionMap=new Map();for(const r of (regionValues||[]).slice(1)){const c=logCity_(r[1]);if(c.city&&logText_(r[2]))regionMap.set(c.city+(c.uf?'|'+c.uf:''),logText_(r[2]));}
++ const regionMap=logRegionMap_(regionValues||[]);
+  return values.slice(header+1).flatMap((r,i)=>{
+   const T=(...ks)=>logText_(get(r,...ks)),N=(...ks)=>logNumber_(get(r,...ks)),D=(...ks)=>date(get(r,...ks));
+   if(kind==='operations'){
+@@ -2395,7 +2404,7 @@
+  });
+ }
+ 
+-function formDeliverySellerDirectory_() {
++function formSellerDirectory_() {
+  try {
+   const cache=CacheService.getScriptCache(), key='FORM_DELIVERY_SELLERS_'+CFG.auxiliarySpreadsheetId;
+   const cached=centralCacheRead_(cache,key);
+@@ -2406,7 +2415,7 @@
+   centralCacheWrite_(cache,key,JSON.stringify(names),300);
+   return names;
+  }catch(error){
+-  console.warn('Cadastro de vendedores indisponível para a Ordem de Entregas.');
++  console.warn('Cadastro de vendedores indisponível para a Formação de Cargas.');
+   return {};
+  }
+ }
+@@ -2426,9 +2435,33 @@
+  return [...new Set(labels)].join(' / ');
+ }
+ 
++function formDirectRegionDirectory_() {
++ try{
++  const id=PropertiesService.getScriptProperties().getProperty('LOG_OPERATIONS_ID')||LOGISTICS_SOURCES.operations;
++  const cache=CacheService.getScriptCache(), key='FORM_ORDER_REGIONS_'+id;
++  const cached=centralCacheRead_(cache,key);
++  if(cached)return cached;
++  const sheet=SpreadsheetApp.openById(id).getSheetByName('CADASTRO REGIAO'), last=sheet?.getLastRow()||0;
++  if(last<2)return {};
++  // Os municípios sem UF no cadastro operacional pertencem ao Ceará.
++  const regions=logRegionMap_(sheet.getRange(1,1,last,3).getValues(),'CE');
++  const labels=new Map(), directory={};
++  for(const [city,region] of regions){
++   const normalized=logNorm_(region);
++   if(!labels.has(normalized))labels.set(normalized,region);
++   directory[city]=labels.get(normalized);
++  }
++  centralCacheWrite_(cache,key,JSON.stringify(directory),300);
++  return directory;
++ }catch(error){
++  console.warn('Cadastro de regiões indisponível para a Formação de Cargas.');
++  return {};
++ }
++}
++
+ function formDirectView_(st,catalog,user,forceTransport=false){
+- const saved=formDirectSnapshot_(st),orders=[],byKey={},canonical={},deliverySellers=[];
+- let sellerNames;
++ const saved=formDirectSnapshot_(st),orders=[],byKey={},canonical={},filterLabels=[];
++ let sellerNames, regions;
+  const transportCandidates=Object.values(catalog).some(o=>!st.assignments[o.key]&&o.invoices?.some(nf=>sacImportNotes_(nf).length));
+  const transport=transportCandidates?formTransportInvoiceSnapshot_(forceTransport):null;
+  const reserved=new Set(Object.keys(st.assignments).map(key=>{const {client,order}=formExpParseKey_(key);return client+'|'+order;}));for(const o of Object.values(catalog)){const k=o.clientCode+'|'+o.order;canonical[k]=(canonical[k]||0)+1;}
+@@ -2437,13 +2470,16 @@
+   const finalized=a&&st.montages[a.montageId].status===FORM_FINAL;
+   const recordedOrder=finalized?saved[key]||o:o;
+   const volumes=formDirectVolumes_(recordedOrder);
+-  const row={sourceKey:key,orderKey:key,client:o.client,city:o.city,cityLabel:o.city,uf:o.uf,date:o.date,region:'',seller:String(o.rca||''),product:o.products.map(p=>p.description).join(' / '),status:o.statuses.join(' / '),weight:null,volumes,availableWeight:null,mountedWeight:null,awaitingFormation:!!fresh&&!duplicate&&!aliasReserved&&!a,delivered:false,linked:true,montageId:a?a.montageId:''};
++  if(!sellerNames)sellerNames=formSellerDirectory_();
++  if(!regions)regions=formDirectRegionDirectory_();
++  const sellerCode=code_(o.rca??o.seller), seller=String(sellerCode??'');
++  const sellerLabel=formDeliverySeller_({seller:o.seller,rcas:[sellerCode]},sellerNames);
++  const location=logCity_(o.city), uf=logNorm_(o.uf)||location.uf;
++  const region=regions[location.city+'|'+uf]||'Sem região';
++  const row={sourceKey:key,orderKey:key,client:o.client,city:o.city,cityLabel:o.city,uf:o.uf,date:o.date,region,seller,sellerLabel,product:o.products.map(p=>p.description).join(' / '),status:o.statuses.join(' / '),weight:null,volumes,availableWeight:null,mountedWeight:null,awaitingFormation:!!fresh&&!duplicate&&!aliasReserved&&!a,delivered:false,linked:true,montageId:a?a.montageId:''};
+   const entry={...o,volumes,blocked:!fresh||duplicate||aliasReserved,sourceIssue:issue,sourceKeys:[key],sourceRows:[row],originalStatuses:o.statuses,montageId:a?a.montageId:'',internalStatus:a?(st.montages[a.montageId].status===FORM_FINAL?'Montagem finalizada':st.montages[a.montageId].status):st.last[key]&&st.last[key].type==='REMOVER'?'Removido da montagem':'Disponível',sourceDate:o.date};
+-  if(finalized){
+-   if(!sellerNames)sellerNames=formDeliverySellerDirectory_();
+-   entry.deliverySeller=formDeliverySeller_(recordedOrder,sellerNames);
+-   deliverySellers.push([key,entry.deliverySeller]);
+-  }
++  if(finalized)entry.deliverySeller=formDeliverySeller_(recordedOrder,sellerNames);
++  filterLabels.push([key,region,sellerLabel,entry.deliverySeller||'']);
+   orders.push(entry);byKey[key]=entry;
+  }
+  const grouped=new Map();for(const [key,a] of Object.entries(st.assignments)){if(!grouped.has(a.montageId))grouped.set(a.montageId,[]);grouped.get(a.montageId).push(key);}
+@@ -2451,7 +2487,7 @@
+  const visibleMontages=new Set(montages.map(m=>m.id));
+  const events=st.events.slice().reverse().filter(e=>e.keys.length?e.keys.every(k=>byKey[k]):visibleMontages.has(e.to)||e.data.montageIds?.every(id=>visibleMontages.has(id))||FORM_FLEET_SETTINGS.includes(e.type)).slice(0,200).map(formDirectEvent_);
+  const view=formFleetEnhance_({ok:true,experimental:true,direct:true,orders,montages,events,mapRows:orders.map(o=>o.sourceRows[0]),revision:st.revision,sequence:st.sequence,sourceVersion:digestHex_(JSON.stringify(orders.map(o=>[o.key,o.version,o.blocked]).sort())).slice(0,32),updatedAt:new Date().toISOString(),source:'Força de Vendas · base sincronizada',missingFields:['Peso']},st);
+- view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey,'qtPedidaVolumes','routingOperationalAlerts','montageDeliveryDate',deliverySellers.sort()])).slice(0,24);
++ view.viewVersion=digestHex_(JSON.stringify([view.revision,view.sourceVersion,view.fleet,view.routing,view.googleMapsKey,'qtPedidaVolumes','routingOperationalAlerts','montageDeliveryDate',filterLabels.sort()])).slice(0,24);
+  return view;
+ }
+ 
