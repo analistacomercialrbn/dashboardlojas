@@ -95,7 +95,7 @@ function api(url, opts={}){
         return;
       }
       if(action==='login' && result.token) sessionStorage.setItem('dashboardSession',result.token);
-      if(action==='logout') sessionStorage.removeItem('dashboardSession');
+      if(action==='logout'||action==='changeTemporaryPassword') sessionStorage.removeItem('dashboardSession');
       resolve(result);
     }).withFailureHandler(error=>reject(new Error(error?.message||String(error))))
       .dashboardApi(action,body,sessionStorage.getItem('dashboardSession')||'');
@@ -108,13 +108,19 @@ async function bootstrap(){
   try{
     const s=await api('/api/session');
     if(s?.authenticated){state.user=s.user; enterApp();}
-    else showLogin();
+    else showLogin(s?.passwordChangeRequired===true);
   }catch{showLogin();}
 }
 
-function showLogin(){
+function showLogin(changeRequired=false){
   $('#loginView').classList.remove('hidden');
   $('#appView').classList.add('hidden');
+  $('#loginForm').classList.toggle('hidden',changeRequired);
+  $('#temporaryPasswordForm').classList.toggle('hidden',!changeRequired);
+  if(changeRequired){
+    $('#temporaryPasswordError').textContent='';
+    $('#newDashboardPassword').focus();
+  }
 }
 async function enterApp(){
  if(logOverviewArea()&&logPageAllowed('overview')){
@@ -131,13 +137,49 @@ function renderUser(){
 }
 function bindLogin(){
   $('#loginForm').addEventListener('submit',async e=>{
-    e.preventDefault(); $('#loginError').textContent='';
+    e.preventDefault(); $('#loginError').textContent='';$('#loginNotice').textContent='';
     const btn=e.currentTarget.querySelector('button'); btn.disabled=true; btn.textContent='Entrando…';
     try{
       const data=await api('/api/login',{method:'POST',body:JSON.stringify({login:$('#loginUser').value,password:$('#loginPassword').value})});
-      state.user=data.user; enterApp();
+      $('#loginPassword').value='';
+      if(data.passwordChangeRequired){
+        state.user=null;
+        showLogin(true);
+      }else{
+        state.user=data.user;
+        enterApp();
+      }
     }catch(err){$('#loginError').textContent=err.message||'Usuário ou senha inválidos.'}
     finally{btn.disabled=false;btn.textContent='Entrar'}
+  });
+  $('#temporaryPasswordForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const form=e.currentTarget, error=$('#temporaryPasswordError'), button=form.querySelector('[type=submit]');
+    const password=$('#newDashboardPassword').value;
+    error.textContent='';
+    if(password!==$('#confirmDashboardPassword').value){
+      error.textContent='As senhas precisam ser iguais.';
+      return;
+    }
+    button.disabled=true;
+    $('#cancelTemporaryPassword').disabled=true;
+    try{
+      await api('/api/changeTemporaryPassword',{body:JSON.stringify({password})});
+      form.reset();
+      showLogin();
+      $('#loginNotice').textContent='Senha criada. Entre com sua nova senha.';
+      $('#loginPassword').focus();
+    }catch(err){
+      error.textContent=err.message;
+    }finally{
+      button.disabled=false;
+      $('#cancelTemporaryPassword').disabled=false;
+    }
+  });
+  $('#cancelTemporaryPassword').addEventListener('click',async ()=>{
+    try{await api('/api/logout');}catch{sessionStorage.removeItem('dashboardSession');}
+    $('#temporaryPasswordForm').reset();
+    showLogin();
   });
 }
 function bindShell(){
@@ -1327,6 +1369,54 @@ function downloadCoverageMap(type){
 
 
 
+async function generateDashboardTemporaryPassword() {
+ const hex=bytes=>Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+ const password=hex(crypto.getRandomValues(new Uint8Array(16)));
+ const salt=crypto.getRandomValues(new Uint8Array(16));
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
+ const hash=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:100000},key,256);
+ return {password,credential:{algorithm:'pbkdf2_sha256',iterations:100000,salt:hex(salt),hash:hex(new Uint8Array(hash))}};
+}
+
+function confirmDashboardPasswordReset(login) {
+ return new Promise(resolve=>{
+   const dialog=document.createElement('dialog');
+   dialog.className='sac-dialog';
+   dialog.setAttribute('aria-label','Confirmar senha provisória');
+   dialog.innerHTML='<h2>Gerar senha provisória?</h2><p>Isso invalida a senha e as sessões atuais de <strong>'+
+    esc(login)+'</strong>.</p><form method="dialog"><button class="secondary" value="cancelar" autofocus>Cancelar</button> '+
+    '<button class="btn primary" value="gerar">Gerar senha provisória</button></form>';
+   dialog.addEventListener('close',()=>{
+     resolve(dialog.returnValue==='gerar');
+     dialog.remove();
+   },{once:true});
+   document.body.append(dialog);
+   dialog.showModal();
+ });
+}
+
+function showDashboardTemporaryPassword(login,password,expiresAt) {
+ const dialog=document.createElement('dialog');
+ dialog.className='sac-dialog';
+ dialog.setAttribute('aria-label','Senha provisória');
+ const expiry=new Date(expiresAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'});
+ dialog.innerHTML='<h2>Senha provisória</h2><p>Usuário <strong>'+esc(login)+'</strong> · válida até '+esc(expiry)+
+  '</p><label>Senha provisória<input type="text" readonly autocomplete="off"></label>'+
+  '<p>Copie e entregue a senha ao usuário. Ele deverá trocá-la no próximo acesso.</p>'+
+  '<button type="button" class="btn primary">Copiar senha</button> <button type="button" class="secondary">Fechar</button><p role="status"></p>';
+ const input=dialog.querySelector('input'),status=dialog.querySelector('[role=status]');
+ input.value=password;
+ const [copy,close]=dialog.querySelectorAll('button');
+ copy.onclick=async ()=>{
+   try{await navigator.clipboard.writeText(input.value);status.textContent='Senha copiada.';}
+   catch{input.select();status.textContent='A senha está selecionada para copiar.';}
+ };
+ close.onclick=()=>dialog.close();
+ dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+ document.body.append(dialog);
+ dialog.showModal();
+}
+
 async function renderUsers(){
  if(state.user?.perfil!=='ADMIN')return;
  $('#content').innerHTML='<div class="panel">Carregando usuários…</div>';
@@ -1336,7 +1426,7 @@ async function renderUsers(){
  const roles={RCA:'RCA',SUPERVISOR:'Supervisor',GERENTE:'Gerente',DIRETOR:'Diretor',SAC:'SAC',INTERNO:'Interno',FORMACAO_CARGA:'Formação de Carga',ADMIN:'Administrador'};
  const permissionKeys=Object.keys(permissionLabels);
  const options=values=>values.map(x=>'<option value="'+esc(x.value)+'">'+esc(x.label)+'</option>').join('');
- $('#content').innerHTML=`<div class="panel"><h2>Usuários da plataforma</h2><p>Somente administradores podem gerenciar acessos.</p><div style="overflow:auto"><table><thead><tr><th>Nome / login</th><th>Perfil</th><th>Área / acesso</th><th>Situação</th><th></th></tr></thead><tbody>${data.users.map(u=>`<tr><td>${esc(u.nome)}<br><small>${esc(u.login)}</small></td><td>${esc(roles[u.perfil]||u.perfil)}</td><td>${esc((u.areas||[]).map(a=>a==='commercial'?'Comercial':'Logística').join(' · '))}<br><small>${permissionKeys.filter(k=>u.permissions?.[k]?.view).map(k=>esc(permissionLabels[k]+(u.permissions[k].edit?' · edita':' · consulta'))).join('<br>')}</small></td><td>${u.ativo?'Ativo':'Inativo'}</td><td><button type="button" class="secondary" data-edit-user="${esc(u.login)}">Editar</button></td></tr>`).join('')}</tbody></table></div></div>
+ $('#content').innerHTML=`<div class="panel"><h2>Usuários da plataforma</h2><p>Somente administradores podem gerenciar acessos.</p><div style="overflow:auto"><table><thead><tr><th>Nome / login</th><th>Perfil</th><th>Área / acesso</th><th>Situação</th><th></th></tr></thead><tbody>${data.users.map(u=>`<tr><td>${esc(u.nome)}<br><small>${esc(u.login)}</small></td><td>${esc(roles[u.perfil]||u.perfil)}</td><td>${esc((u.areas||[]).map(a=>a==='commercial'?'Comercial':'Logística').join(' · '))}<br><small>${permissionKeys.filter(k=>u.permissions?.[k]?.view).map(k=>esc(permissionLabels[k]+(u.permissions[k].edit?' · edita':' · consulta'))).join('<br>')}</small></td><td>${u.ativo?'Ativo':'Inativo'}</td><td><button type="button" class="secondary" data-edit-user="${esc(u.login)}">Editar</button>${u.ativo&&u.login!==state.user.login?` <button type="button" class="secondary" data-issue-password="${esc(u.login)}">Gerar senha provisória</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>
  <div class="panel" style="margin-top:16px"><h2 id="userFormTitle">Novo usuário</h2><form id="adminUserForm" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:14px">
  <label>Login<input name="login" required minlength="3" maxlength="100" autocomplete="off" style="width:100%;min-height:44px"></label>
  <label>Nome<input name="nome" required maxlength="120" style="width:100%;min-height:44px"></label>
@@ -1350,12 +1440,29 @@ async function renderUsers(){
  <div class="user-permission-note" id="userPermissionNote"></div>
  <label id="userRcaLabel">RCA<select name="cod_rca" style="width:100%;min-height:44px"><option value="">Selecione</option>${options(data.rcas.map(r=>({value:r.code,label:r.code+' · '+r.name})))}</select></label>
  <label id="userSupervisorLabel">Supervisão<select name="supervisor" style="width:100%;min-height:44px"><option value="">Selecione</option>${options([...new Set(data.rcas.map(r=>r.supervisor).filter(Boolean))].map(s=>({value:s,label:s})))}</select></label>
- <label>Nova senha<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" style="width:100%;min-height:44px"><small>Obrigatória no cadastro. Na edição, deixe em branco para manter.</small></label>
+ <p>Ao cadastrar um usuário, a Central gera uma senha provisória para o primeiro acesso.</p>
  <label><input name="ativo" type="checkbox" checked> Usuário ativo</label>
  <div><button type="submit" class="btn">Salvar usuário</button> <button type="button" id="newUserBtn" class="secondary">Novo usuário</button></div>
  <p id="userSaveStatus" role="status" style="grid-column:1/-1"></p></form></div>`;
  applyPageLook('users',data);
  const form=$('#adminUserForm'),field=n=>form.elements.namedItem(n);
+ $$('[data-issue-password]').forEach(button=>button.onclick=async ()=>{
+   const login=button.dataset.issuePassword;
+   button.disabled=true;
+   const status=$('#userSaveStatus');
+   status.textContent='';
+   try{
+     if(!await confirmDashboardPasswordReset(login))return;
+     const {password,credential}=await generateDashboardTemporaryPassword();
+     const result=await api('/api/users',{body:JSON.stringify({issueTemporaryPassword:{login,credential}})});
+     showDashboardTemporaryPassword(login,password,result.expiresAt);
+   }catch(error){
+     status.textContent=error.message;
+     status.scrollIntoView({block:'nearest'});
+   }finally{
+     button.disabled=false;
+   }
+ });
  const applyPermissions=permissions=>{
    for(const k of permissionKeys){
      field(k+'View').checked=permissions?.[k]?.view===true;
@@ -1409,14 +1516,12 @@ async function renderUsers(){
  save.areas=['commercial','logistics'].filter((a,i)=>field(i?'areaLogistics':'areaCommercial').checked);save.permissions=Object.fromEntries(permissionKeys.map(k=>[k,{
   view:field('areaLogistics').checked&&field(k+'View').checked,edit:field('areaLogistics').checked&&field(k+'Edit').checked
  }]));save.logisticsScope=Object.fromEntries(['carriers','sellers','regions'].map(k=>[k,field(k).value.split(/\n/).map(v=>v.trim()).filter(Boolean)]));
- const password=field('password').value;
- if(password){
- const salt=crypto.getRandomValues(new Uint8Array(16)),hex=bytes=>[...new Uint8Array(bytes)].map(v=>v.toString(16).padStart(2,'0')).join('');
- const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
- const hash=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:100000},key,256);
- save.credential={algorithm:'pbkdf2_sha256',iterations:100000,salt:hex(salt),hash:hex(hash)};
- }
- field('password').value='';await api('/api/users',{method:'POST',body:JSON.stringify({save})});await renderUsers();$('#userSaveStatus').textContent='Usuário salvo. As novas permissões serão aplicadas no próximo acesso.';
+ const temporary=field('login').readOnly?null:await generateDashboardTemporaryPassword();
+ if(temporary)save.credential=temporary.credential;
+ const result=await api('/api/users',{method:'POST',body:JSON.stringify({save})});
+ if(temporary)showDashboardTemporaryPassword(save.login.trim().toLowerCase(),temporary.password,result.expiresAt);
+ await renderUsers();
+ if($('#userSaveStatus'))$('#userSaveStatus').textContent='Usuário salvo.';
  }catch(error){status.textContent=error.message||'Não foi possível salvar.';}finally{button.disabled=false;}
  };
  }catch(error){if(state.page==='users')$('#content').innerHTML='<div class="panel">'+esc(error.message)+'</div>';}
