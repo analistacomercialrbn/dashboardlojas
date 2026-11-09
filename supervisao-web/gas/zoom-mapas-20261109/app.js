@@ -3399,6 +3399,11 @@ async function cargoRouteDraw(points,key,box,message,sequence) {
 
 function cargoAlertMessages(alerts = []) {
   return alerts.map(a => {
+    if (a.code === 'VEICULO_NAO_DEFINIDO') return 'Veículo ainda não definido.';
+    if (a.code === 'MOTORISTA_NAO_DEFINIDO') return 'Motorista ainda não definido.';
+    if (a.code === 'TIPO_VEICULO_NAO_INFORMADO') return 'Tipo do veículo ainda não cadastrado.';
+    if (a.code === 'PEDIDOS_COM_PENDENCIA_NA_ORIGEM') return `${a.orders} pedido(s) com pendência na base comercial. Confira antes de despachar.`;
+    if (a.code === 'ORIGEM_NAO_CONFERIDA') return 'Envio feito com os pedidos salvos. A base comercial estava indisponível para conferência.';
     if (a.code === 'PLACA_FORA_DO_PADRAO') return 'Placa '+a.plate+' fora do padrão. Confira o cadastro do veículo.';
     if (a.code === 'PESO_INCOMPLETO') return `${a.orders} pedido(s) sem peso. Peso informado: ${cargoKg(a.knownWeightKg)}.`;
     if (a.code === 'CAPACIDADE_EXCEDIDA') return `Peso informado excede a capacidade em ${cargoKg(a.excessKg)}. Capacidade: ${cargoKg(a.capacityKg)}.`;
