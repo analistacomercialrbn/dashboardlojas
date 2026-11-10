@@ -2079,6 +2079,36 @@ function logTableBody(rows,cols,editable,compact=false){
   || `<tr><td colspan="${cols.length+Number(editable)}">Nenhum registro no recorte.</td></tr>`;
 }
 
+const SAC_DEFAULT_COLUMNS=['invoice','client','cityLabel','forecast','carrier','status','delay','follow'];
+const SAC_SHORT_HEADERS={forecast:'Prazo / previsão',delay:'Dias de atraso',cargoType:'Tipo de carga'};
+
+function transportTableVisible(cols,selection=LOG.transportVisibleColumns||SAC_DEFAULT_COLUMNS){
+ const visible=cols.filter(([key])=>selection.includes(key));
+ return visible.length?visible:cols;
+}
+
+function transportTableChooseColumns(cols,visible,apply){
+ const current=new Set(visible.map(([key])=>key));
+ const dialog=formationDialog('Escolher colunas',`<form class="sac-columns-form">
+  <p>Escolha quais colunas aparecem na tabela e na prévia para captura.</p>
+  <div class="sac-columns-options">${cols.map(([key,label])=>`<label><input type="checkbox" name="column" value="${esc(key)}" ${current.has(key)?'checked':''}> <span>${esc(label)}</span></label>`).join('')}</div>
+  <p data-columns-message role="status"></p>
+  <footer><button type="button" class="btn" data-columns-default>Restaurar padrão</button><button type="button" class="btn" data-columns-all>Marcar todas</button><button type="submit" class="btn primary">Aplicar</button></footer>
+ </form>`);
+ const form=$('form',dialog),boxes=$$('input[name="column"]',form),message=$('[data-columns-message]',form);
+ const select=keys=>{boxes.forEach(box=>{box.checked=keys.includes(box.value);});message.textContent='';};
+ $('[data-columns-default]',form).onclick=()=>select(SAC_DEFAULT_COLUMNS);
+ $('[data-columns-all]',form).onclick=()=>select(cols.map(([key])=>key));
+ form.onchange=()=>{message.textContent='';};
+ form.onsubmit=event=>{
+  event.preventDefault();
+  const selected=boxes.filter(box=>box.checked).map(box=>box.value);
+  if(!selected.length){message.textContent='Selecione pelo menos uma coluna.';return;}
+  dialog.close();
+  apply(selected);
+ };
+}
+
 function transportTableOrder(cols){
  const order=LOG.transportColumnOrder;
  if(!order)return cols;
@@ -2130,16 +2160,20 @@ function logTable(title,rows,cols){
  const transport=LOG.kind==='transport';
  const editable=transport&&!!state.user?.editTransport;
  const onlyOverdue=transport&&!!LOG.transportOnlyOverdue;
- if(transport)cols=transportTableOrder(cols);
- const matches=logTableMatches(rows,cols,filters,onlyOverdue);
+ const allCols=transport?transportTableOrder(cols):cols;
+ cols=transport?transportTableVisible(allCols):allCols;
+ const visibleKeys=new Set(cols.map(([key])=>key));
+ const hiddenFilters=allCols.filter(([key])=>!visibleKeys.has(key)&&normalize(filters[key]));
+ const matches=logTableMatches(rows,allCols,filters,onlyOverdue);
  const {start,end,part}=logTablePage(matches);
- LOG.tableData={rows,cols,filters,editable,matches,transport};
- const columnHead=([key,label])=>transport?`<th scope="col" data-log-column="${esc(key)}"><span data-log-column-title>${esc(label)}</span><button type="button" class="log-column-grip" data-log-column-grip draggable="true" aria-label="Mover coluna ${esc(label)}" title="Arraste ou use ← e → para mover">⠿</button></th>`:`<th scope="col">${esc(label)}</th>`;
+ LOG.tableData={title,rows,cols,allCols,filters,editable,matches,transport};
+ const columnHead=([key,label])=>transport?`<th scope="col" data-log-column="${esc(key)}"><div class="log-column-heading"><span data-log-column-title>${esc(SAC_SHORT_HEADERS[key]||label)}</span><button type="button" class="log-column-grip" data-log-column-grip draggable="true" aria-label="Mover coluna ${esc(label)}" title="Arraste ou use ← e → para mover">⠿</button></div></th>`:`<th scope="col">${esc(label)}</th>`;
  return `<section class="panel log-detail-panel${transport?' log-transport-detail':''}" id="logDetail">
-  <div class="log-table-heading"><div><h3>${esc(title)}</h3><p>${transport?'Combine os filtros e arraste pelo ícone para mover colunas.':'Use os campos sob os títulos para combinar filtros. Use as setas dos títulos para ordenar a página.'}</p></div>
-  <div class="log-table-actions">${transport?`<button type="button" class="btn" id="logOverdue" aria-pressed="${onlyOverdue}">Em atraso</button><button type="button" class="btn" id="logPreview" ${matches.length?'':'disabled'}>Prévia para captura</button>`:''}<button type="button" class="btn" id="logExport">Exportar CSV</button></div></div>
+  <div class="log-table-heading"><div><h3>${esc(title)}</h3><p>${transport?'Escolha as colunas e arraste pelo ícone para reorganizar.':'Use os campos sob os títulos para combinar filtros. Use as setas dos títulos para ordenar a página.'}</p></div>
+  <div class="log-table-actions">${transport?`<button type="button" class="btn" id="logOverdue" aria-pressed="${onlyOverdue}">Em atraso</button><button type="button" class="btn" id="logChooseColumns">Colunas (${cols.length}/${allCols.length})</button><button type="button" class="btn" id="logPreview" ${matches.length?'':'disabled'}>Prévia para captura</button>`:''}<button type="button" class="btn" id="logExport">Exportar CSV</button></div></div>
   ${transport?'<p id="logTableFeedback" class="log-table-feedback" role="status"></p>':''}
-  <div class="table-wrap"><table class="log-table" data-column-filters-ready="1">${transport?transportTableColumns(cols,editable):''}<thead>
+  ${hiddenFilters.length?`<div class="log-hidden-filters"><span>Filtros em colunas ocultas</span>${hiddenFilters.map(([key,label])=>`<button type="button" class="btn" data-remove-hidden-filter="${esc(key)}" aria-label="Remover filtro de ${esc(label)}">${esc(label)} · ${esc(filters[key])} ×</button>`).join('')}</div>`:''}
+  <div class="table-wrap"><table class="log-table" data-column-filters-ready="1"${transport?` style="--log-table-mobile-width:${(cols.length+Number(editable))*84}px"`:''}>${transport?transportTableColumns(cols,editable):''}<thead>
   <tr>${editable?'<th scope="col">SAC</th>':''}${cols.map(columnHead).join('')}</tr>
   ${tableColumnFilterRow(editable?[['',''],...cols]:cols,filters)}</thead>
   <tbody>${logTableBody(part,cols,editable,transport)}</tbody></table></div>
@@ -2147,13 +2181,15 @@ function logTable(title,rows,cols){
  </section>`;
 }
 
-function bindTransportColumnOrder(table,cols,editable,renderPage){
+function bindTransportColumnOrder(table,cols,editable,renderPage,allCols=cols){
  const head=table.tHead,offset=Number(editable);
  const move=(from,to)=>{
   if(from<0||to<0||from===to||to>=cols.length)return;
   const [column]=cols.splice(from,1);
   cols.splice(to,0,column);
-  LOG.transportColumnOrder=cols.map(([key])=>key);
+  const visible=new Set(cols.map(([key])=>key));
+  let index=0;
+  LOG.transportColumnOrder=allCols.map(([key])=>visible.has(key)?cols[index++][0]:key);
   for(const cells of [...Array.from(head.rows,row=>row.cells),table.querySelector('colgroup').children]){
    const source=cells[from+offset],target=cells[to+offset];
    if(from<to)target.after(source);else target.before(source);
@@ -2198,7 +2234,7 @@ function logBindTable(){
  const panel=$('#logDetail');
  if(!panel)return;
  const table=$('table',panel),body=table.tBodies[0],prev=$('#logPrev',panel),next=$('#logNext',panel),count=$('#logTableCount',panel);
- const {rows,cols,filters,editable,transport}=LOG.tableData;
+ const {rows,cols,allCols,filters,editable,transport}=LOG.tableData;
  const preview=$('#logPreview',panel),overdue=$('#logOverdue',panel);
  let {matches}=LOG.tableData;
  const bindEdits=()=>$$('[data-sac-edit]',body).forEach(button=>button.onclick=()=>sacEdit(button.dataset.sacEdit));
@@ -2215,7 +2251,7 @@ function logBindTable(){
  };
  bindEdits();
  const filterTable=()=>{
-  matches=logTableMatches(rows,cols,filters,transport&&!!LOG.transportOnlyOverdue);
+  matches=logTableMatches(rows,allCols,filters,transport&&!!LOG.transportOnlyOverdue);
   LOG.tablePage=0;
   renderPage();
  };
@@ -2226,7 +2262,22 @@ function logBindTable(){
   filterTable();
  });
  if(transport){
-  bindTransportColumnOrder(table,cols,editable,renderPage);
+  bindTransportColumnOrder(table,cols,editable,renderPage,allCols);
+  $('#logChooseColumns',panel).onclick=()=>transportTableChooseColumns(transportTableOrder(allCols),cols,selected=>{
+   const currentPanel=$('#logDetail'),current=LOG.tableData;
+   if(!currentPanel||state.module!=='logistics'||LOG.page!=='transport'||!current?.transport)return;
+   LOG.transportVisibleColumns=selected;
+   currentPanel.outerHTML=logTable(current.title,current.rows,current.allCols);
+   logBindTable();
+   $('#logChooseColumns')?.focus({preventScroll:true});
+  });
+  $$('[data-remove-hidden-filter]',panel).forEach(button=>button.onclick=()=>{
+   delete filters[button.dataset.removeHiddenFilter];
+   const summary=button.parentElement;
+   button.remove();
+   if(!summary.querySelector('button'))summary.remove();
+   filterTable();
+  });
   overdue.onclick=()=>{
    LOG.transportOnlyOverdue=!LOG.transportOnlyOverdue;
    overdue.setAttribute('aria-pressed',String(LOG.transportOnlyOverdue));
@@ -2240,7 +2291,8 @@ function logBindTable(){
  prev.onclick=()=>{LOG.tablePage=Math.max(0,LOG.tablePage-1);renderPage();};
  next.onclick=()=>{LOG.tablePage++;renderPage();};
  $('#logExport',panel).onclick=()=>{
-  const clean=x=>{let s=String(x??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const text='\uFEFF'+[cols.map(c=>c[1]),...matches.map(r=>cols.map(c=>r[c[0]]??''))].map(r=>r.map(clean).join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=u;a.download='rebanho-logistica-'+LOG.page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+  const exportCols=transport?transportTableOrder(allCols):cols;
+  const clean=x=>{let s=String(x??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const text='\uFEFF'+[exportCols.map(c=>c[1]),...matches.map(r=>exportCols.map(c=>r[c[0]]??''))].map(r=>r.map(clean).join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=u;a.download='rebanho-logistica-'+LOG.page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
  };
 }
 function logSetKind(kind){const period={year:LOG.filters.year,month:LOG.filters.month},prev=LOG.kind;LOG.kindFilters[prev]=structuredClone(LOG.filters);LOG.filters=LOG.kindFilters[kind]||{year:'Todos',month:'Todos',uf:[],region:[],city:[],seller:[],driver:[],vehicle:[],status:[],product:[],route:[],carrier:[]};Object.assign(LOG.filters,period);LOG.kind=kind;if(kind==='transport'&&LOG.metric==='wait')LOG.metric='weight';LOG.search='';LOG.transportSearchDraft='';LOG.tablePage=0;}
