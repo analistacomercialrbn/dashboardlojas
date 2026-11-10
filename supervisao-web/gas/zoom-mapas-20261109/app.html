@@ -438,6 +438,12 @@
 @container transport-workbench (min-width:930px){
   .transport-workbench .transport-note-list{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+.log-column-filters td{padding:4px 6px;background:#fff4e8;vertical-align:middle}
+.log-column-filters input{width:100%;min-width:5rem;box-sizing:border-box;min-height:32px;padding:4px 7px;border:1px solid #d6bba3;border-radius:5px;background:#fff;color:#432a1f;font:inherit;font-size:13px}
+.log-column-filters input::placeholder{color:#765f50}
+.log-column-filters input:focus-visible{outline:2px solid #ad5727;outline-offset:1px}
+.log-table tbody tr[hidden]{display:none}
+@media (pointer:coarse){.log-column-filters input{font-size:16px;min-height:40px}}
 </style>
 <style>
 .history-annual-scroll{overflow-x:auto;max-width:100%}
@@ -1361,6 +1367,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c8bf779b3f219235bb9e0b9e4c9e7e490c877975/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@3e1e69872b8ac1baa2db42254ee6c6096e7a964b/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
