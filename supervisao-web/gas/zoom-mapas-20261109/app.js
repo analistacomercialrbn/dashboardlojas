@@ -136,12 +136,22 @@ function renderUser(){
   $('#userCard').innerHTML=`<div class="avatar">${esc(initials(u.nome))}</div><div><div class="user-name">${esc(u.nome||u.login)}</div><div class="user-role">${esc(u.formationOnly?'Formação de Carga':(u.perfil||'').toLowerCase())}</div></div>`;
 }
 function bindLogin(){
+  const loginPassword=$('#loginPassword'),toggle=$('#loginPasswordToggle');
+  const setPasswordVisible=visible=>{
+    loginPassword.type=visible?'text':'password';
+    const label=visible?'Ocultar senha':'Mostrar senha';
+    toggle.setAttribute('aria-label',label);
+    toggle.title=label;
+  };
+  toggle.addEventListener('click',()=>setPasswordVisible(loginPassword.type==='password'));
   $('#loginForm').addEventListener('submit',async e=>{
     e.preventDefault(); $('#loginError').textContent='';$('#loginNotice').textContent='';
-    const btn=e.currentTarget.querySelector('button'); btn.disabled=true; btn.textContent='Entrando…';
+    setPasswordVisible(false);
+    toggle.disabled=true;
+    const btn=e.currentTarget.querySelector('[type=submit]'); btn.disabled=true; btn.textContent='Entrando…';
     try{
-      const data=await api('/api/login',{method:'POST',body:JSON.stringify({login:$('#loginUser').value,password:$('#loginPassword').value})});
-      $('#loginPassword').value='';
+      const data=await api('/api/login',{method:'POST',body:JSON.stringify({login:$('#loginUser').value,password:loginPassword.value})});
+      loginPassword.value='';
       if(data.passwordChangeRequired){
         state.user=null;
         showLogin(true);
@@ -150,7 +160,7 @@ function bindLogin(){
         enterApp();
       }
     }catch(err){$('#loginError').textContent=err.message||'Usuário ou senha inválidos.'}
-    finally{btn.disabled=false;btn.textContent='Entrar'}
+    finally{toggle.disabled=false;btn.disabled=false;btn.textContent='Entrar'}
   });
   $('#temporaryPasswordForm').addEventListener('submit',async e=>{
     e.preventDefault();
