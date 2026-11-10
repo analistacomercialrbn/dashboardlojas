@@ -2099,9 +2099,22 @@ function transportQueueModel(rows,today,day,view='overdue',query=''){
       (a.forecast||'9999').localeCompare(b.forecast||'9999') || String(a.client).localeCompare(String(b.client),'pt-BR'));
   return {counts,rows:selected};
 }
-async function sacImportRows(file) {
-  if(!file||!/\.xls$/i.test(file.name)||file.size>5*1024*1024)throw new Error('Selecione um relatório original .xls de até 5 MB.');
+function sacReportCarrier(file){
+  const name=normalize(file?.name||'');
+  return name.includes('CBIRDEX')||name.endsWith('.CSV')?'CBIRDEX':
+    name.includes('TRANSRAPIDO')?'TRANSRÁPIDO':name.includes('F&P')?'F&P':'';
+}
+async function sacImportFile(file,carrier) {
+  const cbirdex=carrier==='CBIRDEX', extension=cbirdex?/\.csv$/i:/\.xls$/i;
+  if(!file||!extension.test(file.name)||file.size>5*1024*1024){
+    throw new Error('Selecione o relatório original '+(cbirdex?'.csv da CBIRDEX':'.xls da transportadora')+' de até 5 MB.');
+  }
   const text=await file.text();
+  if(cbirdex){
+    if(text.length>650000)throw new Error('Use um arquivo com até 650 KB de dados.');
+    if(text.includes('\uFFFD'))throw new Error('Os caracteres do relatório não puderam ser lidos. Envie o CSV original da CBIRDEX.');
+    return {csv:text};
+  }
   if(!/<table(?:\s|>)/i.test(text))throw new Error('Formato diferente dos relatórios de remessas validados.');
   // O conteúdo do relatório fica no template inerte e só seus textos são enviados.
   const template=document.createElement('template');
@@ -2114,7 +2127,7 @@ async function sacImportRows(file) {
     if(header<0)continue;
     const grid=rows.slice(header);
     if(grid.length>1001||JSON.stringify(grid).length>650000)throw new Error('Use um arquivo com até 1.000 linhas e 650 KB de dados.');
-    return grid;
+    return {rows:grid};
   }
   throw new Error('Não encontrei a tabela de remessas no arquivo.');
 }
@@ -2131,7 +2144,7 @@ async function sacImportOpen() {
   const dialog=formationDialog('Importar relatório da transportadora',
     `<form id="sacImportForm"><p>Escolha a transportadora, envie o relatório original e confira a prévia antes de gravar no acompanhamento.</p>
     <label>Transportadora <select name="carrier" required disabled><option value="">Carregando…</option></select></label>
-    <label>Relatório de remessas <input type="file" name="report" accept=".xls" required disabled></label>
+    <label>Relatório de remessas <input type="file" name="report" accept=".xls,.csv" required disabled></label>
     <div id="sacImportPreview" hidden></div>
     <p id="sacImportStatus" role="status"></p>
     <footer><button type="button" class="btn" id="sacImportBack" hidden>Voltar à seleção</button>
@@ -2159,8 +2172,7 @@ async function sacImportOpen() {
   }catch(error){status.textContent=error.message;return;}
 
   file.onchange=()=>{
-    const name=normalize(file.files[0]?.name || '');
-    const guess=name.includes('TRANSRAPIDO')?'TRANSRÁPIDO':name.includes('F&P')?'F&P':'';
+    const guess=sacReportCarrier(file.files[0]);
     if(guess&&Array.from(select.options).some(option=>option.value===guess))select.value=guess;
   };
   form.onsubmit=async event=>{
@@ -2169,14 +2181,14 @@ async function sacImportOpen() {
     busy=true;submit.disabled=true;back.disabled=true;
     try{
       if(!payload){
-        const selected=file.files[0], name=normalize(selected?.name||'');
-        if((name.includes('TRANSRAPIDO')&&select.value!=='TRANSRÁPIDO')||(name.includes('F&P')&&select.value!=='F&P')){
-          throw new Error('O nome do arquivo indica outra transportadora. Confira a seleção.');
+        const selected=file.files[0], carrier=select.value, guess=sacReportCarrier(selected);
+        if(guess&&guess!==carrier){
+          throw new Error('O nome ou o formato do arquivo indica outra transportadora. Confira a seleção.');
         }
         status.textContent='Conferindo as notas com o acompanhamento…';
-        const rows=await sacImportRows(selected), carrier=select.value;
-        const result=await request('importPreview',{carrier,rows});
-        payload={carrier,rows,previewToken:result.previewToken};
+        const report=await sacImportFile(selected,carrier);
+        const result=await request('importPreview',{carrier,...report});
+        payload={carrier,...report,previewToken:result.previewToken};
         select.disabled=true;file.disabled=true;box.hidden=false;back.hidden=false;
         box.innerHTML=`<h3>Prévia · ${esc(result.carrier)}</h3><p>${esc(selected.name)}</p>`+sacImportSummary(result.summary);
         if(result.examples.length)box.innerHTML+=`<details><summary>NFs para conferir</summary><ul>${result.examples.map(invoice=>`<li>${esc(invoice)}</li>`).join('')}</ul></details>`;
