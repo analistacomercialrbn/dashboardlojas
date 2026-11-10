@@ -2256,7 +2256,7 @@ async function sacEdit(key){
 function transportToday(now=new Date()){return (()=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now).map(x=>[x.type,x.value]));return p.year+'-'+p.month+'-'+p.day;})();}
 function transportDayShift(date,days){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
 function transportDate(date){return /^\d{4}-\d{2}-\d{2}$/.test(date||'')?date.split('-').reverse().join('/'):'Não informada';}
-function transportQueueModel(rows,today,day,view='overdue',query=''){
+function transportQueueModel(rows,today,day,view='overdue',query='',searchRows=rows){
   const hasFollow = row => !!String(row.follow||'').trim() && !['-','—','N/A'].includes(normalize(row.follow));
   const isOpen = row => !row.delivered && !row.deliveredDate;
   const overdue = row => isOpen(row) && !!row.forecast && row.forecast < today;
@@ -2267,16 +2267,25 @@ function transportQueueModel(rows,today,day,view='overdue',query=''){
     overdueWithFollow: row => overdue(row) && hasFollow(row),
     overdue,
     occurrences: row => row.occurrence,
-    shipped: row => row.collected === day,
+    shipped: row => !!row.collected && (!day || row.collected === day),
     noFollow: row => attention(row) && !hasFollow(row),
     open: isOpen,
     noForecast: row => isOpen(row) && !row.forecast
   };
   const counts = Object.fromEntries(Object.entries(groups).map(([key,test]) => [key, rows.filter(test).length]));
   const q = normalize(query);
-  const selected = rows.filter(groups[view] || overdue)
-    .filter(row => !q || normalize([row.invoice,row.client,row.city,row.carrier,row.follow,row.problem,row.category,row.responsible].join(' ')).includes(q))
-    .map(row => ({
+  const invoiceQuery = q.match(/^(?:NF(?:-?E)?\s+)?(\d+)(?:\s*-\s*(\d+))?$/);
+  const candidates = q ? searchRows.filter(row => {
+    if (invoiceQuery) {
+      const [,number,series]=invoiceQuery;
+      const identifier=number.replace(/^0+(?=\d)/,'');
+      return logInvoiceParts(row.invoice).some(note=>note.number===identifier &&
+        (!series || note.series===series.replace(/^0+(?=\d)/,''))) ||
+        normalize(row.invoice).includes(q);
+    }
+    return normalize([row.invoice,row.client,row.city,row.carrier,row.follow,row.problem,row.category,row.responsible].join(' ')).includes(q);
+  }) : rows.filter(groups[view] || overdue);
+  const selected = candidates.map(row => ({
       ...row,
       queueDelay: overdue(row) ? Math.max(0,Math.round((Date.parse(today+'T12:00:00Z')-Date.parse(row.forecast+'T12:00:00Z'))/86400000)) : 0,
       needsFollow: attention(row) && !hasFollow(row),
@@ -2409,16 +2418,19 @@ async function sacImportOpen() {
 }
 
 function transportQueue(){
- const today=transportToday();if(!LOG.queue)LOG.queue={view:'overdueNoFollow',day:transportDayShift(today,-1),query:'',page:0};const q=LOG.queue;
- const ignorePeriod=!LOG.periodSelected;
- const scope=logRows(LOG.cache.transport?.rows||[],{ignorePeriod}),model=transportQueueModel(scope,today,q.day,q.view,q.query);q.rows=model.rows;const selected=sacSelection(model.rows);
+ const today=transportToday();
+ const q=LOG.queue||={view:'overdueNoFollow',day:'',query:'',page:0};
+ const all=LOG.cache.transport?.rows||[], searching=!!q.query, ignorePeriod=!LOG.periodSelected;
+ const scope=logRows(all,{ignorePeriod}),model=transportQueueModel(scope,today,q.day,q.view,q.query,all);
+ q.rows=model.rows;
+ const selected=sacSelection(model.rows);
  const titles={dueToday:'Vencem hoje',overdueNoFollow:'Atrasadas sem follow-up',overdueWithFollow:'Atrasadas acompanhadas',overdue:'Todos os atrasos',occurrences:'Ocorrências registradas',shipped:'Saídas pela coleta',noFollow:'Sem follow-up',open:'Todas em aberto'},size=window.matchMedia('(max-width:760px)').matches?4:8,start=Math.min(q.page*size,Math.max(0,Math.floor((model.rows.length-1)/size)*size)),shown=model.rows.slice(start,start+size);
  return `<section class="panel transport-workbench" id="transportWorkbench"><div class="transport-workbench-heading"><div><span class="history-eyebrow">${state.user?.transportOnly?'ROTINA DO SAC':'ACOMPANHAMENTO GERENCIAL · SAC'}</span><h2>Controle de entregas e ocorrências</h2><p>${ignorePeriod?'Acompanhamento de todas as emissões, inclusive de meses anteriores.':'Acompanhamento das notas emitidas no período selecionado.'} Transportadora, cidade e demais filtros continuam valendo.</p></div><div class="sac-import-actions"><span class="transport-asof">Posição em ${transportDate(today)}</span>${state.user?.perfil==='SAC'&&state.user?.editTransport?'<button type="button" class="btn primary" id="sacImportOpen">Importar relatório</button>':''}</div></div>
- <div class="transport-queue-kpis">${[['dueToday','Vencem hoje','Notas em aberto com prazo para hoje'],['overdueNoFollow','Atrasadas sem follow-up','Prioridade para cobrança'],['overdueWithFollow','Atrasadas acompanhadas','Com follow-up registrado']].map(([v,title,note])=>`<button type="button" class="transport-queue-kpi ${q.view===v?'active':''} ${v==='overdueNoFollow'?'queue-danger':''}" data-queue-view="${v}" aria-pressed="${q.view===v}"><span>${esc(title)}</span><strong>${logN(model.counts[v])}</strong><small>${esc(note)}</small></button>`).join('')}</div>
- <div class="transport-queue-toolbar"><div class="transport-view-tabs" role="group" aria-label="Filtrar acompanhamento">${Object.entries(titles).map(([v,t])=>`<button type="button" data-queue-view="${v}" aria-pressed="${q.view===v}" class="${q.view===v?'active':''}">${t}</button>`).join('')}</div><div class="transport-queue-controls"><label>Data da coleta<input type="date" id="transportQueueDay" value="${esc(q.day)}"></label><button class="btn" id="transportQueueYesterday">Ontem</button><button class="btn" id="transportQueueToday">Hoje</button><label class="transport-queue-search">Buscar nota, cliente ou follow-up (Enter)<input type="search" id="transportQueueSearch" enterkeyhint="search" value="${esc(q.queryDraft??q.query)}" placeholder="NF, cliente, transportadora…"></label></div></div>
- <div class="transport-queue-caption"><strong>${esc(titles[q.view])} · ${logN(model.rows.length)} ${model.rows.length===1?'nota':'notas'}${q.query?(model.rows.length===1?' encontrada':' encontradas'):''}</strong><small>${state.user?.editTransport?'Abra a nota para preencher o acompanhamento e salvar na planilha.':'Abra a nota para consultar o acompanhamento registrado pelo SAC.'}</small></div>
+ <div class="transport-queue-kpis">${[['dueToday','Vencem hoje','Notas em aberto com prazo para hoje'],['overdueNoFollow','Atrasadas sem follow-up','Prioridade para cobrança'],['overdueWithFollow','Atrasadas acompanhadas','Com follow-up registrado']].map(([v,title,note])=>`<button type="button" class="transport-queue-kpi ${!searching&&q.view===v?'active':''} ${v==='overdueNoFollow'?'queue-danger':''}" data-queue-view="${v}" aria-pressed="${!searching&&q.view===v}"><span>${esc(title)}</span><strong>${logN(model.counts[v])}</strong><small>${esc(note)}</small></button>`).join('')}</div>
+ <div class="transport-queue-toolbar"><div class="transport-view-tabs" role="group" aria-label="Filtrar acompanhamento">${Object.entries(titles).map(([v,t])=>`<button type="button" data-queue-view="${v}" aria-pressed="${!searching&&q.view===v}" class="${!searching&&q.view===v?'active':''}">${t}</button>`).join('')}</div><div class="transport-queue-controls"><label>Data da coleta<input type="date" id="transportQueueDay" value="${esc(q.day)}"></label><button class="btn" id="transportQueueYesterday">Ontem</button><button class="btn" id="transportQueueToday">Hoje</button>${q.day?'<button class="btn" id="transportQueueClearDay">Limpar data</button>':''}<label class="transport-queue-search">Buscar nota, cliente ou follow-up (Enter)<input type="search" id="transportQueueSearch" enterkeyhint="search" value="${esc(q.queryDraft??q.query)}" placeholder="NF, cliente, transportadora…"></label>${searching?'<button class="btn" id="transportQueueClearSearch">Limpar busca</button>':''}</div></div>
+ <div class="transport-queue-caption"><strong>${searching?'Resultado da busca':esc(titles[q.view])} · ${logN(model.rows.length)} ${model.rows.length===1?'nota':'notas'}${q.query?(model.rows.length===1?' encontrada':' encontradas'):''}</strong><small>${searching?'Busca em todo o histórico disponível para seu perfil, inclusive notas entregues.':state.user?.editTransport?'Abra a nota para preencher o acompanhamento e salvar na planilha.':'Abra a nota para consultar o acompanhamento registrado pelo SAC.'}</small></div>
  ${sacBatchBar(model.rows,selected)}
- <div class="transport-note-list">${shown.map(r=>`<article class="transport-note-row ${r.queueDelay?'is-overdue':''}"><div class="transport-note-identity">${state.user?.editTransport?`<label class="sac-note-select"><input type="checkbox" data-sac-select="${esc(r.id)}" aria-label="Selecionar NF ${esc(r.invoice||'não informada')}" ${selected.has(r.id)?'checked':''}>Selecionar nota</label>`:''}<span class="transport-note-number">NF ${esc(r.invoice||'Não informada')}</span><h3>${esc(r.client||'Cliente não informado')}</h3><p>${esc(r.carrier||'Transportadora não informada')} · ${esc(r.city||r.cityLabel||'Cidade não informada')}${r.uf?' / '+esc(r.uf):''}</p><div class="transport-note-badges">${r.delivered?'<span>Entregue</span>':r.queueDelay?`<span class="badge-overdue">${r.queueDelay} ${r.queueDelay===1?'dia':'dias'} após o prazo</span>`:r.dueToday?'<span class="badge-due">Vence hoje</span>':'<span>Em aberto</span>'}${r.occurrence?'<span class="badge-occurrence">Ocorrência</span>':''}${r.needsFollow?'<span class="badge-no-follow">Sem follow-up</span>':''}</div></div><dl class="transport-note-dates"><div><dt>Coleta / saída</dt><dd>${transportDate(r.collected)}</dd></div><div><dt>Prazo de entrega</dt><dd>${transportDate(r.forecast)}</dd></div></dl><div class="transport-note-follow"><small>ÚLTIMO FOLLOW-UP REGISTRADO</small><p>${esc(r.hasFollow?r.follow:'Nenhum follow-up registrado.')}</p>${r.problem||r.category?`<small>Ocorrência: ${esc(r.problem||r.category)}</small>`:''}${r.responsible?`<small>Responsável: ${esc(r.responsible)}</small>`:''}</div><button type="button" class="btn transport-note-open" data-transport-note="${esc(r.id)}">${state.user?.editTransport?'Acompanhar / editar':'Ver acompanhamento'} ${moduleIcon('M9 5l7 7-7 7')}</button></article>`).join('')||`<div class="transport-queue-empty"><strong>Nenhuma nota nesta seleção.</strong><p>${scope.length?'Confira os outros grupos ou selecione outra data de coleta.':'Não há notas para os filtros e o recorte de acesso atuais.'}</p></div>`}</div>
+ <div class="transport-note-list">${shown.map(r=>`<article class="transport-note-row ${r.queueDelay?'is-overdue':''}"><div class="transport-note-identity">${state.user?.editTransport?`<label class="sac-note-select"><input type="checkbox" data-sac-select="${esc(r.id)}" aria-label="Selecionar NF ${esc(r.invoice||'não informada')}" ${selected.has(r.id)?'checked':''}>Selecionar nota</label>`:''}<span class="transport-note-number">NF ${esc(r.invoice||'Não informada')}</span><h3>${esc(r.client||'Cliente não informado')}</h3><p>${esc(r.carrier||'Transportadora não informada')} · ${esc(r.city||r.cityLabel||'Cidade não informada')}${r.uf?' / '+esc(r.uf):''}</p><div class="transport-note-badges">${r.delivered?'<span>Entregue</span>':r.queueDelay?`<span class="badge-overdue">${r.queueDelay} ${r.queueDelay===1?'dia':'dias'} após o prazo</span>`:r.dueToday?'<span class="badge-due">Vence hoje</span>':'<span>Em aberto</span>'}${r.occurrence?'<span class="badge-occurrence">Ocorrência</span>':''}${r.needsFollow?'<span class="badge-no-follow">Sem follow-up</span>':''}</div></div><dl class="transport-note-dates"><div><dt>Coleta / saída</dt><dd>${transportDate(r.collected)}</dd></div><div><dt>Prazo de entrega</dt><dd>${transportDate(r.forecast)}</dd></div></dl><div class="transport-note-follow"><small>ÚLTIMO FOLLOW-UP REGISTRADO</small><p>${esc(r.hasFollow?r.follow:'Nenhum follow-up registrado.')}</p>${r.problem||r.category?`<small>Ocorrência: ${esc(r.problem||r.category)}</small>`:''}${r.responsible?`<small>Responsável: ${esc(r.responsible)}</small>`:''}</div><button type="button" class="btn transport-note-open" data-transport-note="${esc(r.id)}">${state.user?.editTransport?'Acompanhar / editar':'Ver acompanhamento'} ${moduleIcon('M9 5l7 7-7 7')}</button></article>`).join('')||`<div class="transport-queue-empty"><strong>Nenhuma nota nesta seleção.</strong><p>${searching?'Confira o número da NF ou tente outro termo.':scope.length?'Confira os outros grupos ou selecione outra data de coleta.':'Não há notas para os filtros e o recorte de acesso atuais.'}</p></div>`}</div>
  <div class="log-pagination"><button class="btn" id="transportQueuePrev" ${start===0?'disabled':''}>Anterior</button><span>${model.rows.length?start+1:0}–${Math.min(start+size,model.rows.length)} de ${model.rows.length}</span><button class="btn" id="transportQueueNext" ${start+size>=model.rows.length?'disabled':''}>Próxima</button></div><p class="transport-queue-note">Contagem por registro do acompanhamento; uma remessa pode reunir várias NFs. Dias após o prazo são contados em dias corridos. Saídas usam a data de coleta informada pela transportadora; não são estimadas pela emissão da NF. ${model.counts.noForecast?logN(model.counts.noForecast)+' notas em aberto sem prazo informado não são classificadas como atrasadas.':''} Ocorrências incluem notas entregues; confira o follow-up para acompanhar o andamento.</p></section>`;
 }
 function transportBindQueue(){if(!$('#transportWorkbench'))return;
@@ -2430,12 +2442,28 @@ function transportBindQueue(){if(!$('#transportWorkbench'))return;
  $$('[data-sac-select]').forEach(b=>b.onchange=()=>{const selected=new Set(LOG.queue.selected);if(b.checked&&selected.size>=500){b.checked=false;$('#sacSelectionCount').textContent='Limite de 500 notas por lote.';return;}if(b.checked)selected.add(b.dataset.sacSelect);else selected.delete(b.dataset.sacSelect);LOG.queue.selected=[...selected];transportRefreshQueue();});
  }
 
- $$('[data-queue-view]').forEach(b=>b.onclick=()=>{LOG.queue.view=b.dataset.queueView;LOG.queue.page=0;transportRefreshQueue();});
- $('#transportQueueDay').onchange=e=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value))return;LOG.queue.day=e.target.value;LOG.queue.view='shipped';LOG.queue.page=0;transportRefreshQueue();};
- for(const [id,days]of [['transportQueueYesterday',-1],['transportQueueToday',0]])$('#'+id).onclick=()=>{LOG.queue.day=transportDayShift(transportToday(),days);LOG.queue.view='shipped';LOG.queue.page=0;transportRefreshQueue();};
  const queue=LOG.queue;
+ const showQueue=(view=queue.view)=>{
+   queue.query=queue.queryDraft='';
+   queue.view=view;
+   queue.page=0;
+   transportRefreshQueue();
+ };
+ const selectDay=day=>{queue.day=day;showQueue('shipped');};
+ $$('[data-queue-view]').forEach(button=>button.onclick=()=>showQueue(button.dataset.queueView));
+ $('#transportQueueDay').onchange=event=>{
+   const day=event.target.value;
+   if(!day||/^\d{4}-\d{2}-\d{2}$/.test(day))selectDay(day);
+ };
+ const clearDay=$('#transportQueueClearDay');
+ if(clearDay)clearDay.onclick=()=>selectDay('');
+ for(const [id,days] of [['transportQueueYesterday',-1],['transportQueueToday',0]]){
+   $('#'+id).onclick=()=>selectDay(transportDayShift(transportToday(),days));
+ }
+ const clearSearch=$('#transportQueueClearSearch');
+ if(clearSearch)clearSearch.onclick=()=>{showQueue();$('#transportQueueSearch')?.focus({preventScroll:true});};
  bindSacSearch($('#transportQueueSearch'),value=>{queue.queryDraft=value;},value=>{
-   queue.query=value;
+   queue.query=value.trim();
    queue.page=0;
    transportRefreshQueue();
  });
