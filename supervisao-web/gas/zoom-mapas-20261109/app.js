@@ -1930,6 +1930,139 @@ else{if(!logPageAllowed(LOG.page))LOG.page=['formation','agenda','transport','ov
  else logLoad(LOG.kind,false,true);
 }},180000);}}
 
+// Fechamento por mês de carregamento. Valores do modelo enviado pela Rebanho.
+const DRIVER_REPORT_COLUMNS=[['driver','Motorista'],['tonnes','Toneladas','tonnes'],['orders','Pedidos¹','num'],['volumes','Volumes','num'],['tonnageBonus','Prêmio por rota (R$)','precise'],['orderBonus','Prêmio por pedidos (R$)','num'],['total','Total previsto (R$)','num'],['review','Conferência']];
+
+function driverClosingModel(all,month,selected='',rules=LOG.driverRules){
+ const dated=all.filter(row=>row.loaded?.slice(0,7)===month);
+ const byDriver=new Map(),routes=[];
+ let unassigned=0;
+ for(const row of dated){
+  const key=normalize(row.driver);
+  if(!key){unassigned++;continue;}
+  if(selected&&key!==selected)continue;
+  if(!byDriver.has(key))byDriver.set(key,{key,driver:row.driver,records:0,orders:0,weight:0,volumes:0,missingWeight:0,missingRate:0,delivered:0,occurrences:0,routes:new Map()});
+  const driver=byDriver.get(key),routeKey=normalize(row.route),rate=rules.routes[routeKey];
+  const knownWeight=row.weight!==null&&row.weight!==''&&row.weight!==undefined&&Number.isFinite(Number(row.weight))&&Number(row.weight)>=0;
+  if(!driver.routes.has(routeKey))driver.routes.set(routeKey,{driver:driver.driver,route:row.route||'Sem classificação',rate,weight:0,orders:0,records:0,missingWeight:0});
+  const route=driver.routes.get(routeKey),orders=row.cityLabel?1:0;
+  driver.records++;route.records++;driver.orders+=orders;route.orders+=orders;
+  if(knownWeight){driver.weight+=Number(row.weight);route.weight+=Number(row.weight);}
+  else{driver.missingWeight++;route.missingWeight++;}
+  if(rate===undefined)driver.missingRate++;
+  if(row.volumes!==null&&Number.isFinite(Number(row.volumes)))driver.volumes+=Number(row.volumes);
+  if(row.delivered)driver.delivered++;
+  if(row.occurrence)driver.occurrences++;
+ }
+ const drivers=[...byDriver.values()].map(driver=>{
+  let tonnageBonus=0;
+  for(const route of driver.routes.values()){
+   route.tonnes=route.weight/1000;
+   route.bonus=route.rate===undefined?null:route.tonnes*route.rate;
+   tonnageBonus+=route.bonus||0;
+   routes.push(route);
+  }
+  const orderBonus=driver.orders*rules.perOrder;
+  const missingIdentity=['EXTERNO','TERCEIRO','SEM MOTORISTA'].includes(driver.key);
+  return {...driver,missingIdentity,tonnes:driver.weight/1000,tonnageBonus,orderBonus,
+   total:Math.round((tonnageBonus+orderBonus+Number.EPSILON)*100)/100,
+   review:driver.missingWeight||driver.missingRate||missingIdentity?'Pendente'+(missingIdentity?' · identificar motorista':'')+(driver.missingWeight?' · '+driver.missingWeight+' sem peso':'')+(driver.missingRate?' · '+driver.missingRate+' sem regra de rota':''):'Conferir para RH'};
+ }).sort((a,b)=>b.weight-a.weight||a.driver.localeCompare(b.driver,'pt-BR'));
+ return {month,drivers,routes,unassigned,rules,withoutDate:all.filter(row=>!row.loaded).length,
+  tonnes:logSum(drivers,'tonnes'),orders:logSum(drivers,'orders'),total:logSum(drivers,'total'),
+  incomplete:drivers.some(driver=>driver.missingWeight||driver.missingRate||driver.missingIdentity)||unassigned>0};
+}
+
+function driverClosingNotes(model){
+ return `<p>¹ Pedidos seguem a contagem da planilha enviada, uma linha da formação com cidade preenchida. Um pedido pode ocupar várias linhas de produtos. O período usa a data do carregamento.</p>
+  <p>Prêmio por rota = peso em kg ÷ 1.000 × valor da tonelada. Prêmio por pedidos = quantidade de linhas com cidade × ${money(model.rules.perOrder)}. O total é arredondado por motorista, após somar as parcelas.</p>
+  <p>${model.unassigned?logN(model.unassigned)+' registros do mês sem motorista. ':''}${model.withoutDate?logN(model.withoutDate)+' registros da base sem data de carregamento ficam fora do mês. ':''}Pesos ou rotas sem regra tornam o valor parcial e exigem conferência antes do envio ao RH.</p>`;
+}
+
+function driverClosingTable(rows,cols){
+ return `<table><thead><tr>${cols.map(([,label])=>`<th scope="col">${esc(label)}</th>`).join('')}</tr></thead><tbody>${logTableBody(rows,cols,false)}</tbody></table>`;
+}
+
+function driverClosingPrint(model,drivers){
+ const preview=window.open('','_blank');
+ if(!preview)return false;
+ preview.opener=null;
+ const keys=new Set(drivers.map(driver=>driver.key)),details=model.routes.filter(route=>keys.has(normalize(route.driver)));
+ const bars=(field,format)=>{
+  const maximum=Math.max(1,...drivers.map(driver=>driver[field]));
+  return drivers.map(driver=>`<div class="bar-row"><span>${esc(driver.driver)}</span><div><i style="width:${100*driver[field]/maximum}%"></i></div><strong>${esc(format(driver[field]))}</strong></div>`).join('');
+ };
+ const cols=[['driver','Motorista'],['route','Rota'],['orders','Pedidos¹','num'],['tonnes','Toneladas','tonnes'],['rate','R$/t','num'],['bonus','Prêmio por rota (R$)²','num']];
+ preview.document.open();
+ preview.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fechamento de motoristas ${esc(model.month)}</title><style>
+  @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{margin:18px;font:12px/1.4 Arial,sans-serif;color:#342b24;background:white}h1{font-size:21px;margin:0 0 4px}h2{font-size:15px;margin:14px 0 7px}p{margin:4px 0}header{display:flex;justify-content:space-between;align-items:start;gap:12px}.summary{display:flex;gap:24px;margin:12px 0;padding:10px;background:#fff0e2;border:1px solid #e3be9b}.summary strong{font-size:18px;display:block}table{border-collapse:collapse;width:100%;table-layout:fixed}td,th{border:1px solid #decbb9;padding:5px;text-align:left;overflow-wrap:anywhere;vertical-align:top}th{background:#fff0e2}tr:nth-child(even){background:#fffaf5}.charts{display:grid;grid-template-columns:1fr 1fr;gap:18px}.bar-row{display:grid;grid-template-columns:95px 1fr 85px;gap:7px;align-items:center;margin:6px 0}.bar-row>div{background:#f7eadf;height:12px}.bar-row i{display:block;background:#d97b37;height:100%}.bar-row strong{text-align:right;font-size:11px}.notes{font-size:10px;margin-top:12px;color:#594638}button{padding:7px 12px;cursor:pointer}@media print{body{margin:0;font-size:9px}button{display:none}thead{display:table-header-group}tr,.bar-row{break-inside:avoid}.summary,th,.bar-row i{print-color-adjust:exact}}</style></head><body>
+  <header><div><h1>Central Rebanho · Fechamento mensal de motoristas</h1><p>Competência ${esc(model.month.split('-').reverse().join('/'))} · Base operacional de formação</p><p>${model.incomplete?'Valores parciais com pendências para conferir':'Prévia para conferência do gerente e envio ao RH'}</p></div><button type="button" id="driverPrint">Imprimir / Salvar PDF</button></header>
+  <div class="summary"><div>Motoristas<strong>${drivers.length}</strong></div><div>Toneladas<strong>${logN(logSum(drivers,'tonnes'),3)} t</strong></div><div>Pedidos¹<strong>${logN(logSum(drivers,'orders'))}</strong></div><div>Total previsto<strong>${money(logSum(drivers,'total'))}</strong></div></div>
+  <div class="charts"><section><h2>Toneladas por motorista</h2>${bars('tonnes',value=>logN(value,3)+' t')}</section><section><h2>Premiação prevista por motorista</h2>${bars('total',value=>money(value))}</section></div>
+  <h2>Resumo para RH</h2>${driverClosingTable(drivers,DRIVER_REPORT_COLUMNS)}
+  <h2>Detalhamento por motorista e rota</h2>${driverClosingTable(details.map(route=>({...route,bonus:route.bonus===null?'Sem regra':logN(route.bonus,4),rate:route.rate===undefined?'Sem regra':logN(route.rate,2)})),cols.map(col=>['rate','bonus'].includes(col[0])?col.slice(0,2):col))}
+  <section class="notes"><p>² Parcelas por rota exibidas com quatro casas decimais para conferência do total.</p>${driverClosingNotes(model)}<p>Regras cadastradas · ${Object.entries(model.rules.routes).map(([route,rate])=>esc(route)+' '+money(rate)+'/t').join(' · ')}.</p></section></body></html>`);
+ preview.document.close();
+ preview.document.getElementById('driverPrint').onclick=()=>preview.print();
+ return true;
+}
+
+function driverClosingShow(data){
+ if(!LOG.driverRules){
+  const epoch=LOG.epoch;
+  $('#content').innerHTML='<section class="panel"><p role="status">Carregando as regras do fechamento mensal…</p></section>';
+  if(!LOG.driverRulesRequest){
+   LOG.driverRulesRequest=api('/api/logistics',{body:JSON.stringify({kind:'operations',action:'driverPayrollRules'})})
+    .then(rules=>{LOG.driverRules=rules;}).finally(()=>{LOG.driverRulesRequest=null;});
+  }
+  LOG.driverRulesRequest.then(()=>{
+   if(LOG.epoch===epoch&&state.module==='logistics'&&LOG.page==='fleet')logShow();
+  }).catch(error=>{
+   if(LOG.epoch!==epoch||LOG.page!=='fleet'||state.module!=='logistics')return;
+   $('#content').innerHTML=`<section class="panel"><h2>Fechamento mensal indisponível</h2><p>${esc(error.message)}</p><button class="btn" id="driverRulesRetry">Tentar novamente</button></section>`;
+   $('#driverRulesRetry').onclick=()=>logShow();
+  });
+  return;
+ }
+ $('#logFilters')?.classList.add('hidden');
+ LOG.driverMonth||=transportToday().slice(0,7);
+ const month=LOG.driverMonth,all=data.rows||[],selected=LOG.driverSelected||'';
+ const model=driverClosingModel(all,month,selected);
+ const options=[...new Map(all.filter(row=>row.driver).map(row=>[normalize(row.driver),row.driver]))].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR'));
+ const period=month.split('-').reverse().join('/');
+ $('#periodChip').textContent=period+' · Carregamento';
+ $('#lastBaseUpdate').textContent='Leitura da planilha · '+new Date(data.meta?.updatedAt||Date.now()).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'});
+ const records=logSum(model.drivers,'records'),delivered=logSum(model.drivers,'delivered');
+ const totals=logKpis([['Toneladas carregadas',logN(model.tonnes,3)+' t'],['Pedidos¹',logN(model.orders)],['Volumes',logN(logSum(model.drivers,'volumes'))],['Entregues',logN(delivered),records?logN(100*delivered/records,1)+'% dos registros carregados':'Sem registros no mês'],['Ocorrências',logN(logSum(model.drivers,'occurrences'))],['Premiação prevista',money(model.total),model.incomplete?'Valor parcial com pendências':'Conferência para RH']]);
+ const detailCols=[['driver','Motorista'],['route','Rota'],['orders','Pedidos¹','num'],['tonnes','Toneladas','tonnes'],['rateLabel','R$/t'],['bonusLabel','Prêmio por rota (R$)²']];
+ const routeRows=model.routes.map(route=>({...route,rateLabel:route.rate===undefined?'Sem regra':logN(route.rate,2),bonusLabel:route.bonus===null?'Sem regra':logN(route.bonus,4)}));
+ $('#content').innerHTML=`<section class="panel driver-closing-controls"><div><h2>Fechamento mensal dos motoristas</h2><p>Competência pelo carregamento · base FORMAÇÃO 2026</p></div><div class="driver-closing-actions"><button class="btn" id="driverPrevious" aria-label="Mês anterior">←</button><label>Mês do carregamento<input type="month" id="driverMonth" value="${month}"></label><button class="btn" id="driverNext" aria-label="Mês seguinte">→</button><label>Motorista<select id="driverSelected"><option value="">Todos os motoristas</option>${options.map(([key,name])=>`<option value="${esc(key)}" ${key===selected?'selected':''}>${esc(name)}</option>`).join('')}</select></label>${canLog('agenda')?'<button class="btn" id="driverAgenda">Abrir agenda</button>':''}</div></section>
+  ${totals}<div class="two-col driver-closing-charts">${logPanel('driverClosingWeight','Toneladas por motorista','Clique para selecionar um motorista.')}${logPanel('driverClosingBonus','Premiação prevista por motorista','Valores calculados com as regras da planilha enviada.')}</div>
+  <section class="panel driver-rh-actions"><div><h3>Conferência e envio ao RH</h3><p>${model.incomplete?'Há dados pendentes. Confira os valores parciais e a coluna Conferência.':'Selecione o mês e o motorista, confira o resumo e gere a impressão.'}</p></div><button class="btn primary" id="driverClosingPrint" ${model.drivers.length?'':'disabled'}>Prévia para RH / Imprimir</button><p id="driverClosingMessage" role="status"></p></section>
+  ${logTable('Resumo mensal para RH',model.drivers,DRIVER_REPORT_COLUMNS)}
+  <details class="panel driver-closing-detail"><summary>Detalhamento por motorista e rota</summary><div class="table-wrap">${driverClosingTable(routeRows,detailCols)}</div><small>² Parcelas por rota com quatro casas decimais.</small></details>
+  <details class="panel driver-closing-detail"><summary>Regras de cálculo e pendências da base</summary><div class="table-wrap">${driverClosingTable(Object.entries(model.rules.routes).map(([route,rate])=>({route,rate})),[['route','Classificação de rota'],['rate','Prêmio por tonelada (R$)','num']])}</div>${driverClosingNotes(model)}</details>`;
+ logBindTable();
+ const pick=(_,hits)=>{if(!hits.length)return;LOG.driverSelected=model.drivers[hits[0].index].key;LOG.tablePage=0;logShow();};
+ const draw=(id,field,format)=>{
+  const element=$('#'+id);
+  element.closest('.log-chart-wrap')?.style.setProperty('height',Math.max(250,model.drivers.length*30+70)+'px');
+  const instance=chart(element,'bar',{labels:model.drivers.map(driver=>driver.driver),datasets:[{label:field==='tonnes'?'Toneladas':'Premiação prevista',data:model.drivers.map(driver=>driver[field]),backgroundColor:'#d47732',borderRadius:4}]},{indexAxis:'y',animation:false,onClick:pick,layout:{padding:{right:85}},plugins:{barValueLabels:{display:true,formatter:format},legend:{display:false},tooltip:{callbacks:{label:ctx=>format(ctx.raw)}}},scales:{x:{beginAtZero:true,ticks:{callback:value=>format(value)}},y:{grid:{display:false}}}});
+  instance.$valueFormat=format;
+ };
+ draw('driverClosingWeight','tonnes',value=>logN(value,3)+' t');
+ draw('driverClosingBonus','total',value=>money(value));
+ $('#driverMonth').onchange=event=>{if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value))return;LOG.driverMonth=event.target.value;LOG.tablePage=0;logShow();};
+ for(const [id,delta] of [['driverPrevious',-1],['driverNext',1]])$('#'+id).onclick=()=>{LOG.driverMonth=agendaMonthShift(month,delta);LOG.tablePage=0;logShow();};
+ $('#driverSelected').onchange=event=>{LOG.driverSelected=event.target.value;LOG.tablePage=0;logShow();};
+ $('#driverAgenda')?.addEventListener('click',()=>{LOG.page='agenda';logShow();});
+ $('#driverClosingPrint').onclick=()=>{
+  const drivers=logTableMatches(model.drivers,DRIVER_REPORT_COLUMNS,LOG.tableColumnFilters?.fleet||{});
+  $('#driverClosingMessage').textContent=!drivers.length?'Nenhum motorista corresponde aos filtros da tabela.':driverClosingPrint(model,drivers)?'':'Permita a abertura de uma nova aba para imprimir o fechamento.';
+ };
+}
+
+
 function logKind(){return LOG.page==='transport'?'transport':LOG.page==='indicators'?'formations':LOG.page==='fleet'&&LOG.fleetTab==='schedule'?'schedule':'operations';}
 function logFetchSource(kind, force=false, check=false) {
  const pending=LOG.pending[kind];
@@ -1956,10 +2089,12 @@ async function logLoad(kind,force=false,check=false) {
  const visible=()=>state.module==='logistics'&&LOG.page!=='overview'&&LOG.page!=='settings'&&
    !(LOG.page==='formation'&&FEXP.view!=='legacy')&&logKind()===kind;
  const existing=LOG.cache[kind];
+ if(force&&LOG.page==='fleet')delete LOG.driverRules;
  try{
    if(!existing&&visible()&&LOG.page!=='formation')$('#content').innerHTML='<div class="status-card"><div class="spinner"></div><div><strong>Carregando dados logísticos</strong><p>Consultando a planilha de origem…</p></div></div>';
    const changed=await logFetchSource(kind,force,check);
-   if(!changed||!visible())return;
+   if(!visible())return;
+   if(!changed){if(LOG.page==='fleet'&&!LOG.driverRules)logShow();return;}
    if(!existing&&!LOG.periodSelected){
      const latest=LOG.cache[kind]?.meta?.to;
      LOG.filters.year=latest?latest.slice(0,4):'Todos';
@@ -2057,6 +2192,8 @@ function logTableCell(row,[key,,type]){
  if(type==='date')return String(value).split('-').reverse().join('/');
  if(type==='money')return money(value);
  if(type==='num')return logN(value,2);
+ if(type==='tonnes')return logN(value,3);
+ if(type==='precise')return logN(value,4);
  return String(value);
 }
 
@@ -2292,7 +2429,7 @@ function logBindTable(){
  next.onclick=()=>{LOG.tablePage++;renderPage();};
  $('#logExport',panel).onclick=()=>{
   const exportCols=transport?transportTableOrder(allCols):cols;
-  const clean=x=>{let s=String(x??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const text='\uFEFF'+[exportCols.map(c=>c[1]),...matches.map(r=>exportCols.map(c=>r[c[0]]??''))].map(r=>r.map(clean).join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=u;a.download='rebanho-logistica-'+LOG.page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+  const clean=x=>{let s=String(x??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const text='\uFEFF'+[exportCols.map(c=>c[1]),...matches.map(r=>exportCols.map(c=>LOG.page==='fleet'&&typeof r[c[0]]==='number'?String(r[c[0]]).replace('.',','):r[c[0]]??''))].map(r=>r.map(clean).join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=u;a.download='rebanho-logistica-'+LOG.page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
  };
 }
 function logSetKind(kind){const period={year:LOG.filters.year,month:LOG.filters.month},prev=LOG.kind;LOG.kindFilters[prev]=structuredClone(LOG.filters);LOG.filters=LOG.kindFilters[kind]||{year:'Todos',month:'Todos',uf:[],region:[],city:[],seller:[],driver:[],vehicle:[],status:[],product:[],route:[],carrier:[]};Object.assign(LOG.filters,period);LOG.kind=kind;if(kind==='transport'&&LOG.metric==='wait')LOG.metric='weight';LOG.search='';LOG.transportSearchDraft='';LOG.tablePage=0;}
@@ -2302,7 +2439,7 @@ function logShow({keepFilters=false}={}){if(state.module!=='logistics')return;
   logNav();
   return;
  }
- if(LOG.page==='agenda'){agendaShow();return;}if(LOG.page==='settings'&&!state.user?.transportOnly){cargoSettingsShow();return;}$('#refreshData').hidden=false;if(LOG.page==='overview'){logOverview({keepFilters});return;}if(LOG.page==='formation'&&FEXP.view!=='legacy'&&!state.user?.transportOnly){formationShow({keepFilters});return;}const epoch=++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#content').className='visual-page logistics-content';$('#content').dataset.presentation='logistics';$('.filterbar:not(#logFilters)')?.classList.add('hidden');$('#dataStatus').classList.add('hidden');const page=state.user?.transportOnly?['Transportadoras','Entregas, prazos e acompanhamento das notas']:LOG_PAGES[LOG.page]||LOG_PAGES.overview;$('#pageTitle').textContent=page[0];$('#pageSubtitle').textContent=page[1];$('#activeMenuLabel').textContent='Logística · '+page[0];logNav();if(LOG.page==='sources'){$('#logFilters')?.classList.add('hidden');logSources();return;}const kind=logKind();if(kind!==LOG.kind)logSetKind(kind);const data=LOG.cache[kind];if(!data){$('#logFilters')?.classList.add('hidden');logLoad(kind);return;}const all=data.rows||[],rows=logRows(all),open=rows.filter(r=>!r.delivered),waiting=rows.filter(logAwaitingFormation),meta=data.meta||{};if(!keepFilters)logFilters(all);$('#lastBaseUpdate').textContent=(meta.reference?'Referência: ':'Leitura da planilha: ')+new Date(meta.reference?meta.referenceUpdatedAt:meta.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'})+(meta.reference?' · referência importada':'');$('#periodChip').textContent=logPeriodLabel();
+ if(LOG.page==='agenda'){agendaShow();return;}if(LOG.page==='settings'&&!state.user?.transportOnly){cargoSettingsShow();return;}$('#refreshData').hidden=false;if(LOG.page==='overview'){logOverview({keepFilters});return;}if(LOG.page==='formation'&&FEXP.view!=='legacy'&&!state.user?.transportOnly){formationShow({keepFilters});return;}const epoch=++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#content').className='visual-page logistics-content';$('#content').dataset.presentation='logistics';$('.filterbar:not(#logFilters)')?.classList.add('hidden');$('#dataStatus').classList.add('hidden');const page=state.user?.transportOnly?['Transportadoras','Entregas, prazos e acompanhamento das notas']:LOG_PAGES[LOG.page]||LOG_PAGES.overview;$('#pageTitle').textContent=page[0];$('#pageSubtitle').textContent=page[1];$('#activeMenuLabel').textContent='Logística · '+page[0];logNav();if(LOG.page==='sources'){$('#logFilters')?.classList.add('hidden');logSources();return;}const kind=logKind();if(kind!==LOG.kind)logSetKind(kind);const data=LOG.cache[kind];if(!data){$('#logFilters')?.classList.add('hidden');logLoad(kind);return;}if(LOG.page==='fleet'&&['ADMIN','DIRETOR','GERENTE'].includes(state.user?.perfil)){driverClosingShow(data);return;}const all=data.rows||[],rows=logRows(all),open=rows.filter(r=>!r.delivered),waiting=rows.filter(logAwaitingFormation),meta=data.meta||{};if(!keepFilters)logFilters(all);$('#lastBaseUpdate').textContent=(meta.reference?'Referência: ':'Leitura da planilha: ')+new Date(meta.reference?meta.referenceUpdatedAt:meta.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'})+(meta.reference?' · referência importada':'');$('#periodChip').textContent=logPeriodLabel();
 let html='',charts=[];const addChart=(id,data,key,opts)=>charts.push(()=>logChart(id,data,key,opts));const weight=v=>logN(v/1000,1)+' t',number=v=>logN(v),wait=v=>logN(v,1)+' dias';
 if(kind==='operations'){
 const k=logKpis([['Aguardando formação',logN(waiting.length),'Somente STATUS DA ENTREGA em branco'],['Em rota',logN(rows.filter(r=>r.inRoute).length)],['Entregues',logN(rows.filter(r=>r.delivered).length)],['Espera média',wait(logAvg(waiting,'wait')),'Aguardando formação com espera informada'],['Ocorrências',logN(rows.filter(r=>r.occurrence).length)]]);
