@@ -1838,14 +1838,58 @@ function mountCoverageFilters(active){
  const globalRca=normalizeMulti(state.filters.rca);
  if(!state.coverageEntered){state.coverageEntered=true;const selected=(state.dimensions?.rcas||[]).find(r=>globalRca.includes(String(r.code)));if(selected){const match=coverageRcaOptions(state.coverage?.cities||[],state.coverageFilters.department).find(r=>coverageRcaKey(r.label)===coverageRcaKey(selected.name));if(match)state.coverageFilters.rca=match.key;}}
 }
+function tableColumnFilterRow(columns,filters={}){
+ return '<tr class="log-column-filters">'+columns.map(([key,label])=>'<td>'+(
+  label? `<input type="search" aria-label="Filtrar ${esc(label)}" placeholder="Filtrar…" data-table-column="${esc(key)}" value="${esc(filters[key]||'')}">`:''
+ )+'</td>').join('')+'</tr>';
+}
+
+function enableLogColumnFilters(table){
+ if(table.dataset.columnFiltersReady)return;
+ const head=table.tHead,headers=head?.rows[0]?.cells;
+ if(!headers?.length||!table.tBodies.length||head.rows.length!==1)return;
+ const columns=Array.from(headers,(th,index)=>{
+  const label=th.textContent.trim().replace(/\s*[↕↑↓]$/,'');
+  return [index,th.querySelector('input')||/^(ações|detalhes|selecionar|preenchimento sac)$/i.test(label)?'':label];
+ });
+ if(!columns.some(([,label])=>label))return;
+ table.dataset.columnFiltersReady='1';
+ head.insertAdjacentHTML('beforeend',tableColumnFilterRow(columns));
+ const inputs=Array.from(head.querySelectorAll('[data-table-column]'));
+ const body=table.tBodies[0],empty=body.insertRow();
+ empty.className='log-column-empty';
+ empty.hidden=true;
+ const cell=empty.insertCell();
+ cell.colSpan=headers.length;
+ cell.textContent='Nenhum registro corresponde aos filtros.';
+ head.rows[1].addEventListener('input',()=>{
+  const active=inputs.map(input=>[Number(input.dataset.tableColumn),normalize(input.value)]).filter(([,term])=>term);
+  let matched=0;
+  for(const tbody of table.tBodies){
+   for(const row of tbody.rows){
+    if(row===empty)continue;
+    row.hidden=active.length>0&&(row.cells.length<headers.length||!active.every(([index,term])=>normalize(row.cells[index]?.textContent).includes(term)));
+    if(!row.hidden)matched++;
+   }
+  }
+  empty.hidden=!active.length||matched>0;
+ });
+}
+
+function sortTableRows(table,index,asc){
+ const value=cell=>{const t=(cell?.textContent||'').trim();const date=t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(date)return Number(date[3]+date[2]+date[1]);if(/^(?:R\$\s*)?[+-]?[\d.,\s]+(?:%|x|\s*mil|\s*mi)?$/.test(t)){let n=Number(t.replace(/R\$|%|x|mil|mi|\s/g,'').replace(/\./g,'').replace(',','.'));if(/\bmil\b/.test(t))n*=1000;else if(/\bmi\b/.test(t))n*=1000000;return n;}return t;};
+ for(const body of table.tBodies){const rows=Array.from(body.rows);if(rows.length<2)continue;rows.sort((a,b)=>{const x=value(a.cells[index]),y=value(b.cells[index]);return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y),'pt-BR',{numeric:true,sensitivity:'base'}))*(asc?1:-1)});rows.forEach(row=>body.append(row));}
+}
+
 function installTableSorting(){
  const root=$('#appView');if(!root)return;
- const enhance=()=>root.querySelectorAll('table').forEach(table=>{table.querySelectorAll('thead th').forEach((th,index)=>{
+ const enhance=()=>root.querySelectorAll('table').forEach(table=>{
+ if(table.closest('.logistics-content'))enableLogColumnFilters(table);
+ table.querySelectorAll('thead th').forEach((th,index)=>{
  if(th.dataset.sortReady)return;th.dataset.sortReady='1';const label=th.textContent.trim();if(!label)return;
  const button=document.createElement('button');button.type='button';button.className='table-sort';button.textContent=label+' ↕';button.setAttribute('aria-label','Ordenar por '+label);th.replaceChildren(button);
  button.onclick=()=>{const asc=th.getAttribute('aria-sort')!=='ascending';table.querySelectorAll('th[aria-sort]').forEach(x=>x.removeAttribute('aria-sort'));th.setAttribute('aria-sort',asc?'ascending':'descending');table.querySelectorAll('.table-sort').forEach(x=>x.textContent=x.textContent.replace(/[↑↓]$/,'↕'));button.textContent=label+(asc?' ↑':' ↓');
- const value=cell=>{const t=(cell?.textContent||'').trim();const date=t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(date)return Number(date[3]+date[2]+date[1]);if(/^(?:R\$\s*)?[+-]?[\d.,\s]+(?:%|x|\s*mil|\s*mi)?$/.test(t)){let n=Number(t.replace(/R\$|%|x|mil|mi|\s/g,'').replace(/\./g,'').replace(',','.'));if(/\bmil\b/.test(t))n*=1000;else if(/\bmi\b/.test(t))n*=1000000;return n;}return t;};
- for(const body of table.tBodies){const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=value(a.cells[index]),y=value(b.cells[index]);return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y),'pt-BR',{numeric:true,sensitivity:'base'}))*(asc?1:-1)});rows.forEach(row=>body.append(row));}
+ sortTableRows(table,index,asc);
  };
  });});
  enhance();if(!root.dataset.sortObserved){root.dataset.sortObserved='1';let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;enhance()})}).observe(root,{childList:true,subtree:true});}
@@ -1977,6 +2021,7 @@ function logFilters(all){let el=$('#logFilters');if(!el){el=document.createEleme
  $('#logClear').onclick=()=>{
    for(const k of Object.keys(f))f[k]=Array.isArray(f[k])?[]:'Todos';
    LOG.search='';
+   delete LOG.tableColumnFilters?.[LOG.page];
    if(LOG.page==='transport')LOG.transportSearchDraft='';
    if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;}
    updatePeriod();
@@ -2005,8 +2050,83 @@ function logChart(id,rows,key,{type='bar',format=v=>logN(v),comparison=null,sour
 }
 
 const LOG_OP_COLS=[['date','Implantação','date'],['client','Cliente'],['seller','Vendedor'],['cityLabel','Cidade'],['region','Região'],['product','Produto'],['volumes','Volumes','num'],['weight','Peso (kg)','num'],['wait','Espera (dias)','num'],['driver','Motorista'],['vehicle','Veículo'],['status','Status'],['forecast','Previsão','date'],['loaded','Carregamento','date'],['deliveredDate','Chegada','date'],['invoice','Nota fiscal'],['category','Ocorrência'],['follow','Follow-up'],['loading','Local de carregamento'],['checker','Conferente'],['picker','Separador'],['notes','Observações']];
-function logTable(title,rows,cols){LOG.tableRows=rows;LOG.tableCols=cols;const size=50,start=Math.min(LOG.tablePage*size,Math.max(0,Math.floor((rows.length-1)/size)*size)),part=rows.slice(start,start+size),cell=(r,[k,,type])=>r[k]==null||r[k]===''?'—':type==='date'?r[k].split('-').reverse().join('/'):type==='money'?money(r[k]):type==='num'?logN(r[k],2):String(r[k]);return `<section class="panel log-detail-panel" id="logDetail"><div class="log-table-heading"><div><h3>${esc(title)}</h3><p>${logN(rows.length)} registros · use as setas dos títulos para ordenar esta página</p></div><button class="btn" id="logExport">Exportar CSV</button></div><div class="table-wrap"><table class="log-table"><thead><tr>${LOG.kind==='transport'&&state.user?.editTransport?'<th>Preenchimento SAC</th>':''}${cols.map(([,label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${part.map(r=>`<tr>${LOG.kind==='transport'&&state.user?.editTransport?`<td><button class="btn sac-edit" data-sac-edit="${esc(r.id)}">Preencher</button></td>`:''}${cols.map(col=>`<td>${esc(cell(r,col))}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${cols.length}">Nenhum registro no recorte.</td></tr>`}</tbody></table></div><div class="log-pagination"><button class="btn" id="logPrev" ${start===0?'disabled':''}>Anterior</button><span>${rows.length?start+1:0}–${Math.min(start+size,rows.length)} de ${rows.length}</span><button class="btn" id="logNext" ${start+size>=rows.length?'disabled':''}>Próxima</button></div></section>`;}
-function logBindTable(){if(!$('#logExport'))return;$$('[data-sac-edit]').forEach(b=>b.onclick=()=>sacEdit(b.dataset.sacEdit));$('#logExport').onclick=()=>{const clean=x=>{let s=String(x??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const text='\uFEFF'+[LOG.tableCols.map(c=>c[1]),...LOG.tableRows.map(r=>LOG.tableCols.map(c=>r[c[0]]??''))].map(r=>r.map(clean).join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=u;a.download='rebanho-logistica-'+LOG.page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};$('#logPrev').onclick=()=>{LOG.tablePage=Math.max(0,LOG.tablePage-1);logShow();};$('#logNext').onclick=()=>{LOG.tablePage++;logShow();};}
+function logTableCell(row,[key,,type]){
+ const value=row[key];
+ if(value==null||value==='')return '—';
+ if(type==='date')return String(value).split('-').reverse().join('/');
+ if(type==='money')return money(value);
+ if(type==='num')return logN(value,2);
+ return String(value);
+}
+
+function logTableMatches(rows,cols,filters){
+ const active=cols.map(col=>[col,normalize(filters[col[0]])]).filter(([,term])=>term);
+ return active.length?rows.filter(row=>active.every(([col,term])=>normalize(logTableCell(row,col)).includes(term))):rows;
+}
+
+function logTablePage(rows){
+ const size=50;
+ const start=Math.min(LOG.tablePage*size,Math.max(0,Math.floor((rows.length-1)/size)*size));
+ LOG.tablePage=start/size;
+ const end=Math.min(start+size,rows.length);
+ return {start,end,part:rows.slice(start,end)};
+}
+
+function logTableBody(rows,cols,editable){
+ return rows.map(row=>`<tr>${editable?`<td><button class="btn sac-edit" data-sac-edit="${esc(row.id)}">Preencher</button></td>`:''}${cols.map(col=>`<td>${esc(logTableCell(row,col))}</td>`).join('')}</tr>`).join('')
+  || `<tr><td colspan="${cols.length+Number(editable)}">Nenhum registro no recorte.</td></tr>`;
+}
+
+function logTable(title,rows,cols){
+ LOG.tableRows=rows;
+ LOG.tableColumnFilters||={};
+ const filters=LOG.tableColumnFilters[LOG.page]||={};
+ const editable=LOG.kind==='transport'&&!!state.user?.editTransport;
+ const matches=logTableMatches(rows,cols,filters);
+ const {start,end,part}=logTablePage(matches);
+ LOG.tableData={rows,cols,filters,editable,matches};
+ return `<section class="panel log-detail-panel" id="logDetail">
+  <div class="log-table-heading"><div><h3>${esc(title)}</h3><p>Use os campos sob os títulos para combinar filtros. Use as setas dos títulos para ordenar a página.</p></div><button class="btn" id="logExport">Exportar CSV</button></div>
+  <div class="table-wrap"><table class="log-table" data-column-filters-ready="1"><thead>
+  <tr>${editable?'<th>Preenchimento SAC</th>':''}${cols.map(([,label])=>`<th>${esc(label)}</th>`).join('')}</tr>
+  ${tableColumnFilterRow(editable?[['',''],...cols]:cols,filters)}</thead>
+  <tbody>${logTableBody(part,cols,editable)}</tbody></table></div>
+  <div class="log-pagination"><button class="btn" id="logPrev" ${start===0?'disabled':''}>Anterior</button><span aria-live="polite" id="logTableCount">${matches.length?start+1:0}–${end} de ${matches.length}</span><button class="btn" id="logNext" ${end>=matches.length?'disabled':''}>Próxima</button></div>
+ </section>`;
+}
+
+function logBindTable(){
+ const panel=$('#logDetail');
+ if(!panel)return;
+ const table=$('table',panel),body=table.tBodies[0],prev=$('#logPrev',panel),next=$('#logNext',panel),count=$('#logTableCount',panel);
+ const {rows,cols,filters,editable}=LOG.tableData;
+ let {matches}=LOG.tableData;
+ const bindEdits=()=>$$('[data-sac-edit]',body).forEach(button=>button.onclick=()=>sacEdit(button.dataset.sacEdit));
+ const renderPage=()=>{
+  const {start,end,part}=logTablePage(matches);
+  body.innerHTML=logTableBody(part,cols,editable);
+  const sortIndex=Array.from(table.tHead.rows[0].cells).findIndex(th=>th.hasAttribute('aria-sort'));
+  if(sortIndex>=0)sortTableRows(table,sortIndex,table.tHead.rows[0].cells[sortIndex].getAttribute('aria-sort')==='ascending');
+  count.textContent=`${matches.length?start+1:0}–${end} de ${matches.length}`;
+  prev.disabled=start===0;
+  next.disabled=end>=matches.length;
+  bindEdits();
+ };
+ bindEdits();
+ table.tHead.addEventListener('input',event=>{
+  const key=event.target.dataset.tableColumn;
+  if(key===undefined)return;
+  filters[key]=event.target.value;
+  matches=logTableMatches(rows,cols,filters);
+  LOG.tablePage=0;
+  renderPage();
+ });
+ prev.onclick=()=>{LOG.tablePage=Math.max(0,LOG.tablePage-1);renderPage();};
+ next.onclick=()=>{LOG.tablePage++;renderPage();};
+ $('#logExport',panel).onclick=()=>{
+  const clean=x=>{let s=String(x??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const text='\uFEFF'+[cols.map(c=>c[1]),...matches.map(r=>cols.map(c=>r[c[0]]??''))].map(r=>r.map(clean).join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=u;a.download='rebanho-logistica-'+LOG.page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+ };
+}
 function logSetKind(kind){const period={year:LOG.filters.year,month:LOG.filters.month},prev=LOG.kind;LOG.kindFilters[prev]=structuredClone(LOG.filters);LOG.filters=LOG.kindFilters[kind]||{year:'Todos',month:'Todos',uf:[],region:[],city:[],seller:[],driver:[],vehicle:[],status:[],product:[],route:[],carrier:[]};Object.assign(LOG.filters,period);LOG.kind=kind;if(kind==='transport'&&LOG.metric==='wait')LOG.metric='weight';LOG.search='';LOG.transportSearchDraft='';LOG.tablePage=0;}
 function logShow({keepFilters=false}={}){if(state.module!=='logistics')return;
  if(!logPageAllowed(LOG.page)){
@@ -2891,7 +3011,7 @@ function formationBindOrders(root, selection, render) {
 }
 
 function formationNotice(message){const p=document.createElement('p');p.className='log-notice';p.setAttribute('role','status');p.textContent=message;$('#content').prepend(p);}
-function formationDialog(title,content){const dialog=document.createElement('dialog');dialog.className='sac-dialog formation-dialog';dialog.setAttribute('aria-label',title);dialog.innerHTML=`<header><h2>${esc(title)}</h2><button type="button" class="btn formation-close" aria-label="Fechar">×</button></header>${content}`;document.body.append(dialog);dialog.showModal();dialog.querySelector('.formation-close').onclick=()=>{if(!FEXP.busy)dialog.close();};dialog.addEventListener('cancel',e=>{if(FEXP.busy)e.preventDefault();});dialog.addEventListener('close',()=>dialog.remove());return dialog;}
+function formationDialog(title,content){const dialog=document.createElement('dialog');dialog.className='sac-dialog formation-dialog';dialog.setAttribute('aria-label',title);dialog.innerHTML=`<header><h2>${esc(title)}</h2><button type="button" class="btn formation-close" aria-label="Fechar">×</button></header>${content}`;document.body.append(dialog);dialog.querySelectorAll('table').forEach(enableLogColumnFilters);dialog.showModal();dialog.querySelector('.formation-close').onclick=()=>{if(!FEXP.busy)dialog.close();};dialog.addEventListener('cancel',e=>{if(FEXP.busy)e.preventDefault();});dialog.addEventListener('close',()=>dialog.remove());return dialog;}
 function formationDetail(key){const o=FEXP.data.orders.find(o=>o.key===key);if(!o)return;const grouped=formationAggregate([o]);formationDialog('Pedido '+o.order,`<p>${esc(o.clientCode+' · '+o.client)} · ${esc(o.city||'')} / ${esc(o.uf||'')}</p><p>${[o.internalStatus,o.weight==null||o.weightIncomplete?'':cargoKg(o.weight),o.volumes==null?'':cargoVolumes(o.volumes)+' volumes'].filter(Boolean).map(esc).join(' · ')}</p><p>Situação comercial: ${esc(o.originalStatuses.join(' / '))}. ${esc(o.sourceIssue)}</p>${o.deliveryStop?`<p><strong>Parada ${o.deliveryStop.number}</strong> · ${esc(o.deliveryStop.address)}</p>`:''}<h3>Produtos do pedido</h3>${formationProducts(grouped.products)}<details><summary>Informações completas dos itens comerciais</summary><div class="table-wrap"><table class="log-table"><thead><tr><th>Produto</th><th>Fornecedor</th><th>Departamento / seção</th><th>NF</th><th>Faturamento</th><th>Data do pedido</th><th>Situação comercial</th><th>Valor</th></tr></thead><tbody>${o.products.map(p=>`<tr><td>${esc(p.description)}</td><td>${esc(p.supplier||'—')}</td><td>${esc((p.department||'')+' / '+(p.section||''))}</td><td>${esc(p.invoice||'—')}</td><td>${transportDate(p.billingDate)}</td><td>${transportDate(p.orderDate)}</td><td>${esc(p.status)}</td><td>${p.value==null?'—':money(p.value)}</td></tr>`).join('')}</tbody></table></div></details><details><summary>Dados na base comercial</summary>${formationSourceTable(o.sourceRows)}<p class="sac-help">${o.weightSource?'Peso: '+esc(o.weightSource)+'. ':''}Os volumes são a soma da coluna Qt Pedida. O peso é informado separadamente na montagem. Notas comerciais: ${esc((o.invoices||[]).join(', ')||'Não informadas')}.</p></details>`);}
 async function formationSave(payload,dialog,status,requestId) {
   if (FEXP.busy) return;
