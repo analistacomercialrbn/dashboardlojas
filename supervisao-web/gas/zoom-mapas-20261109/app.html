@@ -415,6 +415,17 @@
 .history-map-stage .history-time-stamp,.history-map-stage .history-map-legend,.history-map-stage .history-city-focus{position:static}
 .history-map-stage .history-time-stamp{padding:8px 14px 4px}
 .history-map-stage .history-map-legend{margin:5px 14px 10px}
+.login-password-field{position:relative}
+.login-password-field #loginPassword{box-sizing:border-box;width:100%;min-height:44px;padding-inline-end:48px}
+.login-password-field #loginPassword::-ms-reveal{display:none}
+#loginPasswordToggle{
+ position:absolute;inset-inline-end:1px;inset-block:1px;width:44px;display:grid;place-items:center;
+ border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer;padding:0
+}
+#loginPasswordToggle:hover{color:var(--navy)}
+#loginPasswordToggle:focus-visible{outline:2px solid var(--navy);outline-offset:-3px}
+#loginPasswordToggle svg{width:20px;height:20px}
+#loginPassword[type=password] + #loginPasswordToggle .login-password-slash{display:none}
 </style>
 </head>
 <body>
@@ -426,8 +437,17 @@
       <form id="loginForm">
         <label>Usuário</label>
         <input id="loginUser" autocomplete="username" required />
-        <label>Senha</label>
-        <input id="loginPassword" type="password" autocomplete="current-password" required />
+        <label for="loginPassword">Senha</label>
+        <div class="login-password-field">
+          <input id="loginPassword" type="password" autocomplete="current-password" required />
+          <button id="loginPasswordToggle" type="button" aria-controls="loginPassword" aria-label="Mostrar senha" title="Mostrar senha">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" />
+              <circle cx="12" cy="12" r="2.7" />
+              <path class="login-password-slash" d="M3 3l18 18" />
+            </svg>
+          </button>
+        </div>
         <button class="btn primary" type="submit">Entrar</button>
         <div id="loginError" class="form-error" role="alert"></div>
         <div id="loginNotice" role="status"></div>
@@ -1304,6 +1324,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@d5a26d7f6a9f8236cb9ac09e7d4dde233bed866c/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@20502e3fb356c650cee197a9bd5f13b1a5b12623/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
