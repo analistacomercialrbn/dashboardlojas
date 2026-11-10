@@ -444,6 +444,19 @@
 .log-column-filters input:focus-visible{outline:2px solid #ad5727;outline-offset:1px}
 .log-transport-detail .log-table-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .log-transport-detail .log-table-actions .btn[aria-pressed="true"]{background:#a64b18;color:#fff;border-color:#a64b18}
+.driver-closing-controls,.driver-rh-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.driver-closing-actions{display:flex;align-items:end;flex-wrap:wrap;gap:8px}
+.driver-closing-actions label{display:grid;gap:4px;font-size:12px;color:#684a36}
+.driver-closing-actions :is(input,select){padding:8px;border:1px solid #e3c4a6;border-radius:8px;background:#fffaf5;color:#493426;min-height:38px}
+.driver-closing-controls h2{margin:0 0 4px;color:#8e491e}
+.driver-closing-controls p,.driver-rh-actions p{margin:0;color:#795c48;font-size:13px}
+.driver-closing-charts .panel{background:linear-gradient(145deg,#fffaf5,#fff0df)}
+.driver-closing-detail{margin-top:12px}
+.driver-closing-detail summary{cursor:pointer;font-weight:700;color:#8e491e}
+.driver-closing-detail table{border-collapse:collapse;width:100%;margin-top:10px}
+.driver-closing-detail :is(th,td){padding:6px 8px;font-size:12px;border-bottom:1px solid #edddcf;text-align:left}
+.driver-closing-detail th{background:#fff0df;color:#704b30}
+@media(max-width:760px){.driver-closing-actions{width:100%}.driver-closing-actions label{flex:1;min-width:130px}.driver-closing-actions :is(input,select){font-size:16px;width:100%}}
 .sac-fields .sac-field{min-width:0}
 .sac-fields .sac-field label{display:block}
 .sac-fields select{line-height:normal;padding-block:8px}
@@ -1398,6 +1411,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@761f611b75c4843d0ed8ed0073d8aded438b03a8/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@fca6f6d1ca8fcbe8a3b742187b38cd034ee3967d/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
