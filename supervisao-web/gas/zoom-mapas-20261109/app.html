@@ -442,6 +442,24 @@
 .log-column-filters input{width:100%;min-width:5rem;box-sizing:border-box;min-height:32px;padding:4px 7px;border:1px solid #d6bba3;border-radius:5px;background:#fff;color:#432a1f;font:inherit;font-size:13px}
 .log-column-filters input::placeholder{color:#765f50}
 .log-column-filters input:focus-visible{outline:2px solid #ad5727;outline-offset:1px}
+.log-transport-detail .log-table-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.log-transport-detail .log-table-actions .btn[aria-pressed="true"]{background:#a64b18;color:#fff;border-color:#a64b18}
+.log-transport-detail .log-table-feedback:empty{display:none}
+.logistics-content #logDetail.log-transport-detail .table-wrap{max-height:none;max-width:100%}
+.logistics-content #logDetail.log-transport-detail .log-table{table-layout:fixed;width:100%;min-width:0}
+.logistics-content #logDetail.log-transport-detail .log-table :is(th,td){min-width:0;max-width:none;height:auto;padding:5px 4px;font-size:12px;line-height:1.25;white-space:normal;vertical-align:middle;overflow-wrap:anywhere}
+.logistics-content #logDetail.log-transport-detail .log-table th{position:static;letter-spacing:0}
+.logistics-content #logDetail.log-transport-detail .log-table th .table-sort{white-space:normal;text-align:left;overflow-wrap:anywhere}
+.log-transport-detail .log-cell-value{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logistics-content #logDetail.log-transport-detail .log-column-filters input{min-width:0;min-height:25px;padding:3px 4px;font-size:11px}
+.logistics-content #logDetail.log-transport-detail .sac-edit{min-height:24px;padding:3px 4px;font-size:11px;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.log-column-grip{border:0;background:transparent;color:#536c8b;padding:1px 4px;cursor:grab;font-size:14px}
+.log-column-grip:active{cursor:grabbing}
+.log-transport-detail .log-column-drop{box-shadow:inset 0 -3px #a64b18}
+@media (max-width:760px){
+ .logistics-content #logDetail.log-transport-detail .log-table{min-width:1050px}
+ .logistics-content #logDetail.log-transport-detail .log-column-filters input{font-size:16px}
+}
 .log-table tbody tr[hidden]{display:none}
 @media (pointer:coarse){.log-column-filters input{font-size:16px;min-height:40px}}
 </style>
@@ -1367,6 +1385,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@0b304d9ff90835b2bdd3c70a889d3dccbb72674f/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@a9339f78da5410e643996b6893f4f4596f8ce89e/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
