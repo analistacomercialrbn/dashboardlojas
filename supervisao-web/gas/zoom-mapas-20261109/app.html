@@ -403,6 +403,43 @@
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ece8ead2f378f3f29225e22191ad55f63f3e9351/supervisao-web/gas/sac-importacao-20261108/tower.css">
 <style>
+/* Cartões da fila do SAC dimensionados pela largura disponível no painel. */
+.transport-workbench{container:transport-workbench / inline-size}
+.transport-workbench .transport-note-list{grid-template-columns:minmax(0,1fr);gap:10px}
+.transport-workbench .transport-queue-empty{grid-column:1 / -1}
+.transport-workbench .transport-note-row{
+  grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto 1fr auto;
+  align-items:start;min-width:0;gap:8px;padding:12px;border-radius:12px;
+}
+.transport-workbench .transport-note-identity{order:0;overflow-wrap:anywhere}
+.logistics-content .transport-workbench .transport-note-identity h3{margin:3px 0;line-height:1.35}
+.transport-workbench .transport-note-badges{margin-top:6px}
+.transport-workbench .transport-note-dates{
+  order:1;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+  border-top:1px solid #f1e5d9;padding-top:6px;
+}
+.transport-workbench .transport-note-dates dd{margin-top:2px}
+.transport-workbench .transport-note-follow{
+  order:2;grid-column:auto;min-width:0;padding:6px 8px;border-radius:8px;background:#fff6ec;
+  overflow-wrap:anywhere;
+}
+.transport-workbench .transport-note-follow>small{margin:2px 0}
+.logistics-content .transport-workbench .transport-note-follow p{margin:3px 0;max-height:3.2em}
+.transport-workbench .transport-note-open{order:3;max-width:none;justify-self:start;min-height:44px}
+.transport-workbench .transport-queue-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}
+.transport-workbench .transport-queue-kpi{padding:10px 12px;gap:4px;border-radius:12px}
+.transport-workbench .transport-queue-kpi strong{font-size:26px}
+@container transport-workbench (min-width:520px){
+  .transport-workbench .transport-queue-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@container transport-workbench (min-width:600px){
+  .transport-workbench .transport-note-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@container transport-workbench (min-width:930px){
+  .transport-workbench .transport-note-list{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+</style>
+<style>
 .history-annual-scroll{overflow-x:auto;max-width:100%}
 .history-annual-scroll .history-chart{min-width:820px}
 .history-annual-scroll:focus-visible{outline:2px solid #84a7da;outline-offset:2px}
