@@ -1,0 +1,60 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -287,7 +287,7 @@
+   passwordChangeSessionSeconds: 600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/55e3cff9bc776a6906803190be52b7b4d153b86d/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/36650f48a1119f913f3dc237ccd1ad2aa0f33170/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -4118,20 +4118,27 @@
+   return {headers,fields,tz:sh.getParent().getSpreadsheetTimeZone()};
+ }
+ 
+-function transportEditRows_(sh, user, keys, layout) {
++function transportEditPositions_(sh, keys) {
+   const count=sh.getLastRow()-1;
+   if(count<1)throw new Error('Acompanhamento sem notas.');
+-  const needed=new Set(keys), indices=new Map(), byRow=new Map();
+-  const identities=sh.getRange(2,1,count,7).getDisplayValues();
++  const needed=new Set(keys), indices=new Map();
++  const hasLegacy=keys.some(key=>/^trf_[a-f0-9]{64}$/.test(key));
++  // Para notas com CHAVE, localiza e confere duplicatas usando apenas a coluna de identificação.
++  // Notas legadas sem CHAVE ainda são localizadas pelos sete campos originais.
++  const identities=sh.getRange(2,1,count,hasLegacy?7:1).getDisplayValues();
+   identities.forEach((cells,i)=>{
+-    if(!cells.some(Boolean))return;
+-    const key=transportRowKey_(cells);
++    const stored=logText_(cells[0]);
++    const key=stored||(hasLegacy&&cells.some(Boolean)?transportRowKey_(cells):'');
+     if(!needed.has(key))return;
+     if(indices.has(key))throw new Error('Nota com chave duplicada. Atualize a seleção.');
+     indices.set(key,i+2);
+-    byRow.set(i+2,key);
+   });
+   if(indices.size!==needed.size)throw new Error('Nota ausente. Atualize a seleção.');
++  return new Map([...indices].map(([key,row])=>[row,key]));
++}
++
++function transportEditRows_(sh, user, keys, layout, positions) {
++  const byRow=positions||transportEditPositions_(sh,keys);
+   const {headers,fields,tz}=layout, lists=new Map(), items=new Map();
+   for(const {first,last} of centralRowBlocks_([...byRow.keys()])){
+     const grid=sh.getRange(first,1,last-first+1,headers.length);
+@@ -4307,11 +4314,11 @@
+       status='sem_alteracoes';
+       return {ok:true,updated:0,unchanged:items.length,failed:[],partial:false,patches:[],message:'Nenhuma alteração para salvar.'};
+     }
+-    // Uma conferência em bloco substitui a leitura integral repetida para cada nota.
++    // Revalida cabeçalhos e notas localizadas imediatamente antes da gravação.
+     const nowLayout=transportEditLayout_(sh);
+     if(JSON.stringify(nowLayout.headers)!==JSON.stringify(layout.headers))throw new Error('Os cabeçalhos da planilha mudaram. Reabra o formulário.');
+-    const latest=transportEditRows_(sh,user,modified.map(x=>x.key),nowLayout);
+-    if(latest.some((x,i)=>x.n!==modified[i].n||x.version!==modified[i].version)){
++    const latest=transportEditRows_(sh,user,modified.map(x=>x.key),nowLayout,new Map(modified.map(x=>[x.n,x.key])));
++    if(latest.some((x,i)=>!x||x.version!==modified[i].version)){
+       throw new Error('A planilha mudou durante a edição. Reabra o formulário.');
+     }
+     timing.mark('validacao');
