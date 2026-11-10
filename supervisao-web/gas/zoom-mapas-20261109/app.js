@@ -2361,6 +2361,45 @@ function sacApplySaved(result) {
  }
 }
 
+function sacCategoryButton(field){
+ return field.name==='category'&&!field.readOnly?'<button type="button" class="btn sac-category-add" data-sac-category>+ Nova categoria</button>':'';
+}
+
+function sacBindCategory(form){
+ const trigger=$('[data-sac-category]',form),select=form.elements.namedItem('category');
+ if(!trigger||!select)return;
+ trigger.onclick=()=>{
+  const dialog=formationDialog('Nova categoria de ocorrência',`<form><label>Nome da categoria
+   <input name="category" type="text" required maxlength="80" autocomplete="off"></label>
+   <p role="status" data-category-status></p><footer><button type="submit" class="btn primary">Adicionar categoria</button></footer></form>`);
+  const create=$('form',dialog),input=create.elements.namedItem('category'),submit=$('button[type="submit"]',create),close=$('.formation-close',dialog);
+  const status=$('[data-category-status]',create);
+  dialog.addEventListener('cancel',event=>{if(submit.disabled)event.preventDefault();});
+  create.onsubmit=async event=>{
+   event.preventDefault();
+   if(submit.disabled)return;
+   const name=input.value.trim();
+   if(!name){status.textContent='Informe o nome da categoria.';return;}
+   submit.disabled=close.disabled=true;
+   status.textContent='Adicionando categoria…';
+   try{
+    let option=Array.from(select.options).find(entry=>entry.value&&normalize(entry.value)===normalize(name));
+    if(!option){
+     const {category}=await api('/api/logistics',{body:JSON.stringify({kind:'transport',action:'categoryAdd',category:name})});
+     option=Array.from(select.options).find(entry=>entry.value===category);
+     if(!option){option=new Option(category,category);select.add(option);}
+    }
+    const toggle=$('[data-batch-apply="category"]',form);
+    if(toggle){toggle.disabled=false;toggle.checked=true;toggle.onchange();}
+    select.value=option.value;
+    dialog.close();
+    select.focus();
+   }catch(error){status.textContent=error.message;submit.disabled=close.disabled=false;}
+  };
+  input.focus();
+ };
+}
+
 async function sacEdit(key){
  if(!state.user?.editTransport)return;
  const cached=(LOG.cache.transport?.rows||[]).find(row=>row.id===key);
@@ -2375,7 +2414,8 @@ async function sacEdit(key){
  try{
   const data=await api('/api/logistics',{body:JSON.stringify({kind:'transport',action:'editRead',key})});
   if(!dialog.open)return;
-  dialog.innerHTML=`<form id="sacForm"><header><div><small>ACOMPANHAMENTO · SAC</small><h2>NF ${esc(data.invoice)}</h2><p>${esc(data.client)} · ${esc(data.carrier)}</p></div><button type="button" class="btn" id="sacClose" aria-label="Fechar edição">×</button></header>${transportNoteContext(data.record||cached)}<p class="sac-help">A data de entrega e os campos alterados serão salvos nesta nota na planilha de origem. A lista e os indicadores serão atualizados após a confirmação.</p><div class="sac-fields">${data.fields.map(f=>`<label>${esc(f.label)}${f.type==='date'?`<input type="date" aria-label="${esc(f.label)}" name="${esc(f.name)}" value="${esc(f.value)}" max="${transportToday()}" ${f.readOnly?'readonly':''}>`:f.options?`<select aria-label="${esc(f.label)}" name="${esc(f.name)}" ${f.readOnly?'disabled':''}><option value="">Sem preenchimento</option>${[...new Set([...f.options,...(f.value?[f.value]:[])])].map(v=>`<option value="${esc(v)}" ${v===f.value?'selected':''}>${esc(v)}</option>`).join('')}</select>`:`<textarea aria-label="${esc(f.label)}" name="${esc(f.name)}" maxlength="2000" rows="${['follow','notes'].includes(f.name)?3:2}" ${f.readOnly?'readonly':''}>${esc(f.value)}</textarea>`}${f.readOnly?'<small>Fórmula protegida</small>':''}</label>`).join('')}</div><p id="sacResult" role="status"></p><footer><button type="button" class="btn" id="sacCancel">Cancelar</button><button type="submit" class="btn primary">Salvar na planilha</button></footer></form>`;
+  dialog.innerHTML=`<form id="sacForm"><header><div><small>ACOMPANHAMENTO · SAC</small><h2>NF ${esc(data.invoice)}</h2><p>${esc(data.client)} · ${esc(data.carrier)}</p></div><button type="button" class="btn" id="sacClose" aria-label="Fechar edição">×</button></header>${transportNoteContext(data.record||cached)}<p class="sac-help">A data de entrega e os campos alterados serão salvos nesta nota na planilha de origem. A lista e os indicadores serão atualizados após a confirmação.</p><div class="sac-fields">${data.fields.map(f=>`<div class="sac-field"><label>${esc(f.label)}${f.type==='date'?`<input type="date" aria-label="${esc(f.label)}" name="${esc(f.name)}" value="${esc(f.value)}" max="${transportToday()}" ${f.readOnly?'readonly':''}>`:f.options?`<select aria-label="${esc(f.label)}" name="${esc(f.name)}" ${f.readOnly?'disabled':''}><option value="">Sem preenchimento</option>${[...new Set([...f.options,...(f.value?[f.value]:[])])].map(v=>`<option value="${esc(v)}" ${v===f.value?'selected':''}>${esc(v)}</option>`).join('')}</select>`:`<textarea aria-label="${esc(f.label)}" name="${esc(f.name)}" maxlength="2000" rows="${['follow','notes'].includes(f.name)?3:2}" ${f.readOnly?'readonly':''}>${esc(f.value)}</textarea>`}${f.readOnly?'<small>Fórmula protegida</small>':''}</label>${sacCategoryButton(f)}</div>`).join('')}</div><p id="sacResult" role="status"></p><footer><button type="button" class="btn" id="sacCancel">Cancelar</button><button type="submit" class="btn primary">Salvar na planilha</button></footer></form>`;
+  sacBindCategory($('#sacForm',dialog));
   const close=$('#sacClose',dialog),cancel=$('#sacCancel',dialog);
   let saving=false;
   close.onclick=cancel.onclick=()=>{if(!saving)dialog.close();};
@@ -2391,6 +2431,8 @@ async function sacEdit(key){
     if(value!==field.value)values[field.name]=value;
    }
    if(!Object.keys(values).length){status.textContent='Nenhuma alteração para salvar.';return;}
+   const category=$('[data-sac-category]',form);
+   if(category)category.disabled=true;
    saving=submit.disabled=close.disabled=cancel.disabled=true;
    status.textContent='Salvando e conferindo na planilha…';
    let saved;
@@ -2398,6 +2440,7 @@ async function sacEdit(key){
     saved=await api('/api/logistics',{body:JSON.stringify({kind:'transport',action:'editSave',key,version:data.version,values})});
    }catch(error){
     status.textContent=error.message;
+    if(category)category.disabled=false;
     saving=submit.disabled=close.disabled=cancel.disabled=false;
     return;
    }
@@ -2656,10 +2699,11 @@ async function sacBatchEdit(){
  const dialog=document.createElement('dialog');dialog.className='sac-dialog sac-batch-dialog';dialog.setAttribute('aria-label','Preenchimento em massa do SAC');dialog.innerHTML='<div class="panel"><h2>Preparando notas selecionadas…</h2><p>Conferindo permissões e valores atuais na planilha.</p></div>';document.body.append(dialog);dialog.showModal();dialog.addEventListener('close',()=>dialog.remove());
  try{
  const data=await api('/api/logistics',{body:JSON.stringify({kind:'transport',action:'batchRead',keys})});
- dialog.innerHTML=`<form id="sacBatchForm"><header><div><small>ACOMPANHAMENTO · SAC</small><h2>Preencher ${logN(data.items.length)} notas</h2><p>Marque somente os campos que deseja alterar.</p></div><button type="button" class="btn" id="sacBatchClose" aria-label="Fechar preenchimento em massa">×</button></header><section id="sacBatchInputs"><div class="sac-fields">${data.fields.map(f=>`<section class="sac-batch-field"><label class="sac-field-toggle"><input type="checkbox" data-batch-apply="${esc(f.name)}" ${f.readOnly||f.options?.length===0?'disabled':''}>${esc(f.label)}</label><div class="sac-batch-control" data-batch-control="${esc(f.name)}">${f.name==='follow'?'<label>Como aplicar<select name="followMode" disabled><option value="append">Acrescentar ao follow-up existente</option><option value="replace">Substituir o follow-up existente</option></select></label>':''}${f.type==='date'?`<input type="date" name="${esc(f.name)}" aria-label="${esc(f.label)} em massa" max="${transportToday()}" disabled>`:f.options?`<select name="${esc(f.name)}" aria-label="${esc(f.label)} em massa" disabled><option value="">Escolha uma opção</option>${f.options.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>`:`<textarea name="${esc(f.name)}" aria-label="${esc(f.label)} em massa" rows="${f.name==='follow'||f.name==='notes'?3:2}" maxlength="2000" disabled placeholder="Valor para as notas selecionadas"></textarea>`}<small>${f.readOnly?'Campo protegido por fórmula em uma das notas.':f.options?.length===0?'Não há opção comum a todas as notas.':`${logN(f.filled)} notas já possuem este campo preenchido.`}</small></div></section>`).join('')}</div><p class="sac-help">Campos desmarcados serão preservados. Campos vazios não apagam dados. O follow-up pode ser acrescentado ou substituído.</p></section><section id="sacBatchReview" hidden></section><p id="sacBatchStatus" role="status" aria-live="polite"></p><footer><button type="button" class="btn" id="sacBatchBack" hidden>Voltar e editar</button><button type="button" class="btn" id="sacBatchCancel">Cancelar</button><button type="submit" class="btn primary" id="sacBatchSubmit">Revisar alterações</button></footer></form>`;
+ dialog.innerHTML=`<form id="sacBatchForm"><header><div><small>ACOMPANHAMENTO · SAC</small><h2>Preencher ${logN(data.items.length)} notas</h2><p>Marque somente os campos que deseja alterar.</p></div><button type="button" class="btn" id="sacBatchClose" aria-label="Fechar preenchimento em massa">×</button></header><section id="sacBatchInputs"><div class="sac-fields">${data.fields.map(f=>`<section class="sac-batch-field"><label class="sac-field-toggle"><input type="checkbox" data-batch-apply="${esc(f.name)}" ${f.readOnly||f.options?.length===0?'disabled':''}>${esc(f.label)}</label><div class="sac-batch-control" data-batch-control="${esc(f.name)}">${f.name==='follow'?'<label>Como aplicar<select name="followMode" disabled><option value="append">Acrescentar ao follow-up existente</option><option value="replace">Substituir o follow-up existente</option></select></label>':''}${f.type==='date'?`<input type="date" name="${esc(f.name)}" aria-label="${esc(f.label)} em massa" max="${transportToday()}" disabled>`:f.options?`<select name="${esc(f.name)}" aria-label="${esc(f.label)} em massa" disabled><option value="">Escolha uma opção</option>${f.options.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>`:`<textarea name="${esc(f.name)}" aria-label="${esc(f.label)} em massa" rows="${f.name==='follow'||f.name==='notes'?3:2}" maxlength="2000" disabled placeholder="Valor para as notas selecionadas"></textarea>`}<small>${f.readOnly?'Campo protegido por fórmula em uma das notas.':f.options?.length===0&&f.name!=='category'?'Não há opção comum a todas as notas.':`${logN(f.filled)} notas já possuem este campo preenchido.`}</small></div>${sacCategoryButton(f)}</section>`).join('')}</div><p class="sac-help">Campos desmarcados serão preservados. Campos vazios não apagam dados. O follow-up pode ser acrescentado ou substituído.</p></section><section id="sacBatchReview" hidden></section><p id="sacBatchStatus" role="status" aria-live="polite"></p><footer><button type="button" class="btn" id="sacBatchBack" hidden>Voltar e editar</button><button type="button" class="btn" id="sacBatchCancel">Cancelar</button><button type="submit" class="btn primary" id="sacBatchSubmit">Revisar alterações</button></footer></form>`;
  const form=$('#sacBatchForm',dialog),status=$('#sacBatchStatus',dialog),submit=$('#sacBatchSubmit',dialog),back=$('#sacBatchBack',dialog),review=$('#sacBatchReview',dialog),inputs=$('#sacBatchInputs',dialog);let changes=null,saving=false;
  $('#sacBatchClose',dialog).onclick=$('#sacBatchCancel',dialog).onclick=()=>{if(!saving)dialog.close();};dialog.addEventListener('cancel',e=>{if(saving)e.preventDefault();});
  $$('[data-batch-apply]',dialog).forEach(toggle=>toggle.onchange=()=>{const box=$$('[data-batch-control]',dialog).find(x=>x.dataset.batchControl===toggle.dataset.batchApply);box.querySelectorAll('textarea,select,input[type=date]').forEach(el=>{el.disabled=!toggle.checked;el.required=toggle.checked;});});
+ sacBindCategory(form);
  back.onclick=()=>{changes=null;inputs.hidden=false;review.hidden=true;back.hidden=true;submit.textContent='Revisar alterações';status.textContent='';};
  form.onsubmit=async e=>{e.preventDefault();if(saving)return;if(!changes){
  changes={};for(const f of data.fields){const toggle=$$('[data-batch-apply]',dialog).find(t=>t.dataset.batchApply===f.name);if(!toggle?.checked)continue;const value=form.elements.namedItem(f.name).value.trim();if(!value){changes=null;status.textContent='Preencha os campos marcados.';return;}changes[f.name]={value,mode:f.name==='follow'?form.elements.namedItem('followMode').value:'replace'};}
