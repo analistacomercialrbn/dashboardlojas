@@ -1,0 +1,23 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -3938,8 +3938,9 @@
+   const previewKey=apply&&/^[a-f0-9-]{36}$/.test(token)?'SAC_IMPORT_'+token:'';
+   const expected=previewKey?cache.get(previewKey):null;
+   if(apply&&!expected)throw new Error('A prévia expirou. Analise o arquivo novamente.');
+-  const lock=LockService.getScriptLock();
+-  if(!lock.tryLock(3000))throw new Error('Outra gravação está em andamento. Tente novamente em instantes.');
++  // A prévia só consulta a planilha. A confirmação recalcula a conciliação sob o lock.
++  const lock=apply?LockService.getScriptLock():null;
++  if(lock&&!lock.tryLock(10000))throw new Error('Outra gravação está em andamento. Tente novamente em instantes.');
+   let attempted=false;
+   try{
+     const ss=SpreadsheetApp.openById(id), sheet=ss.getSheetByName('ACOMPANHAMENTO'), tz=ss.getSpreadsheetTimeZone();
+@@ -3973,7 +3974,7 @@
+     try{
+       if(attempted)PropertiesService.getScriptProperties().setProperty(centralTransportVersionKey_(id),Utilities.getUuid());
+     }catch(error){console.warn('Não foi possível invalidar o cache de transportadoras.');}
+-    finally{lock.releaseLock();}
++    finally{if(lock)lock.releaseLock();}
+   }
+ }
+ 
