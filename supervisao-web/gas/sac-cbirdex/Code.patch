@@ -1,0 +1,134 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -287,7 +287,7 @@
+   passwordChangeSessionSeconds: 600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/4fa41b6efbfaa6b8e4e13c3363d4c8f5ae67b8ab/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/cfb9d3a91ebc157057df2fa11d3eff82da396300/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -3693,7 +3693,7 @@
+ 
+ // ── Importação de relatórios das transportadoras ──
+ // A prévia concilia o arquivo com a base. A confirmação grava somente os campos da transportadora.
+-const SAC_IMPORT_CARRIERS = ['TRANSRÁPIDO','F&P'];
++const SAC_IMPORT_CARRIERS = ['TRANSRÁPIDO','F&P','CBIRDEX'];
+ const SAC_IMPORT_FIELDS = {
+   'CLIENTE':['text','DESTINATARIO'], 'CNPJ/CPF':['text','CNPJ CPF'],
+   'CIDADE':['text','CIDADE',2], 'UF':['text','UF',2],
+@@ -3705,6 +3705,13 @@
+   'SERVICO':['text','SERVICO'], 'RECEBEDOR':['text','RECEBEDOR'], 'DOCUMENTO':['text','DOCUMENTO'],
+   'DATA STATUS':['date','DATA STATUS'], 'HORA STATUS':['text','HORA STATUS']
+ };
++const SAC_CBIRDEX_FIELDS = {
++  'CLIENTE':'DESTINATARIO', 'CNPJ/CPF':'CNPJDESTINATARIO',
++  'CIDADE':'CIDADEENTREGA', 'UF':'UFENTREGA', 'EMISSAO':'EMISSAO',
++  'PREVISAO TRANSPORTADORA':'PREVISAOENTREGA', 'DATA ENTREGA':'ENTREGAREALIZADA',
++  'STATUS TRANSPORTADORA':'SITUACAO', 'PESO':'PESOREAL', 'VOLUMES':'VOLUME',
++  'VALOR MERCADORIA':'VALORMERCADORIA', 'FRETE TOTAL':'FRETE'
++};
+ const SAC_IMPORT_TOTALS = ['PESO','VOLUMES','VALOR MERCADORIA','FRETE TOTAL','PEDIDO'];
+ const SAC_IMPORT_TRACKING = ['DATA ENTREGA','STATUS TRANSPORTADORA','DATA STATUS','HORA STATUS','RECEBEDOR','DOCUMENTO'];
+ 
+@@ -3733,13 +3740,27 @@
+   return allowed;
+ }
+ 
+-function sacImportReadReport_(p,tz) {
+-  const grid=p.rows;
++function sacCbirdexId_(value) {
++  // No CSV, a série vem antes do número. A planilha usa número-série.
++  const parts=logText_(value).match(/^(\d+)(?:\s*\/\s*|\s+)(\d+)$/);
++  return parts?sacImportNotes_(parts[2]+'-'+parts[1])[0]:'';
++}
++
++function sacImportReadReport_(p,tz,carrier) {
++  const cbirdex=carrier==='CBIRDEX';
++  let grid=p.rows;
++  if(cbirdex){
++    if(typeof p.csv!=='string'||!p.csv.trim()||p.csv.length>650000){
++      throw new Error('Selecione o CSV original da CBIRDEX com até 650 KB de dados.');
++    }
++    grid=Utilities.parseCsv(p.csv.replace(/^\uFEFF/,'').trimEnd(),';');
++  }
+   if(!Array.isArray(grid)||grid.length<2||grid.length>1001||
+      grid.some(row=>!Array.isArray(row)||row.length>60||row.some(value=>typeof value!=='string'||value.length>500))||
+      JSON.stringify(grid).length>650000)throw new Error('Use um relatório de até 1.000 linhas e 650 KB de dados.');
+   const headers=grid[0].map(sacImportHeader_);
+-  if(!['NF S','DESTINATARIO','EMISSAO NF S','ULTIMO STATUS'].every(name=>headers.filter(h=>h===name).length===1)) {
++  const required=cbirdex?['NUMEROCTE','NOTAFISCAL','DESTINATARIO','EMISSAO','SITUACAO']:['NF S','DESTINATARIO','EMISSAO NF S','ULTIMO STATUS'];
++  if(!required.every(name=>headers.filter(h=>h===name).length===1)) {
+     throw new Error('Cabeçalho não reconhecido. Selecione o relatório de remessas original da transportadora.');
+   }
+   const locate=(key,alternative)=>{
+@@ -3749,14 +3770,25 @@
+     }
+     return [headers.indexOf(key),headers.indexOf(alternative)];
+   };
+-  const columns=Object.entries(SAC_IMPORT_FIELDS).map(([name,[type,key,alternative]])=>[name,type,locate(key,alternative)]);
+-  const nfColumn=headers.indexOf('NF S');
++  const columns=Object.entries(SAC_IMPORT_FIELDS).flatMap(([name,[type,key,alternative]])=>
++    cbirdex?(SAC_CBIRDEX_FIELDS[name]?[[name,type,[headers.indexOf(SAC_CBIRDEX_FIELDS[name])]]]:[]):[[name,type,locate(key,alternative)]]);
++  const nfColumn=headers.indexOf(cbirdex?'NOTAFISCAL':'NF S');
++  const extraNfColumn=headers.indexOf('DEMAISNOTASFISCAIS'),cteColumn=headers.indexOf('NUMEROCTE');
+   const report=[];
+   let ignored=0;
+   for(const row of grid.slice(1)){
+-    const invoice=logText_(row[nfColumn]), notes=sacImportNotes_(invoice);
+-    if(!notes.length){ignored++;continue;}
++    let invoice=logText_(row[nfColumn]);
+     const values={};
++    if(cbirdex){
++      const extra=logText_(row[extraNfColumn]);
++      const ids=[invoice,...(extra?extra.split(/[,;\r\n]+/):[])].map(sacCbirdexId_);
++      const cte=sacCbirdexId_(row[cteColumn]);
++      if(!cte||ids.some(id=>!id)){ignored++;continue;}
++      invoice=[...new Set(ids)].join(', ');
++      values['CT-E']=cte;
++    }
++    const notes=sacImportNotes_(invoice);
++    if(!notes.length){ignored++;continue;}
+     for(const [name,type,indices] of columns){
+       const raw=indices.map(i=>logText_(row[i])).find(Boolean);
+       if(!raw||/^[-—]+$/.test(raw))continue;
+@@ -3764,6 +3796,7 @@
+       const value=type==='date'?(dates[0]||''):type==='number'?logNumber_(raw):raw;
+       if(value!==''&&value!=null)values[name]=value;
+     }
++    if(cbirdex&&values['DATA ENTREGA']<values.EMISSAO)delete values['DATA ENTREGA'];
+     report.push({invoice,notes,values});
+   }
+   if(!report.length)throw new Error('Nenhuma NF válida foi encontrada no arquivo.');
+@@ -3893,9 +3926,10 @@
+   return logText_(value);
+ }
+ 
+-function sacImportFormulas_(n,columns) {
++function sacImportFormulas_(n,columns,carrier) {
+   const cell=name=>transportColumnLetter_(columns[name]+1)+n;
+-  const nf=cell('NF'), coleta=cell('DATA COLETA'), prazo=cell('PRAZO INTERNO REBANHO'), entrega=cell('DATA ENTREGA');
++  const nf=cell('NF'), coleta=cell('DATA COLETA'), interno=cell('PRAZO INTERNO REBANHO'), entrega=cell('DATA ENTREGA');
++  const prazo=carrier==='CBIRDEX'? `IF(${interno}="";${cell('PREVISAO TRANSPORTADORA')};${interno})`:interno;
+   return {
+     'PRAZO INTERNO REBANHO':`=IF(${coleta}="";"";WORKDAY.INTL(${coleta};2;1;LISTAS!$E$2:$E$50))`,
+     'STATUS SLA':`=IF(${nf}="";"";IF(${prazo}="";"Sem prazo";IF(${entrega}="";IF(TODAY()<=${prazo};"Em andamento - no prazo";"Em andamento - atrasado");IF(${entrega}<=${prazo};"No Prazo";"Fora do Prazo"))))`,
+@@ -3910,7 +3944,7 @@
+     const rows=additions.map((fields,i)=>{
+       const line=Array(header.length).fill('');
+       for(const [name,value] of Object.entries(fields))line[columns[name]]=sacImportCell_(name,value,tz);
+-      for(const [name,value] of Object.entries(sacImportFormulas_(last+i+1,columns)))line[columns[name]]=value;
++      for(const [name,value] of Object.entries(sacImportFormulas_(last+i+1,columns,fields.TRANSPORTADORA)))line[columns[name]]=value;
+       line[columns['DATA ATUALIZACAO']]=now;
+       return line;
+     });
+@@ -3970,7 +4004,7 @@
+     const ss=SpreadsheetApp.openById(id), sheet=ss.getSheetByName('ACOMPANHAMENTO'), tz=ss.getSpreadsheetTimeZone();
+     if(!sheet)throw new Error('Aba ACOMPANHAMENTO não encontrada.');
+     const layout=sacImportLayout_(sheet), last=sheet.getLastRow();
+-    const input=sacImportReadReport_(p,tz);
++    const input=sacImportReadReport_(p,tz,carrier);
+     const rows=last>1?sheet.getRange(2,1,last-1,layout.header.length).getValues():[];
+     const today=Utilities.formatDate(new Date(),tz,'yyyy-MM-dd');
+     const plan=sacImportPlan_(rows,layout.columns,carrier,input,tz,today);
