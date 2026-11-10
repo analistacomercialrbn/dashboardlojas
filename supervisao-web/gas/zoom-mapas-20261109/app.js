@@ -1885,11 +1885,12 @@ function installTableSorting(){
  const root=$('#appView');if(!root)return;
  const enhance=()=>root.querySelectorAll('table').forEach(table=>{
  if(table.closest('.logistics-content'))enableLogColumnFilters(table);
- table.querySelectorAll('thead th').forEach((th,index)=>{
- if(th.dataset.sortReady)return;th.dataset.sortReady='1';const label=th.textContent.trim();if(!label)return;
- const button=document.createElement('button');button.type='button';button.className='table-sort';button.textContent=label+' ↕';button.setAttribute('aria-label','Ordenar por '+label);th.replaceChildren(button);
+ table.querySelectorAll('thead th').forEach(th=>{
+ if(th.dataset.sortReady)return;th.dataset.sortReady='1';
+ const title=th.querySelector('[data-log-column-title]'),label=(title||th).textContent.trim();if(!label)return;
+ const button=document.createElement('button');button.type='button';button.className='table-sort';button.textContent=label+' ↕';button.setAttribute('aria-label','Ordenar por '+label);if(title)title.replaceWith(button);else th.replaceChildren(button);
  button.onclick=()=>{const asc=th.getAttribute('aria-sort')!=='ascending';table.querySelectorAll('th[aria-sort]').forEach(x=>x.removeAttribute('aria-sort'));th.setAttribute('aria-sort',asc?'ascending':'descending');table.querySelectorAll('.table-sort').forEach(x=>x.textContent=x.textContent.replace(/[↑↓]$/,'↕'));button.textContent=label+(asc?' ↑':' ↓');
- sortTableRows(table,index,asc);
+ sortTableRows(table,th.cellIndex,asc);
  };
  });});
  enhance();if(!root.dataset.sortObserved){root.dataset.sortObserved='1';let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;enhance()})}).observe(root,{childList:true,subtree:true});}
@@ -2022,7 +2023,7 @@ function logFilters(all){let el=$('#logFilters');if(!el){el=document.createEleme
    for(const k of Object.keys(f))f[k]=Array.isArray(f[k])?[]:'Todos';
    LOG.search='';
    delete LOG.tableColumnFilters?.[LOG.page];
-   if(LOG.page==='transport')LOG.transportSearchDraft='';
+   if(LOG.page==='transport'){LOG.transportSearchDraft='';LOG.transportOnlyOverdue=false;}
    if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;}
    updatePeriod();
  };
@@ -2059,7 +2060,8 @@ function logTableCell(row,[key,,type]){
  return String(value);
 }
 
-function logTableMatches(rows,cols,filters){
+function logTableMatches(rows,cols,filters,onlyOverdue=false){
+ if(onlyOverdue)rows=rows.filter(row=>row.overdue&&!row.delivered&&!row.deliveredDate);
  const active=cols.map(col=>[col,normalize(filters[col[0]])]).filter(([,term])=>term);
  return active.length?rows.filter(row=>active.every(([col,term])=>normalize(logTableCell(row,col)).includes(term))):rows;
 }
@@ -2072,55 +2074,169 @@ function logTablePage(rows){
  return {start,end,part:rows.slice(start,end)};
 }
 
-function logTableBody(rows,cols,editable){
- return rows.map(row=>`<tr>${editable?`<td><button class="btn sac-edit" data-sac-edit="${esc(row.id)}">Preencher</button></td>`:''}${cols.map(col=>`<td>${esc(logTableCell(row,col))}</td>`).join('')}</tr>`).join('')
+function logTableBody(rows,cols,editable,compact=false){
+ return rows.map(row=>`<tr>${editable?`<td><button class="btn sac-edit" data-sac-edit="${esc(row.id)}">Preencher</button></td>`:''}${cols.map(col=>{const value=esc(logTableCell(row,col));return compact?`<td><span class="log-cell-value" title="${value}">${value}</span></td>`:`<td>${value}</td>`;}).join('')}</tr>`).join('')
   || `<tr><td colspan="${cols.length+Number(editable)}">Nenhum registro no recorte.</td></tr>`;
+}
+
+function transportTableOrder(cols){
+ const order=LOG.transportColumnOrder;
+ if(!order)return cols;
+ const byKey=new Map(cols.map(col=>[col[0],col]));
+ return [...order.map(key=>byKey.get(key)).filter(Boolean),...cols.filter(([key])=>!order.includes(key))];
+}
+
+function transportTableColumns(cols,editable){
+ const weights={client:1.6,cityLabel:1.12,follow:1.5,problem:1.2,responsible:1.15,invoice:1.1,delay:.65,weight:.8,freight:.8};
+ const widths=[...(editable?[.9]:[]),...cols.map(([key])=>weights[key]||1)];
+ const total=widths.reduce((sum,value)=>sum+value,0);
+ return '<colgroup>'+widths.map(width=>`<col style="width:${100*width/total}%">`).join('')+'</colgroup>';
+}
+
+function transportTablePreview(matches,cols,onlyOverdue){
+ const preview=window.open('','_blank');
+ if(!preview)return false;
+ preview.opener=null;
+ const title=onlyOverdue?'Notas em atraso':'Acompanhamento das transportadoras';
+ preview.document.open();
+ preview.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
+  <style>
+  @page{size:A4 landscape;margin:8mm}
+  *{box-sizing:border-box}
+  body{margin:0;padding:12px;font:12px/1.3 Arial,sans-serif;color:#202b36;background:#fff}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}
+  h1{font-size:18px;margin:0 0 2px}
+  p{margin:0}
+  button{font:inherit;padding:6px 10px;cursor:pointer}
+  table{border-collapse:collapse;table-layout:fixed;width:100%}
+  th,td{border:1px solid #ccd4df;padding:3px 4px;overflow-wrap:anywhere;text-align:left;vertical-align:top}
+  th{background:#eaf0f8}
+  tbody tr:nth-child(even){background:#f7f9fc}
+  @media print{body{padding:0;font-size:7pt}h1{font-size:13pt}button{display:none}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:2px 3px}}
+  </style></head><body>
+  <header><div><h1>${title}</h1><p>${logN(matches.length)} ${matches.length===1?'registro filtrado':'registros filtrados'}</p></div><button type="button" id="printReport">Imprimir / Salvar PDF</button></header>
+  <table>${transportTableColumns(cols,false)}<thead><tr>${cols.map(([,label])=>`<th scope="col">${esc(label)}</th>`).join('')}</tr></thead>
+  <tbody>${logTableBody(matches,cols,false)}</tbody></table></body></html>`);
+ preview.document.close();
+ preview.document.getElementById('printReport').onclick=()=>preview.print();
+ return true;
 }
 
 function logTable(title,rows,cols){
  LOG.tableRows=rows;
  LOG.tableColumnFilters||={};
  const filters=LOG.tableColumnFilters[LOG.page]||={};
- const editable=LOG.kind==='transport'&&!!state.user?.editTransport;
- const matches=logTableMatches(rows,cols,filters);
+ const transport=LOG.kind==='transport';
+ const editable=transport&&!!state.user?.editTransport;
+ const onlyOverdue=transport&&!!LOG.transportOnlyOverdue;
+ if(transport)cols=transportTableOrder(cols);
+ const matches=logTableMatches(rows,cols,filters,onlyOverdue);
  const {start,end,part}=logTablePage(matches);
- LOG.tableData={rows,cols,filters,editable,matches};
- return `<section class="panel log-detail-panel" id="logDetail">
-  <div class="log-table-heading"><div><h3>${esc(title)}</h3><p>Use os campos sob os títulos para combinar filtros. Use as setas dos títulos para ordenar a página.</p></div><button class="btn" id="logExport">Exportar CSV</button></div>
-  <div class="table-wrap"><table class="log-table" data-column-filters-ready="1"><thead>
-  <tr>${editable?'<th>Preenchimento SAC</th>':''}${cols.map(([,label])=>`<th>${esc(label)}</th>`).join('')}</tr>
+ LOG.tableData={rows,cols,filters,editable,matches,transport};
+ const columnHead=([key,label])=>transport?`<th scope="col" data-log-column="${esc(key)}"><span data-log-column-title>${esc(label)}</span><button type="button" class="log-column-grip" data-log-column-grip draggable="true" aria-label="Mover coluna ${esc(label)}" title="Arraste ou use ← e → para mover">⠿</button></th>`:`<th scope="col">${esc(label)}</th>`;
+ return `<section class="panel log-detail-panel${transport?' log-transport-detail':''}" id="logDetail">
+  <div class="log-table-heading"><div><h3>${esc(title)}</h3><p>${transport?'Combine os filtros e arraste pelo ícone para mover colunas.':'Use os campos sob os títulos para combinar filtros. Use as setas dos títulos para ordenar a página.'}</p></div>
+  <div class="log-table-actions">${transport?`<button type="button" class="btn" id="logOverdue" aria-pressed="${onlyOverdue}">Em atraso</button><button type="button" class="btn" id="logPreview" ${matches.length?'':'disabled'}>Prévia para captura</button>`:''}<button type="button" class="btn" id="logExport">Exportar CSV</button></div></div>
+  ${transport?'<p id="logTableFeedback" class="log-table-feedback" role="status"></p>':''}
+  <div class="table-wrap"><table class="log-table" data-column-filters-ready="1">${transport?transportTableColumns(cols,editable):''}<thead>
+  <tr>${editable?'<th scope="col">SAC</th>':''}${cols.map(columnHead).join('')}</tr>
   ${tableColumnFilterRow(editable?[['',''],...cols]:cols,filters)}</thead>
-  <tbody>${logTableBody(part,cols,editable)}</tbody></table></div>
+  <tbody>${logTableBody(part,cols,editable,transport)}</tbody></table></div>
   <div class="log-pagination"><button class="btn" id="logPrev" ${start===0?'disabled':''}>Anterior</button><span aria-live="polite" id="logTableCount">${matches.length?start+1:0}–${end} de ${matches.length}</span><button class="btn" id="logNext" ${end>=matches.length?'disabled':''}>Próxima</button></div>
  </section>`;
+}
+
+function bindTransportColumnOrder(table,cols,editable,renderPage){
+ const head=table.tHead,offset=Number(editable);
+ const move=(from,to)=>{
+  if(from<0||to<0||from===to||to>=cols.length)return;
+  const [column]=cols.splice(from,1);
+  cols.splice(to,0,column);
+  LOG.transportColumnOrder=cols.map(([key])=>key);
+  for(const cells of [...Array.from(head.rows,row=>row.cells),table.querySelector('colgroup').children]){
+   const source=cells[from+offset],target=cells[to+offset];
+   if(from<to)target.after(source);else target.before(source);
+  }
+  renderPage();
+ };
+ let dragging=null,target=null;
+ const clearTarget=()=>{target?.classList.remove('log-column-drop');target=null;};
+ const headerOf=event=>event.target.closest('th[data-log-column]');
+ head.addEventListener('dragstart',event=>{
+  if(!event.target.closest('[data-log-column-grip]'))return;
+  dragging=headerOf(event);
+  event.dataTransfer.effectAllowed='move';
+  event.dataTransfer.setData('text/plain',dragging.dataset.logColumn);
+ });
+ head.addEventListener('dragover',event=>{
+  const header=headerOf(event);
+  if(!dragging||!header||header===dragging){clearTarget();return;}
+  event.preventDefault();
+  event.dataTransfer.dropEffect='move';
+  if(target!==header){clearTarget();target=header;target.classList.add('log-column-drop');}
+ });
+ head.addEventListener('drop',event=>{
+  const header=headerOf(event);
+  if(!dragging||!header)return;
+  event.preventDefault();
+  move(dragging.cellIndex-offset,header.cellIndex-offset);
+  clearTarget();dragging=null;
+ });
+ head.addEventListener('dragend',()=>{clearTarget();dragging=null;});
+ head.addEventListener('keydown',event=>{
+  const grip=event.target.closest('[data-log-column-grip]');
+  if(!grip||!['ArrowLeft','ArrowRight'].includes(event.key))return;
+  event.preventDefault();
+  const index=headerOf(event).cellIndex-offset;
+  move(index,index+(event.key==='ArrowLeft'?-1:1));
+  grip.focus({preventScroll:true});
+ });
 }
 
 function logBindTable(){
  const panel=$('#logDetail');
  if(!panel)return;
  const table=$('table',panel),body=table.tBodies[0],prev=$('#logPrev',panel),next=$('#logNext',panel),count=$('#logTableCount',panel);
- const {rows,cols,filters,editable}=LOG.tableData;
+ const {rows,cols,filters,editable,transport}=LOG.tableData;
+ const preview=$('#logPreview',panel),overdue=$('#logOverdue',panel);
  let {matches}=LOG.tableData;
  const bindEdits=()=>$$('[data-sac-edit]',body).forEach(button=>button.onclick=()=>sacEdit(button.dataset.sacEdit));
  const renderPage=()=>{
   const {start,end,part}=logTablePage(matches);
-  body.innerHTML=logTableBody(part,cols,editable);
+  body.innerHTML=logTableBody(part,cols,editable,transport);
   const sortIndex=Array.from(table.tHead.rows[0].cells).findIndex(th=>th.hasAttribute('aria-sort'));
   if(sortIndex>=0)sortTableRows(table,sortIndex,table.tHead.rows[0].cells[sortIndex].getAttribute('aria-sort')==='ascending');
   count.textContent=`${matches.length?start+1:0}–${end} de ${matches.length}`;
   prev.disabled=start===0;
   next.disabled=end>=matches.length;
+  if(preview)preview.disabled=!matches.length;
   bindEdits();
  };
  bindEdits();
+ const filterTable=()=>{
+  matches=logTableMatches(rows,cols,filters,transport&&!!LOG.transportOnlyOverdue);
+  LOG.tablePage=0;
+  renderPage();
+ };
  table.tHead.addEventListener('input',event=>{
   const key=event.target.dataset.tableColumn;
   if(key===undefined)return;
   filters[key]=event.target.value;
-  matches=logTableMatches(rows,cols,filters);
-  LOG.tablePage=0;
-  renderPage();
+  filterTable();
  });
+ if(transport){
+  bindTransportColumnOrder(table,cols,editable,renderPage);
+  overdue.onclick=()=>{
+   LOG.transportOnlyOverdue=!LOG.transportOnlyOverdue;
+   overdue.setAttribute('aria-pressed',String(LOG.transportOnlyOverdue));
+   filterTable();
+  };
+  preview.onclick=()=>{
+   const feedback=$('#logTableFeedback',panel);
+   feedback.textContent=transportTablePreview(matches,cols,LOG.transportOnlyOverdue)?'':'Permita a abertura de uma nova aba para ver a prévia.';
+  };
+ }
  prev.onclick=()=>{LOG.tablePage=Math.max(0,LOG.tablePage-1);renderPage();};
  next.onclick=()=>{LOG.tablePage++;renderPage();};
  $('#logExport',panel).onclick=()=>{
