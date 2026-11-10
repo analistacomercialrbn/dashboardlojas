@@ -2186,7 +2186,8 @@ function sacApplySaved(result) {
   LOG.cache.transport={...current,rows:current.rows.map(row=>changed.has(row.id)?{...row,...changed.get(row.id)}:row)};
   if(state.module==='logistics'&&['transport','overview'].includes(LOG.page))logShow();
  }
- if(result.patches==null||result.patches.length||result.partial){
+ // A resposta traz as linhas conferidas. Reconsulta imediata só quando o resultado for incompleto.
+ if(result.patches==null||result.partial||!current&&result.patches.length){
   const pending=LOG.pending.transport?.task;
   void Promise.resolve(pending).catch(()=>{}).then(()=>logLoad('transport',false,true));
  }
@@ -2194,21 +2195,59 @@ function sacApplySaved(result) {
 
 async function sacEdit(key){
  if(!state.user?.editTransport)return;
- let dialog=document.createElement('dialog');dialog.className='sac-dialog';dialog.setAttribute('aria-label','Preenchimento SAC');document.body.append(dialog);dialog.innerHTML='<div class="panel">Carregando campos da planilha…</div>';dialog.showModal();dialog.addEventListener('close',()=>dialog.remove());
+ const cached=(LOG.cache.transport?.rows||[]).find(row=>row.id===key);
+ const dialog=document.createElement('dialog');
+ dialog.className='sac-dialog';
+ dialog.setAttribute('aria-label','Preenchimento SAC');
+ dialog.innerHTML=`<header><div><h2>${cached?.invoice?'NF '+esc(cached.invoice):'Preenchimento SAC'}</h2>${cached?`<p>${esc(cached.client)} · ${esc(cached.carrier)}</p>`:''}</div><button type="button" class="btn" aria-label="Fechar edição">×</button></header><p role="status">Buscando os campos atuais da nota…</p>`;
+ dialog.querySelector('button').onclick=()=>dialog.close();
+ document.body.append(dialog);
+ dialog.showModal();
+ dialog.addEventListener('close',()=>dialog.remove());
  try{
   const data=await api('/api/logistics',{body:JSON.stringify({kind:'transport',action:'editRead',key})});
-  dialog.innerHTML=`<form id="sacForm"><header><div><small>ACOMPANHAMENTO · SAC</small><h2>NF ${esc(data.invoice)}</h2><p>${esc(data.client)} · ${esc(data.carrier)}</p></div><button type="button" class="btn" id="sacClose" aria-label="Fechar edição">×</button></header>${transportNoteContext(data.record||(LOG.cache.transport?.rows||[]).find(r=>r.id===key))}<p class="sac-help">A data de entrega e os campos alterados serão salvos nesta nota na planilha de origem. Os indicadores serão recarregados após salvar.</p><div class="sac-fields">${data.fields.map(f=>`<label>${esc(f.label)}${f.type==='date'?`<input type="date" aria-label="${esc(f.label)}" name="${esc(f.name)}" value="${esc(f.value)}" max="${transportToday()}" ${f.readOnly?'readonly':''}>`:f.options?`<select aria-label="${esc(f.label)}" name="${esc(f.name)}" ${f.readOnly?'disabled':''}><option value="">Sem preenchimento</option>${[...new Set([...f.options,...(f.value?[f.value]:[])])].map(v=>`<option value="${esc(v)}" ${v===f.value?'selected':''}>${esc(v)}</option>`).join('')}</select>`:`<textarea aria-label="${esc(f.label)}" name="${esc(f.name)}" maxlength="2000" rows="${['follow','notes'].includes(f.name)?3:2}" ${f.readOnly?'readonly':''}>${esc(f.value)}</textarea>`}${f.readOnly?'<small>Fórmula protegida</small>':''}</label>`).join('')}</div><p id="sacResult" role="status"></p><footer><button type="button" class="btn" id="sacCancel">Cancelar</button><button type="submit" class="btn primary">Salvar na planilha</button></footer></form>`;
-  $('#sacClose',dialog).onclick=$('#sacCancel',dialog).onclick=()=>dialog.close();
-  $('#sacForm',dialog).onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,submit=form.querySelector('[type=submit]'),status=$('#sacResult',dialog);submit.disabled=true;status.textContent='Salvando na planilha…';const values=Object.fromEntries(data.fields.filter(f=>!f.readOnly).map(f=>[f.name,form.elements.namedItem(f.name).value]));
+  if(!dialog.open)return;
+  dialog.innerHTML=`<form id="sacForm"><header><div><small>ACOMPANHAMENTO · SAC</small><h2>NF ${esc(data.invoice)}</h2><p>${esc(data.client)} · ${esc(data.carrier)}</p></div><button type="button" class="btn" id="sacClose" aria-label="Fechar edição">×</button></header>${transportNoteContext(data.record||cached)}<p class="sac-help">A data de entrega e os campos alterados serão salvos nesta nota na planilha de origem. A lista e os indicadores serão atualizados após a confirmação.</p><div class="sac-fields">${data.fields.map(f=>`<label>${esc(f.label)}${f.type==='date'?`<input type="date" aria-label="${esc(f.label)}" name="${esc(f.name)}" value="${esc(f.value)}" max="${transportToday()}" ${f.readOnly?'readonly':''}>`:f.options?`<select aria-label="${esc(f.label)}" name="${esc(f.name)}" ${f.readOnly?'disabled':''}><option value="">Sem preenchimento</option>${[...new Set([...f.options,...(f.value?[f.value]:[])])].map(v=>`<option value="${esc(v)}" ${v===f.value?'selected':''}>${esc(v)}</option>`).join('')}</select>`:`<textarea aria-label="${esc(f.label)}" name="${esc(f.name)}" maxlength="2000" rows="${['follow','notes'].includes(f.name)?3:2}" ${f.readOnly?'readonly':''}>${esc(f.value)}</textarea>`}${f.readOnly?'<small>Fórmula protegida</small>':''}</label>`).join('')}</div><p id="sacResult" role="status"></p><footer><button type="button" class="btn" id="sacCancel">Cancelar</button><button type="submit" class="btn primary">Salvar na planilha</button></footer></form>`;
+  const close=$('#sacClose',dialog),cancel=$('#sacCancel',dialog);
+  let saving=false;
+  close.onclick=cancel.onclick=()=>{if(!saving)dialog.close();};
+  dialog.addEventListener('cancel',event=>{if(saving)event.preventDefault();});
+  $('#sacForm',dialog).onsubmit=async event=>{
+   event.preventDefault();
+   if(saving)return;
+   const form=event.currentTarget,submit=form.querySelector('[type=submit]'),status=$('#sacResult',dialog);
+   const values={};
+   for(const field of data.fields){
+    if(field.readOnly)continue;
+    const value=form.elements.namedItem(field.name).value;
+    if(value!==field.value)values[field.name]=value;
+   }
+   if(!Object.keys(values).length){status.textContent='Nenhuma alteração para salvar.';return;}
+   saving=submit.disabled=close.disabled=cancel.disabled=true;
+   status.textContent='Salvando e conferindo na planilha…';
+   let saved;
    try{
-    const saved=await api('/api/logistics',{body:JSON.stringify({kind:'transport',action:'editSave',key,version:data.version,values})});
-    dialog.close();
-    sacApplySaved(saved);
+    saved=await api('/api/logistics',{body:JSON.stringify({kind:'transport',action:'editSave',key,version:data.version,values})});
+   }catch(error){
+    status.textContent=error.message;
+    saving=submit.disabled=close.disabled=cancel.disabled=false;
+    return;
+   }
+   dialog.close();
+   // Dá ao navegador um quadro para fechar o formulário antes de reconstruir os gráficos.
+   await new Promise(requestAnimationFrame);
+   await new Promise(requestAnimationFrame);
+   sacApplySaved(saved);
+   if(state.module==='logistics'&&LOG.page==='transport'){
     formationNotice(saved.message+(saved.auditWarning?' O registro de auditoria ficou pendente.':''));
-   }catch(err){status.textContent=err.message;submit.disabled=false;}
-
-  };$('#sacClose',dialog).focus();
- }catch(error){dialog.innerHTML=`<div class="panel"><h2>Não foi possível abrir a nota</h2><p>${esc(error.message)}</p><button class="btn" id="sacErrorClose">Fechar</button></div>`;$('#sacErrorClose',dialog).onclick=()=>dialog.close();}
+   }
+  };
+  close.focus();
+ }catch(error){
+  if(!dialog.open)return;
+  dialog.innerHTML=`<div class="panel"><h2>Não foi possível abrir a nota</h2><p>${esc(error.message)}</p><button class="btn" id="sacErrorClose">Fechar</button></div>`;
+  $('#sacErrorClose',dialog).onclick=()=>dialog.close();
+ }
 }
 
 
