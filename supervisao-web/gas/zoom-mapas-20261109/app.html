@@ -444,6 +444,15 @@
 .log-column-filters input:focus-visible{outline:2px solid #ad5727;outline-offset:1px}
 .log-transport-detail .log-table-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .log-transport-detail .log-table-actions .btn[aria-pressed="true"]{background:#a64b18;color:#fff;border-color:#a64b18}
+.sac-columns-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px 12px;margin:12px 0}
+.sac-columns-form .sac-columns-options label{display:flex;align-items:center;gap:8px;margin:0;padding:5px 0}
+.sac-columns-form .sac-columns-options input{width:auto;min-height:0;flex:none;margin:0}
+.sac-columns-form footer{display:flex;flex-wrap:wrap;gap:8px}
+.sac-columns-form [data-columns-message]:empty{display:none}
+.log-hidden-filters{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 10px;font-size:12px}
+.log-hidden-filters .btn{min-height:26px;padding:3px 7px;font-size:12px}
+.log-column-heading{display:flex;align-items:center;justify-content:space-between;gap:2px}
+.log-column-heading .table-sort{min-width:0}
 .log-transport-detail .log-table-feedback:empty{display:none}
 .logistics-content #logDetail.log-transport-detail .table-wrap{max-height:none;max-width:100%}
 .logistics-content #logDetail.log-transport-detail .log-table{table-layout:fixed;width:100%;min-width:0}
@@ -457,7 +466,7 @@
 .log-column-grip:active{cursor:grabbing}
 .log-transport-detail .log-column-drop{box-shadow:inset 0 -3px #a64b18}
 @media (max-width:760px){
- .logistics-content #logDetail.log-transport-detail .log-table{min-width:1050px}
+ .logistics-content #logDetail.log-transport-detail .log-table{min-width:var(--log-table-mobile-width,0px)}
  .logistics-content #logDetail.log-transport-detail .log-column-filters input{font-size:16px}
 }
 .log-table tbody tr[hidden]{display:none}
@@ -1385,6 +1394,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@a9339f78da5410e643996b6893f4f4596f8ce89e/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@7f2ee56d52b893741dfb4738841e08cafa26d581/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
