@@ -1868,7 +1868,7 @@ function biForm(index){const c=BI.draft,w=c.widgets[index]||{id:'w_'+Date.now(),
 function biRender(page,payload){const cfg=biConfig();if(!cfg)return;const ws=cfg.widgets.filter(w=>w.page===page&&!w.hidden);if(page.startsWith('bi_'))$('#content').innerHTML='';if(!ws.length)return;const grid=document.createElement('div');grid.className='bi-grid';$('#content').append(grid);for(const w of ws){const data=payload.bi?.find(x=>x.id===w.id),rows=data?.rows||[],panel=document.createElement('section');panel.className='panel bi-widget bi-'+w.width;grid.append(panel);const fmt=n=>n==null?'—':['clients','orders','products','openCount','inactiveShort','inactiveLong','newClients'].includes(w.metric)?Number(n).toLocaleString('pt-BR'):['mix','attainment'].includes(w.metric)?Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2})+(w.metric==='attainment'?'%':''):money(n,true);panel.innerHTML=`<h3>${esc(w.title)}</h3><small>${esc(BI_METRICS[w.metric])} · ${esc(BI_DIMS[w.dimension])}</small>`;if(data?.error){panel.append(Object.assign(document.createElement('p'),{textContent:data.error}));continue;}if(w.type==='card'){panel.innerHTML+=`<strong class="bi-number">${fmt(rows[0]?.value)}</strong>${rows[0]?.comparison!=null?`<small>Referência: ${fmt(rows[0].comparison)}</small>`:''}`;continue;}if(w.type==='table'){panel.innerHTML+=`<div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Valor</th>${w.comparison!=='none'?'<th>Referência</th><th>Variação</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td>${fmt(r.value)}</td>${w.comparison!=='none'?`<td>${fmt(r.comparison)}</td><td>${r.change==null?'—':r.change.toFixed(1)+'%'}</td>`:''}</tr>`).join('')}</tbody></table></div>`;continue;}const wrap=document.createElement('div');wrap.style.height=w.height+'px';const canvas=document.createElement('canvas');wrap.append(canvas);panel.append(wrap);const color={blue:'#223470',cyan:'#148fbd',green:'#168a76',purple:'#7952b3',orange:'#d98a21'}[w.color];const click=(e,items)=>{if(!w.interaction||!items.length)return;const r=rows[items[0].index];if(['rca','department','supervisor','uf'].includes(w.dimension)){state.filters[w.dimension]=normalizeMulti(state.filters[w.dimension]).includes(String(r.key))?[]:[String(r.key)];setupFilters();queryPage();}};chart(canvas,['column','bar'].includes(w.type)?'bar':w.type==='area'?'line':w.type,{labels:rows.map(r=>r.label),datasets:[{label:BI_METRICS[w.metric],data:rows.map(r=>r.value),backgroundColor:w.type==='doughnut'?rows.map((_,i)=>`hsl(${215+i*17} 45% ${35+i%4*10}%)`):color,borderColor:color,fill:w.type==='area',borderRadius:5},...(w.comparison!=='none'?[{label:'Referência',data:rows.map(r=>r.comparison),backgroundColor:'#bdcfea',borderColor:'#9cb6dc'}]:[])]},{indexAxis:w.type==='bar'?'y':'x',onClick:click,plugins:{legend:{display:true},tooltip:{callbacks:{label:ctx=>fmt(ctx.raw)}}},...(w.type==='doughnut'?{scales:{}}:{})});}}
 
 // Central Rebanho e módulo de logística.
-const LOG={page:'overview',transportMonths:null,cache:{},pending:{},filters:{year:'Todos',month:'Todos',uf:[],region:[],city:[],seller:[],driver:[],vehicle:[],status:[],product:[],route:[],carrier:[]},search:'',tablePage:0,epoch:0,kind:'operations',metric:'weight',geo:null,geoPromise:null,timer:null,advanced:false,kindFilters:{}};
+const LOG={page:'overview',periodSelected:false,cache:{},pending:{},filters:{year:'Todos',month:'Todos',uf:[],region:[],city:[],seller:[],driver:[],vehicle:[],status:[],product:[],route:[],carrier:[]},search:'',tablePage:0,epoch:0,kind:'operations',metric:'weight',geo:null,geoPromise:null,timer:null,advanced:false,kindFilters:{}};
 const LOG_PAGES={overview:['Visão geral','Panorama operacional de cargas e entregas','M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'],map:['Mapa logístico','Peso em aberto, regiões e municípios','M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6zM9 3v15M15 6v15'],transport:['Transportadoras e SAC','Atrasos, saídas e acompanhamento das notas','M3 5h18v14H3zM3 9h18M8 5v14M12 13h5M12 16h3'],formation:['Formação de cargas','Registros, clientes, produtos e previsão','M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10'],routes:['Rotas e entregas','Carteira logística, destinos e prazos','M4 6a2 2 0 1 0 0 .1M20 18a2 2 0 1 0 0 .1M6 6h9a4 4 0 0 1 0 8H9a4 4 0 0 0 0 8h9'],fleet:['Motoristas e frota','Movimentação por motorista, veículo e agenda','M2 5h12v12H2zM14 9h4l4 4v4h-8M7 19a2 2 0 1 0 0 .1M18 19a2 2 0 1 0 0 .1'],pending:['Pendências','Espera, previsão e acompanhamento','M12 3l10 18H2L12 3zM12 9v5M12 17v1'],occurrences:['Ocorrências','Categorias, responsáveis e follow-up','M6 3h12v18H6zM9 7h6M9 11h6M9 15h3'],costs:['Custos','Custos informados e cobertura da base','M12 3v18M17 7c-1-4-10-4-10 1s10 2 10 7-9 5-11 1'],indicators:['Qualidade da formação','Assertividade e ocorrências na formação de carga','M4 21V10h4v11M10 21V4h4v17M16 21V7h4v14'],sources:['Fontes de dados','Origem, atualização e conexão de leitura','M3 5c0-4 18-4 18 0s-18 4-18 0M3 5v14c0 4 18 4 18 0V5M3 12c0 4 18 4 18 0']};
 function areaAllowed(area){return ['ADMIN','DIRETOR'].includes(state.user?.perfil)||(state.user?.areas||(['GERENTE'].includes(state.user?.perfil)?['commercial','logistics']:['commercial'])).includes(area);}
 function logAllowed(){return areaAllowed('logistics');}
@@ -1915,7 +1915,7 @@ async function logLoad(kind,force=false,check=false) {
    if(!existing&&visible()&&LOG.page!=='formation')$('#content').innerHTML='<div class="status-card"><div class="spinner"></div><div><strong>Carregando dados logísticos</strong><p>Consultando a planilha de origem…</p></div></div>';
    const changed=await logFetchSource(kind,force,check);
    if(!changed||!visible())return;
-   if(!existing){
+   if(!existing&&!LOG.periodSelected){
      const latest=LOG.cache[kind]?.meta?.to;
      LOG.filters.year=latest?latest.slice(0,4):'Todos';
      LOG.filters.month=latest?String(Number(latest.slice(5,7))):'Todos';
@@ -1936,7 +1936,12 @@ function logGroup(rows,key,value=null,mode='sum'){const map=new Map();for(const 
 const LOG_MONTH_OPTIONS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
   .map((label,i)=>({value:String(i+1),label}));
 function logMonths(){
-  return LOG.page==='transport'&&LOG.transportMonths!==null?LOG.transportMonths:normalizeMulti(LOG.filters.month);
+  return normalizeMulti(LOG.filters.month);
+}
+function logPeriodLabel(){
+  const months=logMonths();
+  const label=months.length===1?LOG_MONTH_OPTIONS[Number(months[0])-1]?.label:months.length?months.length+' meses':'Todos os meses';
+  return label+' · '+(LOG.filters.year==='Todos'?'Todos os anos':LOG.filters.year);
 }
 function logRows(all,{ignorePeriod=false}={}){const f=LOG.filters,q=normalize(LOG.search),months=ignorePeriod?[]:logMonths();return all.filter(r=>{if(!ignorePeriod&&f.year!=='Todos'&&(!r.date||r.date.slice(0,4)!==f.year))return false;if(months.length&&(!r.date||!months.includes(String(Number(r.date.slice(5,7))))))return false;for(const k of ['uf','region','city','seller','driver','vehicle','status','product','route','carrier','category','problem','checker','responsible','cargoType'])if(f[k]?.length&&!f[k].includes(String(r[k]||'')))return false;return !q||normalize([r.client,r.city,r.product,r.invoice,r.driver,r.region,r.problem,r.description,r.destination].filter(Boolean).join(' ')).includes(q);});}
 function logPick(key,value){LOG.filters[key]=(LOG.filters[key]||[]).includes(value)?[]:[value];LOG.tablePage=0;logShow();}
@@ -1952,23 +1957,33 @@ function bindSacSearch(input,remember,apply){
   };
 }
 function logFilters(all){let el=$('#logFilters');if(!el){el=document.createElement('section');el.id='logFilters';el.className='filterbar logistics-filter';$('#dataStatus').before(el);}el.classList.remove('hidden');const f=LOG.filters,years=[...new Set(all.map(r=>r.date?.slice(0,4)).filter(Boolean))].sort().reverse();const sellerLabels=new Map(all.filter(r=>r.seller&&r.sellerLabel).map(r=>[String(r.seller),r.sellerLabel]));const filterLabel=(key,value)=>key==='seller'&&sellerLabels.has(String(value))?sellerLabels.get(String(value))+' ('+value+')':String(value);const overviewDims={uf:'Estado',city:'Cidade',status:'Status',...(logOverviewArea()!=='sac'?{region:'Região',seller:'Vendedor'}:{}),...(logOverviewArea()!=='formation'?{carrier:'Transportadora'}:{})};const dims=LOG.page==='overview'?overviewDims:LOG.kind==='transport'?{carrier:'Transportadora',uf:'Estado',city:'Cidade',status:'Status',category:'Ocorrência',responsible:'Responsável',cargoType:'Tipo de carga'}:LOG.kind==='formations'?{region:'Região',driver:'Motorista',vehicle:'Veículo',category:'Ocorrência',checker:'Conferente'}:LOG.kind==='schedule'?{driver:'Motorista'}:{uf:'Estado',region:'Região',city:'Cidade',seller:'Vendedor',driver:'Motorista',vehicle:'Veículo',status:'Status',product:'Produto',route:'Classificação de rota',category:'Ocorrência'};
- el.innerHTML=`<div class="filterbar-top"><div class="filter-intro"><span class="filter-icon">${moduleIcon('M8 2v4M16 2v4M3 9h18M4 4h16v17H4z')}</span><div><strong>Período da análise</strong><small>${LOG.page==='overview'?'Implantação / emissão da NF':LOG.kind==='transport'?'Emissão da NF':LOG.kind==='formations'?'Data da formação':LOG.kind==='schedule'?'Data da agenda':'Data de implantação'}</small></div></div><div class="filterbar-main"><div class="filter-group period"><label for="logYear">Ano</label><select id="logYear">${biOptions(Object.fromEntries(['Todos',...years].map(y=>[y,y])),f.year)}</select></div><div class="filter-group period">${LOG.page==='transport'?'<label for="logMonthsTrigger">Meses</label><div class="multi-select" id="logMonths"></div>':`<label for="logMonth">Mês</label><select id="logMonth">${biOptions({Todos:'Todos',...Object.fromEntries(LOG_MONTH_OPTIONS.map(({value,label})=>[value,label]))},f.month)}</select>`}</div><button class="filter-refine" id="logMore" aria-expanded="${LOG.advanced}">${LOG.advanced?'−':'＋'} Mais filtros</button><button class="filter-clear" id="logClear">Limpar</button></div></div><div class="log-advanced ${LOG.advanced?'':'hidden'}">${Object.entries(dims).map(([k,l])=>`<div class="filter-group"><label>${l}</label><div class="multi-select" id="logF_${k}"></div></div>`).join('')}<div class="filter-group"><label for="logSearch">Buscar no detalhe${LOG.page==='transport'?' (Enter)':''}</label><input type="search" id="logSearch" ${LOG.page==='transport'?'enterkeyhint="search"':''} placeholder="${LOG.page==='overview'&&logOverviewArea()==='formation'?'Cidade ou região…':'Cliente, nota, cidade…'}" value="${esc(LOG.page==='transport'?(LOG.transportSearchDraft??LOG.search):LOG.search)}"></div></div><div class="log-active-filters">${Object.entries(f).filter(([k,v])=>Array.isArray(v)&&v.length).map(([k,v])=>`<button data-log-clear="${k}">${esc(dims[k]||k)}: ${esc(v.map(value=>filterLabel(k,value)).join(', '))} ×</button>`).join('')}</div>`;
+ el.innerHTML=`<div class="filterbar-top"><div class="filter-intro"><span class="filter-icon">${moduleIcon('M8 2v4M16 2v4M3 9h18M4 4h16v17H4z')}</span><div><strong>Período da análise</strong><small>${LOG.page==='overview'?'Implantação / emissão da NF':LOG.kind==='transport'?'Emissão da NF':LOG.kind==='formations'?'Data da formação':LOG.kind==='schedule'?'Data da agenda':'Data de implantação'}</small></div></div><div class="filterbar-main"><div class="filter-group period"><label for="logYear">Ano</label><select id="logYear">${biOptions(Object.fromEntries(['Todos',...years].map(y=>[y,y])),f.year)}</select></div><div class="filter-group period"><label for="logMonthsTrigger">Meses</label><div class="multi-select" id="logMonths"></div></div><button class="filter-refine" id="logMore" aria-expanded="${LOG.advanced}">${LOG.advanced?'−':'＋'} Mais filtros</button><button class="filter-clear" id="logClear">Limpar</button></div></div><div class="log-advanced ${LOG.advanced?'':'hidden'}">${Object.entries(dims).map(([k,l])=>`<div class="filter-group"><label>${l}</label><div class="multi-select" id="logF_${k}"></div></div>`).join('')}<div class="filter-group"><label for="logSearch">Buscar no detalhe${LOG.page==='transport'?' (Enter)':''}</label><input type="search" id="logSearch" ${LOG.page==='transport'?'enterkeyhint="search"':''} placeholder="${LOG.page==='overview'&&logOverviewArea()==='formation'?'Cidade ou região…':'Cliente, nota, cidade…'}" value="${esc(LOG.page==='transport'?(LOG.transportSearchDraft??LOG.search):LOG.search)}"></div></div><div class="log-active-filters">${Object.entries(f).filter(([k,v])=>Array.isArray(v)&&v.length).map(([k,v])=>`<button data-log-clear="${k}">${esc(dims[k]||k)}: ${esc(v.map(value=>filterLabel(k,value)).join(', '))} ×</button>`).join('')}</div>`;
  if(LOG.advanced)for(const [k]of Object.entries(dims)){const options=[...new Set(all.map(r=>r[k]).filter(Boolean))].map(value=>({value,label:filterLabel(k,value)})).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));fillMultiSelect($('#logF_'+k),options,f[k]||[],()=>{LOG.filters[k]=selectedMulti('logF_'+k);LOG.tablePage=0;logShow();});}
  const monthMenu=$('#logMonths');
- if(monthMenu){
-   fillMultiSelect(monthMenu,LOG_MONTH_OPTIONS,logMonths(),()=>{
-     LOG.transportMonths=selectedMulti('logMonths');
-     LOG.tablePage=0;
-     if(LOG.queue)LOG.queue.page=0;
-     logShow({keepFilters:true});
-   });
-   $('.multi-select-trigger',monthMenu).id='logMonthsTrigger';
- }else{
-   $('#logMonth').onchange=e=>{f.month=e.target.value;LOG.tablePage=0;logShow();};
- }
- $('#logYear').onchange=e=>{f.year=e.target.value;LOG.tablePage=0;if(monthMenu&&LOG.queue)LOG.queue.page=0;logShow();};$('#logMore').onclick=()=>{LOG.advanced=!LOG.advanced;logFilters(all);};$('#logClear').onclick=()=>{for(const k of Object.keys(f))f[k]=Array.isArray(f[k])?[]:'Todos';if(monthMenu){LOG.transportMonths=null;LOG.transportSearchDraft='';if(LOG.queue)LOG.queue.page=0;}LOG.search='';LOG.tablePage=0;if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;FEXP.page=0;}logShow();};const detailSearch=$('#logSearch');
+ const updatePeriod=(keepFilters=false)=>{
+   LOG.periodSelected=true;
+   LOG.tablePage=0;
+   if(LOG.queue)LOG.queue.page=0;
+   if(LOG.page==='formation')FEXP.page=0;
+   logShow({keepFilters});
+ };
+ fillMultiSelect(monthMenu,LOG_MONTH_OPTIONS,logMonths(),()=>{
+   f.month=selectedMulti('logMonths');
+   updatePeriod(true);
+ });
+ $('.multi-select-trigger',monthMenu).id='logMonthsTrigger';
+ $('#logYear').onchange=e=>{f.year=e.target.value;updatePeriod();};
+ $('#logMore').onclick=()=>{LOG.advanced=!LOG.advanced;logFilters(all);};
+ $('#logClear').onclick=()=>{
+   for(const k of Object.keys(f))f[k]=Array.isArray(f[k])?[]:'Todos';
+   LOG.search='';
+   if(LOG.page==='transport')LOG.transportSearchDraft='';
+   if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;}
+   updatePeriod();
+ };
+ const detailSearch=$('#logSearch');
  const applySearch=value=>{LOG.search=value;LOG.tablePage=0;logShow();};
- if(monthMenu)bindSacSearch(detailSearch,value=>{LOG.transportSearchDraft=value;},applySearch);
+ if(LOG.page==='transport')bindSacSearch(detailSearch,value=>{LOG.transportSearchDraft=value;},applySearch);
  else detailSearch.onchange=e=>applySearch(e.target.value);
  $$('[data-log-clear]').forEach(b=>b.onclick=()=>{f[b.dataset.logClear]=[];logShow();});}
 function logKpis(items){return `<div class="log-kpis">${items.map(([l,v,n])=>`<div class="kpi-card"><div class="kpi-label">${esc(l)}</div><div class="kpi-value">${esc(v)}</div><div class="kpi-note">${esc(n||'')}</div></div>`).join('')}</div>`;}
@@ -1999,8 +2014,7 @@ function logShow({keepFilters=false}={}){if(state.module!=='logistics')return;
   logNav();
   return;
  }
- if(LOG.page==='agenda'){agendaShow();return;}if(LOG.page==='settings'&&!state.user?.transportOnly){cargoSettingsShow();return;}$('#refreshData').hidden=false;if(LOG.page==='overview'){logOverview();return;}if(LOG.page==='formation'&&FEXP.view!=='legacy'&&!state.user?.transportOnly){formationShow();return;}const epoch=++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#content').className='visual-page logistics-content';$('#content').dataset.presentation='logistics';$('.filterbar:not(#logFilters)')?.classList.add('hidden');$('#dataStatus').classList.add('hidden');const page=state.user?.transportOnly?['Transportadoras','Entregas, prazos e acompanhamento das notas']:LOG_PAGES[LOG.page]||LOG_PAGES.overview;$('#pageTitle').textContent=page[0];$('#pageSubtitle').textContent=page[1];$('#activeMenuLabel').textContent='Logística · '+page[0];logNav();if(LOG.page==='sources'){$('#logFilters')?.classList.add('hidden');logSources();return;}const kind=logKind();if(kind!==LOG.kind)logSetKind(kind);const data=LOG.cache[kind];if(!data){$('#logFilters')?.classList.add('hidden');logLoad(kind);return;}const all=data.rows||[],rows=logRows(all),open=rows.filter(r=>!r.delivered),waiting=rows.filter(logAwaitingFormation),meta=data.meta||{};if(!keepFilters)logFilters(all);$('#lastBaseUpdate').textContent=(meta.reference?'Referência: ':'Leitura da planilha: ')+new Date(meta.reference?meta.referenceUpdatedAt:meta.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'})+(meta.reference?' · referência importada':'');const months=logMonths(),monthLabel=months.length===1?months[0].padStart(2,'0'):months.length?months.length+' meses':'Todos os meses';
-$('#periodChip').textContent=monthLabel+' · '+(LOG.filters.year==='Todos'?'Todos os anos':LOG.filters.year);
+ if(LOG.page==='agenda'){agendaShow();return;}if(LOG.page==='settings'&&!state.user?.transportOnly){cargoSettingsShow();return;}$('#refreshData').hidden=false;if(LOG.page==='overview'){logOverview({keepFilters});return;}if(LOG.page==='formation'&&FEXP.view!=='legacy'&&!state.user?.transportOnly){formationShow({keepFilters});return;}const epoch=++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#content').className='visual-page logistics-content';$('#content').dataset.presentation='logistics';$('.filterbar:not(#logFilters)')?.classList.add('hidden');$('#dataStatus').classList.add('hidden');const page=state.user?.transportOnly?['Transportadoras','Entregas, prazos e acompanhamento das notas']:LOG_PAGES[LOG.page]||LOG_PAGES.overview;$('#pageTitle').textContent=page[0];$('#pageSubtitle').textContent=page[1];$('#activeMenuLabel').textContent='Logística · '+page[0];logNav();if(LOG.page==='sources'){$('#logFilters')?.classList.add('hidden');logSources();return;}const kind=logKind();if(kind!==LOG.kind)logSetKind(kind);const data=LOG.cache[kind];if(!data){$('#logFilters')?.classList.add('hidden');logLoad(kind);return;}const all=data.rows||[],rows=logRows(all),open=rows.filter(r=>!r.delivered),waiting=rows.filter(logAwaitingFormation),meta=data.meta||{};if(!keepFilters)logFilters(all);$('#lastBaseUpdate').textContent=(meta.reference?'Referência: ':'Leitura da planilha: ')+new Date(meta.reference?meta.referenceUpdatedAt:meta.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'})+(meta.reference?' · referência importada':'');$('#periodChip').textContent=logPeriodLabel();
 let html='',charts=[];const addChart=(id,data,key,opts)=>charts.push(()=>logChart(id,data,key,opts));const weight=v=>logN(v/1000,1)+' t',number=v=>logN(v),wait=v=>logN(v,1)+' dias';
 if(kind==='operations'){
 const k=logKpis([['Aguardando formação',logN(waiting.length),'Somente STATUS DA ENTREGA em branco'],['Em rota',logN(rows.filter(r=>r.inRoute).length)],['Entregues',logN(rows.filter(r=>r.delivered).length)],['Espera média',wait(logAvg(waiting,'wait')),'Aguardando formação com espera informada'],['Ocorrências',logN(rows.filter(r=>r.occurrence).length)]]);
@@ -2237,7 +2251,7 @@ async function sacImportOpen() {
 
 function transportQueue(){
  const today=transportToday();if(!LOG.queue)LOG.queue={view:'overdueNoFollow',day:transportDayShift(today,-1),query:'',page:0};const q=LOG.queue;
- const ignorePeriod=LOG.transportMonths===null;
+ const ignorePeriod=!LOG.periodSelected;
  const scope=logRows(LOG.cache.transport?.rows||[],{ignorePeriod}),model=transportQueueModel(scope,today,q.day,q.view,q.query);q.rows=model.rows;const selected=sacSelection(model.rows);
  const titles={dueToday:'Vencem hoje',overdueNoFollow:'Atrasadas sem follow-up',overdueWithFollow:'Atrasadas acompanhadas',overdue:'Todos os atrasos',occurrences:'Ocorrências registradas',shipped:'Saídas pela coleta',noFollow:'Sem follow-up',open:'Todas em aberto'},size=window.matchMedia('(max-width:760px)').matches?4:8,start=Math.min(q.page*size,Math.max(0,Math.floor((model.rows.length-1)/size)*size)),shown=model.rows.slice(start,start+size);
  return `<section class="panel transport-workbench" id="transportWorkbench"><div class="transport-workbench-heading"><div><span class="history-eyebrow">${state.user?.transportOnly?'ROTINA DO SAC':'ACOMPANHAMENTO GERENCIAL · SAC'}</span><h2>Controle de entregas e ocorrências</h2><p>${ignorePeriod?'Acompanhamento de todas as emissões, inclusive de meses anteriores.':'Acompanhamento das notas emitidas no período selecionado.'} Transportadora, cidade e demais filtros continuam valendo.</p></div><div class="sac-import-actions"><span class="transport-asof">Posição em ${transportDate(today)}</span>${state.user?.perfil==='SAC'&&state.user?.editTransport?'<button type="button" class="btn primary" id="sacImportOpen">Importar relatório</button>':''}</div></div>
@@ -2631,7 +2645,7 @@ function logTowerStages(rows) {
     'Quantidade de registros da planilha por etapa.',content);
 }
 
-function logOverview(){
+function logOverview({keepFilters=false}={}){
  ++LOG.epoch;
  destroyCharts();
  if(state.map){try{state.map.remove()}catch{}state.map=null;}
@@ -2670,8 +2684,8 @@ function logOverview(){
  const sla=transport?logSlaModel(m.transport):null;
  const withoutFollow=overdue.filter(row=>row.needsFollow).length;
  LOG.kind=formation?'operations':'transport';
- logFilters([...allOps,...allTrs]);
- $('#periodChip').textContent=(LOG.filters.month==='Todos'?'Todos os meses':String(LOG.filters.month).padStart(2,'0'))+' · '+LOG.filters.year;
+ if(!keepFilters)logFilters([...allOps,...allTrs]);
+ $('#periodChip').textContent=logPeriodLabel();
  const stamp=kind=>new Date(LOG.cache[kind].meta.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'});
  $('#lastBaseUpdate').textContent=enabled.filter(kind=>!missing.includes(kind)).map(kind=>LOG_OVERVIEW_LABELS[kind]+': '+stamp(kind)).join(' · ');
  const weight=v=>logN(v/1000,3)+' t',waiting=m.operations.filter(logAwaitingFormation);
@@ -4356,7 +4370,7 @@ function cargoPriorityBind(panel, orders, view) {
   });
 }
 
-function formationShow() {
+function formationShow({keepFilters=false}={}) {
   if (state.module!=='logistics' || LOG.page!=='formation') return;
   LOG.epoch++;
   const oldMap = state.map;
@@ -4383,14 +4397,17 @@ function formationShow() {
   }
   const d = FEXP.data;
   if (!FEXP.directInitialized) {
-    LOG.filters.year = 'Todos';
-    LOG.filters.month = 'Todos';
-    FEXP.directInitialized = true;
+    if(!LOG.periodSelected){
+      LOG.filters.year='Todos';
+      LOG.filters.month='Todos';
+    }
+    FEXP.directInitialized=true;
   }
-  if (FEXP.tab==='plan') logFilters(d.mapRows);
-  else $('#logFilters')?.classList.add('hidden');
+  if(FEXP.tab==='plan'){
+    if(!keepFilters)logFilters(d.mapRows);
+  }else $('#logFilters')?.classList.add('hidden');
   $('#lastBaseUpdate').textContent = 'Consulta: '+cargoDate(d.updatedAt);
-  $('#periodChip').textContent = 'Força de Vendas';
+  $('#periodChip').textContent = FEXP.tab==='plan'?logPeriodLabel():'Força de Vendas';
 
   const tabs = [['plan','Pedidos disponíveis'],['montages','Montagens',CARGO_OPEN],['routing','Roteirização',CARGO_PENDING],['finished','Finalizadas',CARGO_FINAL],['history','Histórico']];
   let html = `<div class="cargo-workspace-top"><nav class="cargo-tabs" aria-label="Montagem de cargas">${tabs.map(([k,l,status]) =>
