@@ -4265,6 +4265,28 @@ function cargoRouteBind(m) {
   cargoRoutePreview(d);
 }
 
+function cargoScheduleFields(schedule) {
+  return `<label>Data de saída <input type="date" name="departure" value="${esc(schedule?.departure || '')}"></label>
+    <label>Previsão de finalização <input type="date" name="expectedEnd" value="${esc(schedule?.expectedEnd || '')}"></label>`;
+}
+
+function cargoScheduleValues(form) {
+  const departure = form.elements.departure.value;
+  const expectedEnd = form.elements.expectedEnd.value;
+  if (!!departure !== !!expectedEnd) throw new Error('Informe as duas datas para programar a carga.');
+  if (expectedEnd < departure) throw new Error('A previsão de finalização deve ser igual ou posterior à saída.');
+  return {departure, expectedEnd};
+}
+
+function cargoScheduleDialog(m) {
+  const revision = FEXP.data.revision;
+  cargoForm('Programação da carga · ' + m.name,
+    `<p>Motorista: <strong>${esc(m.driver || 'Não informado')}</strong></p>
+    <p class="cargo-help">As datas alimentam a agenda do motorista. Para retirar a programação, deixe as duas datas em branco.</p>
+    ${cargoScheduleFields(m.schedule)}`,
+    form => ({operation:'CARGA_AGENDA_SALVAR',target:m.id,revision,schedule:cargoScheduleValues(form)}));
+}
+
 function cargoRouteConfirm(m,draft,confirmed) {
   const stops = cargoRouteGroups(draft.stops,draft.groupAddresses);
   const status = $('#cargoRouteSaveStatus');
@@ -4276,12 +4298,14 @@ function cargoRouteConfirm(m,draft,confirmed) {
   const dialog = cargoForm(confirmed?'Confirmar roteiro':'Salvar rascunho',
     `${cargoStatus(m)}<p><strong>${esc(m.name)}</strong> · ${stops.length} paradas · ${m.orders} pedidos</p>
     <p>${confirmed?'A ordem abaixo será gravada nos pedidos.':'Você poderá continuar editando os endereços e a sequência.'}</p>
+    ${confirmed?`<p class="cargo-help">Se as datas já estiverem definidas, preencha as duas para programar o motorista. Você também pode informar depois em Finalizadas.</p>${cargoScheduleFields(m.schedule)}`:''}
     <ol>${stops.map(s=>`<li>${esc(s.address || 'Sem endereço informado')} · ${s.keys.length} pedido(s)</li>`).join('')}</ol>
     ${confirmed&&m.overCapacity?`<p>A carga excede a capacidade do veículo. A ocorrência ficará no histórico.</p>
       <label>Justificativa da liberação (opcional)<textarea name="overweightReason" maxlength="500" rows="3"></textarea></label>`:''}`,
     form => ({operation:'ROTEIRO_SALVAR',target:m.id,route:{unitId:draft.unitId,returnToUnit:draft.returnToUnit,
       groupAddresses:draft.groupAddresses,stops,confirmed,baseAt:draft.baseAt,routingAt:draft.routingAt,
-      overweightReason:form.elements.overweightReason?.value || ''}}));
+      overweightReason:form.elements.overweightReason?.value || '',
+      ...(confirmed?{schedule:cargoScheduleValues(form)}:{})}}));
   dialog.querySelector('button[type=submit]').textContent = confirmed?'Confirmar roteiro':'Salvar rascunho';
 }
 
@@ -4871,10 +4895,12 @@ function cargoRouteQueue(d, finished) {
         <h3>${esc(m.name)}</h3><p>${m.orders} pedidos · ${esc(m.driver||'Motorista a definir')} · ${esc(m.vehicle?.plate||m.vehicleId||'Placa a definir')}</p>
         <small>${cargoDate(m[stamp])} · ${esc(finished?m.finalizedBy:m.routingBy)}</small>
         ${finished?`<p>Data geral da carga · <strong>${m.deliveryDate?transportDate(m.deliveryDate):'Não informada'}</strong></p>`:''}
+        ${finished&&m.schedule?`<p>Saída: <strong>${transportDate(m.schedule.departure)}</strong> · Previsão de finalização: <strong>${transportDate(m.schedule.expectedEnd)}</strong></p>`:''}
         ${editDelivery?`<label class="cargo-confirm"><input type="checkbox" data-cargo-delivery-select="${esc(m.id)}">Selecionar ${esc(m.name)}</label>`:''}
         ${expanded?'':`<div class="cargo-route-state">${cargoRouteBadge(m)}
           ${missing>0?`<small class="cargo-route-missing-label">${cargoRouteMissingLabel(missing)}</small>`:''}</div>`}</div>
         <div class="cargo-actions">${expanded?'':`<button type="button" class="btn primary" data-cargo-route="${esc(m.id)}">${finished||!canLog('formation','edit')?'Consultar roteiro':'Roteirizar'}</button>`}
+        ${editDelivery&&m.route?.confirmed?`<button type="button" class="btn" data-cargo-schedule="${esc(m.id)}">${m.schedule?'Editar programação':'Programar carga'}</button>`:''}
         ${finished?`<button type="button" class="btn" data-cargo-order-dates="${esc(m.id)}">Datas por pedido</button>`:''}
         ${editDelivery?`<button type="button" class="btn" data-cargo-delivery-edit="${esc(m.id)}">Atualizar data de entrega</button>`:''}
         ${finished&&m.route?.confirmed?`<button type="button" class="btn" data-cargo-delivery-order="${esc(m.id)}">Emitir Ordem de Entregas</button>`:''}
@@ -4928,6 +4954,10 @@ function cargoOrderDeliveryDialog(id) {
 }
 
 function cargoBindWorkflow() {
+  $$('[data-cargo-schedule]').forEach(button=>button.onclick=()=>{
+    const montage = FEXP.data.montages.find(m=>m.id===button.dataset.cargoSchedule);
+    if (montage) cargoScheduleDialog(montage);
+  });
   $$('[data-cargo-order-dates]').forEach(button=>button.onclick=()=>cargoOrderDeliveryDialog(button.dataset.cargoOrderDates));
   $$('[data-cargo-delivery-edit]').forEach(button=>button.onclick=()=>cargoDeliveryDateDialog([button.dataset.cargoDeliveryEdit]));
   const bulk=$('#cargoBulkDelivery');
@@ -4990,7 +5020,8 @@ function cargoHistoryEvents(d) {
     PESOS_PEDIDOS:'Pesos informados',FINALIZAR:'Montagem enviada para roteirização',ENVIAR_ROTEIRO:'Montagem enviada para roteirização',REABRIR:'Montagem reaberta',
     VEICULO_SALVAR:'Cadastro de veículo atualizado',MOTORISTA_SALVAR:'Cadastro de motorista atualizado',
     UNIDADE_SALVAR:'Unidade de saída atualizada',ROTEIRIZACAO_CONFIGURAR:'Padrões do roteiro atualizados',ENTREGA_DATA_SALVAR:'Data de entrega atualizada',
-    ENTREGA_PEDIDOS_SALVAR:'Datas de entrega dos pedidos atualizadas'};
+    ENTREGA_PEDIDOS_SALVAR:'Datas de entrega dos pedidos atualizadas',
+    CARGA_AGENDA_SALVAR:'Programação da carga atualizada'};
   return `<section class="panel"><h2>Histórico de movimentações</h2><div class="cargo-history">${d.events.map(e => {
     const title = e.type==='ROTEIRO_SALVAR' ? (e.confirmed?'Roteiro confirmado':'Rascunho do roteiro salvo') : titles[e.type]||e.type;
     const names=e.montageIds?.map(id=>d.montages.find(m=>m.id===id)?.name).filter(Boolean);
@@ -5619,8 +5650,9 @@ function agendaItemDialog(item) {
     ${item.destination?`<p><strong>Destino</strong> ${esc(item.destination)}</p>`:''}
     ${item.vehicle?`<p><strong>Veículo</strong> ${esc(item.vehicle)}</p>`:''}
     ${item.notes?`<p class="driver-agenda-notes"><strong>Observações</strong> ${esc(item.notes)}</p>`:''}
+    ${item.schedule?`<p><strong>Saída</strong> ${transportDate(item.schedule.departure)} · <strong>Previsão de finalização</strong> ${transportDate(item.schedule.expectedEnd)}</p>`:''}
     ${item.montage?`<div>${agendaMontageLink(item.montage)}</div>`:''}</div>
-    ${canLog('agenda','edit')?'<footer><button type="button" class="btn" data-agenda-edit>Editar programação</button></footer>':''}`);
+    ${!item.automatic&&canLog('agenda','edit')?'<footer><button type="button" class="btn" data-agenda-edit>Editar programação</button></footer>':''}`);
   agendaBindPrograms(dialog,[item]);
   const edit=dialog.querySelector('[data-agenda-edit]');
   if(edit)edit.onclick=()=>{dialog.close();agendaEditDialog(item);};
