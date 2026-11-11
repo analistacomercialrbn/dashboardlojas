@@ -2268,7 +2268,7 @@ async function logLoad(kind,force=false,check=false) {
    const changed=await logFetchSource(kind,force,check);
    if(!visible())return;
    if(!changed){if(LOG.page==='fleet'&&!LOG.driverRules)logShow();return;}
-   if(!existing&&!LOG.periodSelected){
+   if(!existing&&!LOG.periodSelected&&kind!=='transport'){
      const latest=LOG.cache[kind]?.meta?.to;
      LOG.filters.year=latest?latest.slice(0,4):'Todos';
      LOG.filters.month=latest?String(Number(latest.slice(5,7))):'Todos';
@@ -2314,7 +2314,7 @@ function logFilters(all){let el=$('#logFilters');if(!el){el=document.createEleme
  if(LOG.advanced)for(const [k]of Object.entries(dims)){const options=[...new Set(all.map(r=>r[k]).filter(Boolean))].map(value=>({value,label:filterLabel(k,value)})).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));fillMultiSelect($('#logF_'+k),options,f[k]||[],()=>{LOG.filters[k]=selectedMulti('logF_'+k);LOG.tablePage=0;logShow();});}
  const monthMenu=$('#logMonths');
  const updatePeriod=(keepFilters=false)=>{
-   LOG.periodSelected=true;
+   if(LOG.page!=='transport')LOG.periodSelected=true;
    LOG.tablePage=0;
    if(LOG.queue)LOG.queue.page=0;
    if(LOG.page==='formation')FEXP.page=0;
@@ -2331,7 +2331,7 @@ function logFilters(all){let el=$('#logFilters');if(!el){el=document.createEleme
    for(const k of Object.keys(f))f[k]=Array.isArray(f[k])?[]:'Todos';
    LOG.search='';
    delete LOG.tableColumnFilters?.[LOG.page];
-   if(LOG.page==='transport'){LOG.transportSearchDraft='';LOG.transportOnlyOverdue=false;}
+   if(LOG.page==='transport')resetTransportFilters();
    if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;}
    updatePeriod();
  };
@@ -2605,14 +2605,38 @@ function logBindTable(){
   const clean=x=>{let s=String(x??'');if(/^[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const text='\uFEFF'+[exportCols.map(c=>c[1]),...matches.map(r=>exportCols.map(c=>LOG.page==='fleet'&&typeof r[c[0]]==='number'?String(r[c[0]]).replace('.',','):r[c[0]]??''))].map(r=>r.map(clean).join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=u;a.download='rebanho-logistica-'+LOG.page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
  };
 }
-function logSetKind(kind){const period={year:LOG.filters.year,month:LOG.filters.month},prev=LOG.kind;LOG.kindFilters[prev]=structuredClone(LOG.filters);LOG.filters=LOG.kindFilters[kind]||{year:'Todos',month:'Todos',uf:[],region:[],city:[],seller:[],driver:[],vehicle:[],status:[],product:[],route:[],carrier:[]};Object.assign(LOG.filters,period);LOG.kind=kind;if(kind==='transport'&&LOG.metric==='wait')LOG.metric='weight';LOG.search='';LOG.transportSearchDraft='';LOG.tablePage=0;}
+function logSetKind(kind) {
+ const previous=LOG.kind;
+ LOG.kindFilters[previous]=structuredClone(LOG.filters);
+ LOG.filters=LOG.kindFilters[kind]||{year:'Todos',month:'Todos',uf:[],region:[],city:[],seller:[],driver:[],vehicle:[],status:[],product:[],route:[],carrier:[]};
+ if(previous!=='transport'&&kind!=='transport') {
+   Object.assign(LOG.filters,{year:LOG.kindFilters[previous].year,month:LOG.kindFilters[previous].month});
+ }
+ LOG.kind=kind;
+ if(kind==='transport'&&LOG.metric==='wait')LOG.metric='weight';
+ LOG.search='';
+ LOG.transportSearchDraft='';
+ LOG.tablePage=0;
+}
+
+function resetTransportFilters() {
+ for(const key of Object.keys(LOG.filters))LOG.filters[key]=Array.isArray(LOG.filters[key])?[]:'Todos';
+ LOG.queue=null;
+ LOG.search='';
+ LOG.transportSearchDraft='';
+ LOG.transportOnlyOverdue=false;
+ LOG.tablePage=0;
+ delete LOG.tableColumnFilters?.transport;
+}
 function logShow({keepFilters=false}={}){if(state.module!=='logistics')return;
  if(!logPageAllowed(LOG.page)){
   $('#content').innerHTML='<section class="panel"><h2>Área indisponível para seu perfil</h2></section>';
   logNav();
   return;
  }
- if(LOG.page==='agenda'){agendaShow();return;}if(LOG.page==='settings'&&!state.user?.transportOnly){cargoSettingsShow();return;}$('#refreshData').hidden=false;if(LOG.page==='overview'){logOverview({keepFilters});return;}if(LOG.page==='formation'&&FEXP.view!=='legacy'&&!state.user?.transportOnly){formationShow({keepFilters});return;}const epoch=++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#content').className='visual-page logistics-content';$('#content').dataset.presentation='logistics';$('.filterbar:not(#logFilters)')?.classList.add('hidden');$('#dataStatus').classList.add('hidden');const page=state.user?.transportOnly?['Transportadoras','Entregas, prazos e acompanhamento das notas']:LOG_PAGES[LOG.page]||LOG_PAGES.overview;$('#pageTitle').textContent=page[0];$('#pageSubtitle').textContent=page[1];$('#activeMenuLabel').textContent='Logística · '+page[0];logNav();if(LOG.page==='sources'){$('#logFilters')?.classList.add('hidden');logSources();return;}const kind=logKind();if(kind!==LOG.kind)logSetKind(kind);const data=LOG.cache[kind];if(!data){$('#logFilters')?.classList.add('hidden');logLoad(kind);return;}if(LOG.page==='fleet'&&['ADMIN','DIRETOR','GERENTE'].includes(state.user?.perfil)){driverClosingShow(data);return;}const all=data.rows||[],rows=logRows(all),open=rows.filter(r=>!r.delivered),waiting=rows.filter(logAwaitingFormation),meta=data.meta||{};if(!keepFilters)logFilters(all);$('#lastBaseUpdate').textContent=(meta.reference?'Referência: ':'Leitura da planilha: ')+new Date(meta.reference?meta.referenceUpdatedAt:meta.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'})+(meta.reference?' · referência importada':'');$('#periodChip').textContent=logPeriodLabel();
+ const openingTransport=LOG.page==='transport'&&LOG.renderedPage!=='transport';
+ LOG.renderedPage=LOG.page;
+ if(LOG.page==='agenda'){agendaShow();return;}if(LOG.page==='settings'&&!state.user?.transportOnly){cargoSettingsShow();return;}$('#refreshData').hidden=false;if(LOG.page==='overview'){logOverview({keepFilters});return;}if(LOG.page==='formation'&&FEXP.view!=='legacy'&&!state.user?.transportOnly){formationShow({keepFilters});return;}const epoch=++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#content').className='visual-page logistics-content';$('#content').dataset.presentation='logistics';$('.filterbar:not(#logFilters)')?.classList.add('hidden');$('#dataStatus').classList.add('hidden');const page=state.user?.transportOnly?['Transportadoras','Entregas, prazos e acompanhamento das notas']:LOG_PAGES[LOG.page]||LOG_PAGES.overview;$('#pageTitle').textContent=page[0];$('#pageSubtitle').textContent=page[1];$('#activeMenuLabel').textContent='Logística · '+page[0];logNav();if(LOG.page==='sources'){$('#logFilters')?.classList.add('hidden');logSources();return;}const kind=logKind();if(kind!==LOG.kind)logSetKind(kind);if(openingTransport)resetTransportFilters();const data=LOG.cache[kind];if(!data){$('#logFilters')?.classList.add('hidden');logLoad(kind);return;}if(LOG.page==='fleet'&&['ADMIN','DIRETOR','GERENTE'].includes(state.user?.perfil)){driverClosingShow(data);return;}const all=data.rows||[],rows=logRows(all),open=rows.filter(r=>!r.delivered),waiting=rows.filter(logAwaitingFormation),meta=data.meta||{};if(!keepFilters)logFilters(all);$('#lastBaseUpdate').textContent=(meta.reference?'Referência: ':'Leitura da planilha: ')+new Date(meta.reference?meta.referenceUpdatedAt:meta.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'})+(meta.reference?' · referência importada':'');$('#periodChip').textContent=logPeriodLabel();
 let html='',charts=[];const addChart=(id,data,key,opts)=>charts.push(()=>logChart(id,data,key,opts));const weight=v=>logN(v/1000,1)+' t',number=v=>logN(v),wait=v=>logN(v,1)+' dias';
 if(kind==='operations'){
 const k=logKpis([['Aguardando formação',logN(waiting.length),'Somente STATUS DA ENTREGA em branco'],['Em rota',logN(rows.filter(r=>r.inRoute).length)],['Entregues',logN(rows.filter(r=>r.delivered).length)],['Espera média',wait(logAvg(waiting,'wait')),'Aguardando formação com espera informada'],['Ocorrências',logN(rows.filter(r=>r.occurrence).length)]]);
@@ -2805,7 +2829,7 @@ function transportQueueModel(rows,today,day,view='overdue',query='',searchRows=r
         normalize(row.invoice).includes(q);
     }
     return normalize([row.invoice,row.client,row.city,row.carrier,row.follow,row.problem,row.category,row.responsible].join(' ')).includes(q);
-  }) : rows.filter(groups[view] || overdue);
+  }) : view==='all' ? rows : rows.filter(groups[view] || overdue);
   const selected = candidates.map(row => ({
       ...row,
       queueDelay: overdue(row) ? Math.max(0,Math.round((Date.parse(today+'T12:00:00Z')-Date.parse(row.forecast+'T12:00:00Z'))/86400000)) : 0,
@@ -2940,18 +2964,19 @@ async function sacImportOpen() {
 
 function transportQueue(){
  const today=transportToday();
- const q=LOG.queue||={view:'overdueNoFollow',day:'',query:'',page:0};
- const all=LOG.cache.transport?.rows||[], searching=!!q.query, ignorePeriod=!LOG.periodSelected;
- const scope=logRows(all,{ignorePeriod}),model=transportQueueModel(scope,today,q.day,q.view,q.query,all);
+ const q=LOG.queue||={view:'all',day:'',query:'',page:0};
+ const all=LOG.cache.transport?.rows||[], searching=!!q.query;
+ const allPeriods=LOG.filters.year==='Todos'&&!logMonths().length;
+ const scope=logRows(all),model=transportQueueModel(scope,today,q.day,q.view,q.query,all);
  q.rows=model.rows;
  const selected=sacSelection(model.rows);
  const titles={dueToday:'Vencem hoje',overdueNoFollow:'Atrasadas sem follow-up',overdueWithFollow:'Atrasadas acompanhadas',overdue:'Todos os atrasos',occurrences:'Ocorrências registradas',shipped:'Saídas pela coleta',noFollow:'Sem follow-up',open:'Todas em aberto'},size=window.matchMedia('(max-width:760px)').matches?4:8,start=Math.min(q.page*size,Math.max(0,Math.floor((model.rows.length-1)/size)*size)),shown=model.rows.slice(start,start+size);
- return `<section class="panel transport-workbench" id="transportWorkbench"><div class="transport-workbench-heading"><div><span class="history-eyebrow">${state.user?.transportOnly?'ROTINA DO SAC':'ACOMPANHAMENTO GERENCIAL · SAC'}</span><h2>Controle de entregas e ocorrências</h2><p>${ignorePeriod?'Acompanhamento de todas as emissões, inclusive de meses anteriores.':'Acompanhamento das notas emitidas no período selecionado.'} Transportadora, cidade e demais filtros continuam valendo.</p></div><div class="sac-import-actions"><span class="transport-asof">Posição em ${transportDate(today)}</span>${state.user?.perfil==='SAC'&&state.user?.editTransport?'<button type="button" class="btn primary" id="sacImportOpen">Importar relatório</button>':''}</div></div>
+ return `<section class="panel transport-workbench" id="transportWorkbench"><div class="transport-workbench-heading"><div><span class="history-eyebrow">${state.user?.transportOnly?'ROTINA DO SAC':'ACOMPANHAMENTO GERENCIAL · SAC'}</span><h2>Controle de entregas e ocorrências</h2><p>${allPeriods?'Acompanhamento de todas as emissões, inclusive de meses anteriores.':'Acompanhamento das notas emitidas no período selecionado.'} Transportadora, cidade e demais filtros continuam valendo.</p></div><div class="sac-import-actions"><span class="transport-asof">Posição em ${transportDate(today)}</span>${state.user?.perfil==='SAC'&&state.user?.editTransport?'<button type="button" class="btn primary" id="sacImportOpen">Importar relatório</button>':''}</div></div>
  <div class="transport-queue-kpis">${[['dueToday','Vencem hoje','Notas em aberto com prazo para hoje'],['overdueNoFollow','Atrasadas sem follow-up','Prioridade para cobrança'],['overdueWithFollow','Atrasadas acompanhadas','Com follow-up registrado']].map(([v,title,note])=>`<button type="button" class="transport-queue-kpi ${!searching&&q.view===v?'active':''} ${v==='overdueNoFollow'?'queue-danger':''}" data-queue-view="${v}" aria-pressed="${!searching&&q.view===v}"><span>${esc(title)}</span><strong>${logN(model.counts[v])}</strong><small>${esc(note)}</small></button>`).join('')}</div>
  <div class="transport-queue-toolbar"><div class="transport-view-tabs" role="group" aria-label="Filtrar acompanhamento">${Object.entries(titles).map(([v,t])=>`<button type="button" data-queue-view="${v}" aria-pressed="${!searching&&q.view===v}" class="${!searching&&q.view===v?'active':''}">${t}</button>`).join('')}</div><div class="transport-queue-controls"><label>Data da coleta<input type="date" id="transportQueueDay" value="${esc(q.day)}"></label><button class="btn" id="transportQueueYesterday">Ontem</button><button class="btn" id="transportQueueToday">Hoje</button>${q.day?'<button class="btn" id="transportQueueClearDay">Limpar data</button>':''}<label class="transport-queue-search">Buscar nota, cliente ou follow-up (Enter)<input type="search" id="transportQueueSearch" enterkeyhint="search" value="${esc(q.queryDraft??q.query)}" placeholder="NF, cliente, transportadora…"></label>${searching?'<button class="btn" id="transportQueueClearSearch">Limpar busca</button>':''}</div></div>
- <div class="transport-queue-caption"><strong>${searching?'Resultado da busca':esc(titles[q.view])} · ${logN(model.rows.length)} ${model.rows.length===1?'nota':'notas'}${q.query?(model.rows.length===1?' encontrada':' encontradas'):''}</strong><small>${searching?'Busca em todo o histórico disponível para seu perfil, inclusive notas entregues.':state.user?.editTransport?'Abra a nota para preencher o acompanhamento e salvar na planilha.':'Abra a nota para consultar o acompanhamento registrado pelo SAC.'}</small></div>
+ <div class="transport-queue-caption"><strong>${searching?'Resultado da busca':q.view==='all'?'Todas as notas':esc(titles[q.view])} · ${logN(model.rows.length)} ${model.rows.length===1?'nota':'notas'}${q.query?(model.rows.length===1?' encontrada':' encontradas'):''}</strong><small>${searching?'Busca em todo o histórico disponível para seu perfil, inclusive notas entregues.':state.user?.editTransport?'Abra a nota para preencher o acompanhamento e salvar na planilha.':'Abra a nota para consultar o acompanhamento registrado pelo SAC.'}</small></div>
  ${sacBatchBar(model.rows,selected)}
- <div class="transport-note-list">${shown.map(r=>`<article class="transport-note-row ${r.queueDelay?'is-overdue':''}"><div class="transport-note-identity">${state.user?.editTransport?`<label class="sac-note-select"><input type="checkbox" data-sac-select="${esc(r.id)}" aria-label="Selecionar NF ${esc(r.invoice||'não informada')}" ${selected.has(r.id)?'checked':''}>Selecionar nota</label>`:''}<span class="transport-note-number">NF ${esc(r.invoice||'Não informada')}</span><h3>${esc(r.client||'Cliente não informado')}</h3><p>${esc(r.carrier||'Transportadora não informada')} · ${esc(r.city||r.cityLabel||'Cidade não informada')}${r.uf?' / '+esc(r.uf):''}</p><div class="transport-note-badges">${r.delivered?'<span>Entregue</span>':r.queueDelay?`<span class="badge-overdue">${r.queueDelay} ${r.queueDelay===1?'dia':'dias'} após o prazo</span>`:r.dueToday?'<span class="badge-due">Vence hoje</span>':'<span>Em aberto</span>'}${r.occurrence?'<span class="badge-occurrence">Ocorrência</span>':''}${r.needsFollow?'<span class="badge-no-follow">Sem follow-up</span>':''}</div></div><dl class="transport-note-dates"><div><dt>Coleta / saída</dt><dd>${transportDate(r.collected)}</dd></div><div><dt>Prazo de entrega</dt><dd>${transportDate(r.forecast)}</dd></div></dl><div class="transport-note-follow"><small>ÚLTIMO FOLLOW-UP REGISTRADO</small><p>${esc(r.hasFollow?r.follow:'Nenhum follow-up registrado.')}</p>${r.problem||r.category?`<small>Ocorrência: ${esc(r.problem||r.category)}</small>`:''}${r.responsible?`<small>Responsável: ${esc(r.responsible)}</small>`:''}</div><button type="button" class="btn transport-note-open" data-transport-note="${esc(r.id)}">${state.user?.editTransport?'Acompanhar / editar':'Ver acompanhamento'} ${moduleIcon('M9 5l7 7-7 7')}</button></article>`).join('')||`<div class="transport-queue-empty"><strong>Nenhuma nota nesta seleção.</strong><p>${searching?'Confira o número da NF ou tente outro termo.':scope.length?'Confira os outros grupos ou selecione outra data de coleta.':'Não há notas para os filtros e o recorte de acesso atuais.'}</p></div>`}</div>
+ <div class="transport-note-list">${shown.map(r=>`<article class="transport-note-row ${r.queueDelay?'is-overdue':''}"><div class="transport-note-identity">${state.user?.editTransport?`<label class="sac-note-select"><input type="checkbox" data-sac-select="${esc(r.id)}" aria-label="Selecionar NF ${esc(r.invoice||'não informada')}" ${selected.has(r.id)?'checked':''}>Selecionar nota</label>`:''}<span class="transport-note-number">NF ${esc(r.invoice||'Não informada')}</span><h3>${esc(r.client||'Cliente não informado')}</h3><p>${esc(r.carrier||'Transportadora não informada')} · ${esc(r.city||r.cityLabel||'Cidade não informada')}${r.uf?' / '+esc(r.uf):''}</p><div class="transport-note-badges">${r.delivered||r.deliveredDate?'<span>Entregue</span>':r.queueDelay?`<span class="badge-overdue">${r.queueDelay} ${r.queueDelay===1?'dia':'dias'} após o prazo</span>`:r.dueToday?'<span class="badge-due">Vence hoje</span>':'<span>Em aberto</span>'}${r.occurrence?'<span class="badge-occurrence">Ocorrência</span>':''}${r.needsFollow?'<span class="badge-no-follow">Sem follow-up</span>':''}</div></div><dl class="transport-note-dates"><div><dt>Coleta / saída</dt><dd>${transportDate(r.collected)}</dd></div><div><dt>Prazo de entrega</dt><dd>${transportDate(r.forecast)}</dd></div></dl><div class="transport-note-follow"><small>ÚLTIMO FOLLOW-UP REGISTRADO</small><p>${esc(r.hasFollow?r.follow:'Nenhum follow-up registrado.')}</p>${r.problem||r.category?`<small>Ocorrência: ${esc(r.problem||r.category)}</small>`:''}${r.responsible?`<small>Responsável: ${esc(r.responsible)}</small>`:''}</div><button type="button" class="btn transport-note-open" data-transport-note="${esc(r.id)}">${state.user?.editTransport?'Acompanhar / editar':'Ver acompanhamento'} ${moduleIcon('M9 5l7 7-7 7')}</button></article>`).join('')||`<div class="transport-queue-empty"><strong>Nenhuma nota nesta seleção.</strong><p>${searching?'Confira o número da NF ou tente outro termo.':scope.length?'Confira os outros grupos ou selecione outra data de coleta.':'Não há notas para os filtros e o recorte de acesso atuais.'}</p></div>`}</div>
  <div class="log-pagination"><button class="btn" id="transportQueuePrev" ${start===0?'disabled':''}>Anterior</button><span>${model.rows.length?start+1:0}–${Math.min(start+size,model.rows.length)} de ${model.rows.length}</span><button class="btn" id="transportQueueNext" ${start+size>=model.rows.length?'disabled':''}>Próxima</button></div><p class="transport-queue-note">Contagem por registro do acompanhamento; uma remessa pode reunir várias NFs. Dias após o prazo são contados em dias corridos. Saídas usam a data de coleta informada pela transportadora; não são estimadas pela emissão da NF. ${model.counts.noForecast?logN(model.counts.noForecast)+' notas em aberto sem prazo informado não são classificadas como atrasadas.':''} Ocorrências incluem notas entregues; confira o follow-up para acompanhar o andamento.</p></section>`;
 }
 function transportBindQueue(){if(!$('#transportWorkbench'))return;
@@ -2970,8 +2995,13 @@ function transportBindQueue(){if(!$('#transportWorkbench'))return;
    queue.page=0;
    transportRefreshQueue();
  };
- const selectDay=day=>{queue.day=day;showQueue('shipped');};
- $$('[data-queue-view]').forEach(button=>button.onclick=()=>showQueue(button.dataset.queueView));
+ const selectDay=day=>{queue.day=day;showQueue(day?'shipped':'all');};
+ $$('[data-queue-view]').forEach(button=>button.onclick=()=>{
+   const view=button.dataset.queueView;
+   const next=!queue.query&&queue.view===view?'all':view;
+   if(next!=='shipped')queue.day='';
+   showQueue(next);
+ });
  $('#transportQueueDay').onchange=event=>{
    const day=event.target.value;
    if(!day||/^\d{4}-\d{2}-\d{2}$/.test(day))selectDay(day);
