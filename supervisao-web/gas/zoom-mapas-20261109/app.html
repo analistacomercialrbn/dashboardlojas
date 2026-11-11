@@ -17,6 +17,21 @@
 .user-activity-status {white-space:nowrap;color:#555e72}
 .user-activity-status.recent {color:#146343;font-weight:700}
 .user-activity-status.recent::before {content:'●';margin-right:6px}
+.portfolio-evolution-legend {
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr));gap:8px;margin:12px 0 16px
+}
+.portfolio-legend-item {
+  display:flex;align-items:flex-start;gap:9px;padding:9px 10px;text-align:left;
+  background:#f7f9fc;border:1px solid #e4eaf4;border-radius:8px;color:#243757;
+  font:inherit;cursor:pointer;min-width:0
+}
+.portfolio-legend-item:hover {background:#eef3fa}
+.portfolio-legend-item:focus-visible {outline:2px solid var(--series-color);outline-offset:2px}
+.portfolio-legend-dot {flex:0 0 10px;height:10px;margin-top:5px;border-radius:50%;background:var(--series-color)}
+.portfolio-legend-item strong {display:block;font-size:13px;color:var(--series-color)}
+.portfolio-legend-item small {display:block;font-size:12px;margin-top:3px;line-height:1.4}
+.portfolio-legend-item[aria-pressed="false"] .portfolio-legend-dot {background:#fff;border:2px solid var(--series-color);box-sizing:border-box}
+.portfolio-legend-item[aria-pressed="false"] strong {text-decoration:line-through}
 .portfolio-evolution-chart {height:390px}
 @media(max-width:640px){.portfolio-evolution-chart {height:320px}}
 </style>
@@ -1484,6 +1499,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@dc6fb1f6fa6f5999dbf8dd289c859e9e66e9a8d4/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@e8a556aae2b8225e11c9d164e89766a342a88efd/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
