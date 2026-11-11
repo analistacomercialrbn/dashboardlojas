@@ -2037,7 +2037,7 @@ function driverClosingShow(data){
  const detailCols=[['driver','Motorista'],['route','Rota'],['orders','Pedidos¹','num'],['tonnes','Toneladas','tonnes'],['rateLabel','R$/t'],['bonusLabel','Prêmio por rota (R$)²']];
  const routeRows=model.routes.map(route=>({...route,rateLabel:route.rate===undefined?'Sem regra':logN(route.rate,2),bonusLabel:route.bonus===null?'Sem regra':logN(route.bonus,4)}));
  $('#content').innerHTML=`<section class="panel driver-closing-controls"><div><h2>Fechamento mensal dos motoristas</h2><p>Competência pelo carregamento · base FORMAÇÃO 2026</p></div><div class="driver-closing-actions"><button class="btn" id="driverPrevious" aria-label="Mês anterior">←</button><label>Mês do carregamento<input type="month" id="driverMonth" value="${month}"></label><button class="btn" id="driverNext" aria-label="Mês seguinte">→</button><label>Motorista<select id="driverSelected"><option value="">Todos os motoristas</option>${options.map(([key,name])=>`<option value="${esc(key)}" ${key===selected?'selected':''}>${esc(name)}</option>`).join('')}</select></label>${canLog('agenda')?'<button class="btn" id="driverAgenda">Abrir agenda</button>':''}</div></section>
-  ${totals}<div class="two-col driver-closing-charts">${logPanel('driverClosingWeight','Toneladas por motorista','Clique para selecionar um motorista.')}${logPanel('driverClosingBonus','Premiação prevista por motorista','Valores calculados com as regras da planilha enviada.')}</div>
+  ${totals}<div class="two-col driver-closing-charts">${logPanel('driverClosingWeight','Toneladas por motorista','Clique para selecionar um motorista.')}${logPanel('driverClosingBonus','Premiação prevista por motorista','Valores calculados com os parâmetros das Configurações Logísticas.')}</div>
   <section class="panel driver-rh-actions"><div><h3>Conferência e envio ao RH</h3><p>${model.incomplete?'Há dados pendentes. Confira os valores parciais e a coluna Conferência.':'Selecione o mês e o motorista, confira o resumo e gere a impressão.'}</p></div><button class="btn primary" id="driverClosingPrint" ${model.drivers.length?'':'disabled'}>Prévia para RH / Imprimir</button><p id="driverClosingMessage" role="status"></p></section>
   ${logTable('Resumo mensal para RH',model.drivers,DRIVER_REPORT_COLUMNS)}
   <details class="panel driver-closing-detail"><summary>Detalhamento por motorista e rota</summary><div class="table-wrap">${driverClosingTable(routeRows,detailCols)}</div><small>² Parcelas por rota com quatro casas decimais.</small></details>
@@ -3653,6 +3653,8 @@ function cargoSettingsShow() {
     return;
   }
   const tabs = [['vehicles','Veículos'],['drivers','Motoristas'],['units','Unidades de saída'],['routing','Roteirização']];
+  if(driverPayrollManager())tabs.push(['bonus','Premiação dos motoristas']);
+  if(!tabs.some(([key])=>key===CARGO_SETTINGS.section))CARGO_SETTINGS.section='vehicles';
   const nav = `<nav class="cargo-tabs" aria-label="Configurações da Logística">${tabs.map(([key,label]) =>
     `<button type="button" data-cargo-setting="${key}" class="${CARGO_SETTINGS.section===key?'active':''}">${label}</button>`
   ).join('')}</nav>`;
@@ -3660,7 +3662,8 @@ function cargoSettingsShow() {
     vehicles:() => cargoSettingsVehicles(d.fleet.vehicles),
     drivers:() => cargoSettingsDrivers(d.fleet.drivers),
     units:() => cargoSettingsUnits(d.routing),
-    routing:() => cargoSettingsRouting(d)
+    routing:() => cargoSettingsRouting(d),
+    bonus:() => '<section class="panel" id="driverBonusSettings"><p role="status">Carregando parâmetros…</p></section>'
   };
   $('#content').innerHTML = `<div class="cargo-workspace-top">${nav}
     <button type="button" class="btn" id="cargoSettingsRefresh">Atualizar</button></div>${page[CARGO_SETTINGS.section]()}`;
@@ -3668,7 +3671,8 @@ function cargoSettingsShow() {
     CARGO_SETTINGS.section = b.dataset.cargoSetting;
     cargoSettingsShow();
   });
-  $('#cargoSettingsRefresh').onclick = cargoSettingsLoad;
+  $('#cargoSettingsRefresh').onclick = () => {delete LOG.driverRules;cargoSettingsLoad();};
+  if(CARGO_SETTINGS.section==='bonus')driverPayrollSettingsShow();
   if(!canLog('formation','edit')){
     $$('#content :is(#cargoNewVehicle,#cargoNewDriver,#cargoNewUnit,[data-edit-vehicle],[data-edit-driver],[data-edit-unit],[data-status-vehicle],[data-status-driver],#cargoEditPreferences)').forEach(el=>el.remove());
   }
@@ -3687,6 +3691,58 @@ function cargoSettingsShow() {
     cargoFleetStatusDialog(x.name, x.active === false, {operation:'MOTORISTA_SALVAR', previousName:x.name});
   });
   $('#cargoEditPreferences')?.addEventListener('click', cargoPreferencesDialog);
+}
+
+function driverPayrollManager(){return ['ADMIN','DIRETOR','GERENTE'].includes(state.user?.perfil)&&canLog('formation');}
+function driverPayrollSettingsRow(name='',rate=''){
+ return `<tr><td><input aria-label="Classificação de rota" maxlength="80" value="${esc(name)}" required></td><td><input aria-label="Valor por tonelada" inputmode="decimal" value="${esc(String(rate).replace('.',','))}" required></td><td><button type="button" class="btn" data-bonus-remove>Remover</button></td></tr>`;
+}
+function driverPayrollAmount(value){
+ const text=String(value).trim();
+ if(!/^\d+(?:[.,]\d{1,4})?$/.test(text))throw new Error('Informe valores positivos ou zero, com até quatro casas decimais.');
+ const amount=Number(text.replace(',','.'));
+ if(!Number.isFinite(amount)||amount>1000000)throw new Error('Confira os valores da premiação.');
+ return amount;
+}
+async function driverPayrollSettingsShow(){
+ if(!driverPayrollManager())return;
+ const target=$('#driverBonusSettings');if(!target)return;
+ const current=()=>state.module==='logistics'&&LOG.page==='settings'&&CARGO_SETTINGS.section==='bonus'&&$('#driverBonusSettings')===target;
+ try{
+  const rules=await api('/api/logistics',{body:JSON.stringify({kind:'operations',action:'driverPayrollRules'})});
+  if(!current())return;
+  LOG.driverRules=rules;
+  target.innerHTML=`<div class="cargo-section-heading"><div><h2>Premiação dos motoristas</h2><p>O aplicativo calcula peso em kg ÷ 1.000 × valor da rota, somadas ao adicional por pedido¹.</p></div></div>
+   <p>O mês é definido pela data de carregamento da base Formação. Alterações nestes parâmetros recalculam as prévias consultadas, inclusive meses anteriores.</p>
+   <form id="driverBonusForm"><div class="driver-closing-controls"><label>Adicional por pedido¹ (R$)<input id="driverBonusPerOrder" inputmode="decimal" required value="${esc(String(rules.perOrder).replace('.',','))}"></label></div>
+   <div class="table-wrap"><table><thead><tr><th>Classificação de rota</th><th>Valor por tonelada (R$)</th><th>Ação</th></tr></thead><tbody id="driverBonusRows">${Object.entries(rules.routes).map(([name,rate])=>driverPayrollSettingsRow(name,rate)).join('')}</tbody></table></div>
+   <p>Use as classificações cadastradas nos carregamentos. Rotas sem parâmetro ficam sinalizadas como pendentes. Zero significa que a rota não recebe prêmio por tonelada.</p>
+   <p>¹ A contagem segue o modelo de fechamento atual, um registro com cidade informada por linha da base.</p>
+   <div class="cargo-actions"><button type="button" class="btn" id="driverBonusAdd">Adicionar rota</button><button type="submit" class="btn primary">Salvar parâmetros</button></div><p role="status" id="driverBonusMessage"></p></form>
+   <p>${rules.updatedAt?'Última alteração em '+esc(new Date(rules.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Fortaleza'}))+' por '+esc(rules.updatedBy):rules.configured?'Parâmetros iniciais cadastrados.':'Cadastre os parâmetros para começar o fechamento.'}</p>`;
+  const form=$('#driverBonusForm',target),body=$('#driverBonusRows',target),message=$('#driverBonusMessage',target);
+  const editable=canLog('formation','edit');
+  if(!editable){$$('input,button',form).forEach(el=>el.disabled=true);message.textContent='Seu acesso a estes parâmetros é somente leitura.';return;}
+  body.onclick=event=>{const button=event.target.closest('[data-bonus-remove]');if(button)button.closest('tr').remove();};
+  $('#driverBonusAdd',target).onclick=()=>{if(body.children.length>=40){message.textContent='Limite de 40 classificações de rota.';return;}body.insertAdjacentHTML('beforeend',driverPayrollSettingsRow());body.lastElementChild.querySelector('input').focus();};
+  form.onsubmit=async event=>{
+   event.preventDefault();const controls=$$('input,button',form);if(form.dataset.saving)return;
+   try{
+    const routes=Object.create(null);
+    for(const row of [...body.rows]){
+     const fields=row.querySelectorAll('input'),name=normalize(fields[0].value);
+     if(!name||Object.hasOwn(routes,name))throw new Error('Preencha os nomes das rotas e evite classificações repetidas.');
+     routes[name]=driverPayrollAmount(fields[1].value);
+    }
+    const perOrder=driverPayrollAmount($('#driverBonusPerOrder',target).value);
+    form.dataset.saving='1';controls.forEach(el=>el.disabled=true);message.textContent='Salvando parâmetros…';
+    const saved=await api('/api/logistics',{body:JSON.stringify({kind:'operations',action:'driverPayrollSave',revision:rules.revision,rules:{routes,perOrder}})});
+    LOG.driverRules=saved;Object.assign(rules,saved);
+    if(current())message.textContent='Parâmetros salvos. Os indicadores e a prévia para RH usarão estes valores.';
+   }catch(error){if(current())message.textContent=error.message;}
+   finally{delete form.dataset.saving;controls.forEach(el=>el.disabled=false);}
+  };
+ }catch(error){if(current()){target.innerHTML=`<h2>Parâmetros indisponíveis</h2><p>${esc(error.message)}</p><button class="btn" id="driverBonusRetry">Tentar novamente</button>`;$('#driverBonusRetry',target).onclick=driverPayrollSettingsShow;}}
 }
 
 function cargoSettingsVehicles(vehicles) {
