@@ -515,6 +515,22 @@
 <style>
 .history-annual-scroll{overflow-x:auto;max-width:100%}
 .history-annual-scroll .history-chart{min-width:820px}
+.history-study{display:grid;gap:16px;margin-bottom:18px}
+.history-study-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px}
+.history-study-controls label,.history-study-section label{display:grid;gap:5px;font-size:12px;color:#495a76;font-weight:600}
+.history-study-controls select,.history-study-section select{width:100%;min-width:0}
+.history-study .history-kpis{margin:12px 0}
+.history-study-status{min-height:1.3em}
+.history-study-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+.history-study-grid>section,.history-study-section{min-width:0;padding:14px;border:1px solid #dfe8f3;border-radius:12px;margin-bottom:12px}
+.history-study h3{font-size:15px;margin:0 0 6px;color:#233f66}
+.history-study-chart{height:245px;margin-top:10px}
+.history-study-rank-buttons{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.history-study-rank-buttons .btn{padding:4px 9px;font-size:12px}
+.history-study-source summary{cursor:pointer;font-weight:600;color:#29476f}
+.history-study-source p{margin:8px 0 0}
+@media(max-width:760px){.history-study-grid{grid-template-columns:1fr}.history-study-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.history-study-section{padding:10px}.history-study-controls label{font-size:11px}}
+
 .history-annual-scroll:focus-visible{outline:2px solid #84a7da;outline-offset:2px}
 .history-map-body .history-map-stage{height:auto}
 .history-map-stage #historyEvolutionMap{
@@ -1159,6 +1175,78 @@ function macroHistoryCurrent(){
  return {monthly:[...groups.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(x=>({...x,value:Math.round(x.value*100)/100})),geoMonthly:[...geography.values()].map(x=>({month:x.month,cities:[...x.cities.values()].map(c=>[c[0],c[1],Math.round(c[2]*100)/100]),unlocated:Math.round(x.unlocated*100)/100})),updatedAt:SERVER_UPDATED_AT};
 }
 
+// A análise usa o mesmo cache de vendas das telas comerciais.
+function historyStudyBucket(){
+  return {revenue:0, clients:new Map(), marginValue:0, marginBase:0, rows:0, marginRows:0};
+}
+
+function addHistoryStudySale(bucket,sale){
+  const value=Number(sale.value)||0;
+  bucket.rows++;
+  bucket.revenue+=value;
+  if(sale.client!=null)addSet(bucket.clients,sale.client,sale.product);
+  if(Number.isFinite(sale.marginPct)){
+    bucket.marginRows++;
+    bucket.marginBase+=value;
+    bucket.marginValue+=value*sale.marginPct;
+  }
+}
+
+function summarizeHistoryStudy(bucket){
+  const {revenue,clients,marginValue,marginBase,marginRows,rows}=bucket;
+  const pairs=[...clients.values()].reduce((total,products)=>total+products.size,0);
+  return {revenue,positive:clients.size,mix:clients.size?pairs/clients.size:null,
+    ticket:clients.size?revenue/clients.size:null,
+    margin:marginRows&&marginBase?100*marginValue/marginBase:null,
+    marginCoverage:rows?marginRows/rows:null};
+}
+
+function commercialHistoryStudy({years,months,summaryMonths,department,uf,group}){
+  const filters={year:'Todos',month:'Todos',department:department?[department]:[],uf:uf?[uf]:[]};
+  const byYear=new Map(years.map(year=>[year,{
+    period:historyStudyBucket(),months:new Map(months.map(month=>[month,historyStudyBucket()]))
+  }]));
+  const summary=new Set(summaryMonths);
+  const breakdown=new Map();
+  for(const sale of SALES){
+    const year=byYear.get(sale.year);
+    if(!year||sale.year===2024&&sale.month<8)continue;
+    if(uf&&sale.uf!==uf||department&&sale.department!==department)continue;
+    const month=year.months.get(sale.month);
+    if(month)addHistoryStudySale(month,sale);
+    if(!summary.has(sale.month))continue;
+    addHistoryStudySale(year.period,sale);
+    const key=group==='uf'?sale.uf:sale.department;
+    if(key){
+      if(!breakdown.has(key))breakdown.set(key,new Map());
+      const values=breakdown.get(key);
+      values.set(sale.year,(values.get(sale.year)||0)+(Number(sale.value)||0));
+    }
+  }
+  const evolution=summaryMonths.length||months.length?portfolioEvolution(filters):[];
+  const portfolio=new Map(evolution.map(row=>[row.month,row]));
+  const key=(year,month)=>year+'-'+String(month).padStart(2,'0');
+  const position=(year,month)=>{
+    const row=portfolio.get(key(year,month));
+    return row?{active:row.active,short:row.short,long:row.long}:{};
+  };
+  return {
+    years:years.map(year=>{
+      const source=byYear.get(year);
+      const points=Object.fromEntries(months.map(month=>[month,{
+        ...summarizeHistoryStudy(source.months.get(month)),...position(year,month)
+      }]));
+      const last=summaryMonths.at(-1);
+      return {year,points,total:last?{
+        ...summarizeHistoryStudy(source.period),
+        positive:summaryMonths.reduce((sum,month)=>sum+points[month].positive,0)/summaryMonths.length,
+        ...position(year,last)
+      }:{}};
+    }),
+    breakdown:[...breakdown].map(([key,values])=>({key,values:Object.fromEntries(values)}))
+  };
+}
+
 function overview(filters){
   const rows=filterSales(filters);
   const yearRows=filterSales(filters,{ignoreMonth:true});
@@ -1481,6 +1569,14 @@ onmessage=async(e)=>{
     return;
   }
   if(msg.type==='init'){CACHE_KEY='server-daily-all-orders-v2|'+String(msg.userScope||'');FORCE_REFRESH=!!msg.force;PREFER_FRESH=!!msg.preferFresh;return init();}
+  if(msg.type==='historyStudy'){
+    try{
+      postMessage({type:'historyStudy',requestId:msg.requestId,result:commercialHistoryStudy(msg.study)});
+    }catch(error){
+      postMessage({type:'historyStudy',requestId:msg.requestId,error:error.message});
+    }
+    return;
+  }
   if(msg.type==='query'){
     try{
       const f=msg.filters||{};
@@ -1499,6 +1595,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@2bb72d13a0110aa62a0132ea3f0a8f94681f7e4f/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@33e73243977e1f7e16cf2321b650bc5dcb716b2d/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
