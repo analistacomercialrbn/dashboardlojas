@@ -122,7 +122,35 @@ function showLogin(changeRequired=false){
     $('#newDashboardPassword').focus();
   }
 }
+let dashboardActivityTimer;
+let dashboardActivityPending = false;
+
+async function sendDashboardActivity() {
+  if (document.hidden || dashboardActivityPending || !state.user ||
+      !sessionStorage.getItem('dashboardSession')) return;
+  dashboardActivityPending = true;
+  const module = state.module;
+  try {
+    await api('/api/activity', {body:JSON.stringify({module})});
+  } catch (error) {
+    if (error.message === 'Sua sessão expirou. Entre novamente.') {
+      clearInterval(dashboardActivityTimer);
+      dashboardActivityTimer = null;
+    }
+  } finally {
+    dashboardActivityPending = false;
+    if (state.module !== module) sendDashboardActivity();
+  }
+}
+
+function startDashboardActivity() {
+  if (dashboardActivityTimer) return;
+  dashboardActivityTimer = setInterval(sendDashboardActivity, 120000);
+  document.addEventListener('visibilitychange', sendDashboardActivity);
+}
+
 async function enterApp(){
+ startDashboardActivity();
  if(logOverviewArea()&&logPageAllowed('overview')){
   $('#loginView').classList.add('hidden');
   LOG.page='overview';
@@ -706,9 +734,74 @@ function renderOverview(p){
   $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<button type="button" class="metric-row department-filter ${selectedDepartments.has(String(x.key))?'selected':''}" data-department="${esc(x.key)}"><span><span class="metric-name">${esc(x.key||'Sem departamento')}</span><span class="progress ${x.meta>0?'':'hidden'}"><i style="width:${x.meta>0?Math.max(0,Math.min(100,x.revenue/x.meta*100)):0}%"></i></span></span><span class="metric-value">${money(x.revenue,true)} · ${x.meta>0?pct(x.revenue/x.meta*100)+' da meta':'Sem meta'}<small>${x.meta?`Meta ${money(x.meta,true)}`:'Meta não cadastrada'}</small></span></button>`).join('')||'<div class="empty">Sem departamento neste recorte.</div>';
   $$('.department-filter').forEach(button=>button.addEventListener('click',()=>toggleCrossFilter('department',button.dataset.department)));
 }
+function drawPortfolioEvolution(rows) {
+  if (!rows.length) return;
+  const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const labels = rows.map(({month,partial}) => {
+    const [year,m] = month.split('-');
+    return monthNames[Number(m)-1] + '/' + year.slice(2) + (partial?'*':'');
+  });
+  const valueLabels = {
+    id:'portfolioValueLabels',
+    afterDatasetsDraw(instance) {
+      const {ctx,chartArea:area} = instance;
+      if (area.width / rows.length < 35) return;
+      const occupied = [];
+      ctx.save();
+      ctx.font = '600 10px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      instance.data.datasets.forEach((dataset,index)=>{
+        if (!instance.isDatasetVisible(index)) return;
+        ctx.fillStyle = dataset.borderColor;
+        instance.getDatasetMeta(index).data.forEach(({x,y},point)=>{
+          const label = integer(dataset.data[point]);
+          const half = ctx.measureText(label).width/2+3;
+          for (const center of [y-12,y+13]) {
+            if (x-half<area.left||x+half>area.right||center-6<area.top||center+6>area.bottom) continue;
+            if (occupied.some(box=>Math.abs(center-box.y)<12&&Math.abs(x-box.x)<half+box.half)) continue;
+            ctx.fillText(label,x,center);
+            occupied.push({x,y:center,half});
+            break;
+          }
+        });
+      });
+      ctx.restore();
+    }
+  };
+  const series = [
+    ['active','Ativos','#1E4F8B'],
+    ['short','Inativos · curto','#A46612'],
+    ['long','Inativos · longo','#B43E51'],
+    ['positive','Positivações do mês','#207B51']
+  ];
+  chart($('#portfolioEvolutionChart'),'line',{
+    labels,
+    datasets:series.map(([key,label,color])=>({
+      label,data:rows.map(row=>row[key]),borderColor:color,backgroundColor:color,
+      borderWidth:2.5,pointRadius:rows.length>24?2.5:4,pointHoverRadius:6,
+      cubicInterpolationMode:'monotone'
+    }))
+  },{
+    interaction:{mode:'index',intersect:false},
+    plugins:{
+      legend:{display:true,position:'top',align:'start',labels:{usePointStyle:true,boxWidth:9,padding:16}},
+      tooltip:{callbacks:{
+        title:items=>labels[items[0].dataIndex]+(rows[items[0].dataIndex].partial?' · mês parcial':''),
+        label:item=>item.dataset.label+' · '+integer(item.raw)
+      }}
+    },
+    scales:{
+      x:{offset:true,grid:{display:false},ticks:{maxTicksLimit:16,maxRotation:45}},
+      y:{beginAtZero:true,ticks:{precision:0,callback:value=>integer(value)},grid:{color:'#EEF0F5'}}
+    }
+  },[valueLabels]);
+}
+
 function renderCarteira(p){
   const k=p.kpis||{};
   const inactiveTotal=Number(k.short||0)+Number(k.long||0);
+  const evolution=p.evolution||[];
   const ratio=k.newClients ? (Number(k.short||0)/Number(k.newClients||1)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x' : '—';
   $('#content').innerHTML=`
     <div class="grid kpi-grid">
@@ -719,6 +812,14 @@ function renderCarteira(p){
       ${kpi('Mix por cliente',dec(k.mix),'Produtos distintos por cliente')}
       ${kpi('Produtos ativos no recorte',integer(k.products),'Itens faturados')}
     </div>
+
+    <section class="panel">
+      <div class="panel-title-row"><div><h2>Evolução mensal da carteira</h2>
+        <p class="panel-sub">Positivações são clientes distintos que compraram no mês. Ativos e inativos são a posição no fechamento de cada mês.</p></div></div>
+      ${evolution.length?'<div class="chart-wrap portfolio-evolution-chart"><canvas id="portfolioEvolutionChart" role="img" aria-label="Ativos, inativos de curto e longo prazo e positivações por mês"></canvas></div>':'<p>Sem histórico de vendas para o ano selecionado.</p>'}
+      <p class="small-note">Ativos: até 89 dias sem compra. Inativos: 90 a 179 dias (curto) e 180 dias ou mais (longo). O gráfico mostra a sequência mensal conforme o filtro de ano.</p>
+      ${evolution.at(-1)?.partial?`<p class="small-note">* Mês parcial até ${fmtDate(evolution.at(-1).cutoff)}.</p>`:''}
+    </section>
 
     <div class="panel carteira-movement-panel">
       <div class="panel-title-row"><div><h2>Movimento da carteira</h2><div class="panel-sub">Positivados e novos: período selecionado. Inativos: fechamento do mês anterior. Clique nas faixas para filtrar a lista.</div></div></div>
@@ -740,6 +841,7 @@ function renderCarteira(p){
     <div id="inactiveSelections" class="inactive-selections"></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>RCA</th><th>Última compra</th><th class="align-right">Dias</th><th class="align-right">Fat. 12m</th><th>Faixa</th></tr></thead><tbody id="inactiveTable"></tbody></table></div>
   `;
 
+  drawPortfolioEvolution(evolution);
   const pickInactive=(rca,band)=>{state.inactivePick=state.inactivePick||{};if(rca!==undefined)state.inactivePick.rca=state.inactivePick.rca===String(rca)?'':String(rca);if(band!==undefined)state.inactivePick.band=state.inactivePick.band===band?'':band;drawInactiveList(p);};
   chart($('#portfolioMovementChart'),'bar',{
     labels:['Positivados','Novos','Inativados'],
@@ -1427,6 +1529,54 @@ function showDashboardTemporaryPassword(login,password,expiresAt) {
  dialog.showModal();
 }
 
+function mountUserActivity(roles) {
+  const panel = $('#userActivityPanel');
+  const table = $('#userActivityRows', panel);
+  const status = $('#userActivityStatus', panel);
+  const refresh = $('#userActivityRefresh', panel);
+  const recentOnly = $('#userActivityRecent', panel);
+  const date = new Intl.DateTimeFormat('pt-BR', {
+    timeZone:'America/Fortaleza', dateStyle:'short', timeStyle:'short'
+  });
+  const modules = {hub:'Seleção de área', commercial:'Comercial', logistics:'Logística', administration:'Administração'};
+  let rows;
+  function draw() {
+    if (!rows) return;
+    const visible = recentOnly.checked ? rows.filter(row => row.recent) : rows;
+    table.innerHTML = visible.map(row => `<tr>
+      <td><strong>${esc(row.name)}</strong><br><small>${esc(row.login)}</small></td>
+      <td>${esc(roles[row.role] || row.role)}</td>
+      <td><span class="user-activity-status ${row.recent?'recent':''}">${!row.enabled?'Conta inativa':row.recent?'Atividade recente':'Sem atividade recente'}</span></td>
+      <td>${esc(modules[row.module] || '—')}</td>
+      <td>${row.lastActivity ? date.format(row.lastActivity) : '—'}</td>
+      <td>${row.lastLogin ? date.format(row.lastLogin) : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="6">Nenhum usuário neste recorte.</td></tr>';
+  }
+  async function load() {
+    if (!panel.isConnected || refresh.disabled) return;
+    refresh.disabled = true;
+    try {
+      const data = await api('/api/userActivity');
+      if (!panel.isConnected) return;
+      rows = data.rows;
+      const count = rows.filter(row => row.recent).length;
+      status.textContent = `${count} com atividade nos últimos 5 min · atualizado às ${date.format(data.updatedAt).split(', ').at(-1)}`;
+      draw();
+    } catch (error) {
+      status.textContent = rows ? 'Não foi possível atualizar. A lista exibe a última consulta.' : error.message;
+    } finally {
+      refresh.disabled = false;
+    }
+  }
+  recentOnly.onchange = draw;
+  refresh.onclick = load;
+  const timer = setInterval(() => {
+    if (!panel.isConnected) clearInterval(timer);
+    else if (!document.hidden) load();
+  }, 60000);
+  load();
+}
+
 async function renderUsers(){
  if(state.user?.perfil!=='ADMIN')return;
  $('#content').innerHTML='<div class="panel">Carregando usuários…</div>';
@@ -1436,7 +1586,14 @@ async function renderUsers(){
  const roles={RCA:'RCA',SUPERVISOR:'Supervisor',GERENTE:'Gerente',DIRETOR:'Diretor',SAC:'SAC',INTERNO:'Interno',FORMACAO_CARGA:'Formação de Carga',ADMIN:'Administrador'};
  const permissionKeys=Object.keys(permissionLabels);
  const options=values=>values.map(x=>'<option value="'+esc(x.value)+'">'+esc(x.label)+'</option>').join('');
- $('#content').innerHTML=`<div class="panel"><h2>Usuários da plataforma</h2><p>Somente administradores podem gerenciar acessos.</p><div style="overflow:auto"><table><thead><tr><th>Nome / login</th><th>Perfil</th><th>Área / acesso</th><th>Situação</th><th></th></tr></thead><tbody>${data.users.map(u=>`<tr><td>${esc(u.nome)}<br><small>${esc(u.login)}</small></td><td>${esc(roles[u.perfil]||u.perfil)}</td><td>${esc((u.areas||[]).map(a=>a==='commercial'?'Comercial':'Logística').join(' · '))}<br><small>${permissionKeys.filter(k=>u.permissions?.[k]?.view).map(k=>esc(permissionLabels[k]+(u.permissions[k].edit?' · edita':' · consulta'))).join('<br>')}</small></td><td>${u.ativo?'Ativo':'Inativo'}</td><td><button type="button" class="secondary" data-edit-user="${esc(u.login)}">Editar</button>${u.ativo&&u.login!==state.user.login?` <button type="button" class="secondary" data-issue-password="${esc(u.login)}">Gerar senha provisória</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>
+ $('#content').innerHTML=`<section class="panel user-activity-panel" id="userActivityPanel">
+  <div class="panel-title-row"><div><h2>Atividade de acesso</h2><p>A presença é estimada pela comunicação da aba visível com a Central nos últimos 5 minutos.</p></div>
+  <button type="button" class="secondary" id="userActivityRefresh">Atualizar</button></div>
+  <label><input type="checkbox" id="userActivityRecent"> Só atividade recente</label>
+  <p id="userActivityStatus" role="status">Carregando atividade…</p>
+  <div class="table-wrap"><table><thead><tr><th>Nome / login</th><th>Perfil</th><th>Presença</th><th>Última área</th><th>Última atividade</th><th>Último login</th></tr></thead>
+  <tbody id="userActivityRows"></tbody></table></div></section>
+ <div class="panel"><h2>Usuários da plataforma</h2><p>Somente administradores podem gerenciar acessos.</p><div style="overflow:auto"><table><thead><tr><th>Nome / login</th><th>Perfil</th><th>Área / acesso</th><th>Situação</th><th></th></tr></thead><tbody>${data.users.map(u=>`<tr><td>${esc(u.nome)}<br><small>${esc(u.login)}</small></td><td>${esc(roles[u.perfil]||u.perfil)}</td><td>${esc((u.areas||[]).map(a=>a==='commercial'?'Comercial':'Logística').join(' · '))}<br><small>${permissionKeys.filter(k=>u.permissions?.[k]?.view).map(k=>esc(permissionLabels[k]+(u.permissions[k].edit?' · edita':' · consulta'))).join('<br>')}</small></td><td>${u.ativo?'Ativo':'Inativo'}</td><td><button type="button" class="secondary" data-edit-user="${esc(u.login)}">Editar</button>${u.ativo&&u.login!==state.user.login?` <button type="button" class="secondary" data-issue-password="${esc(u.login)}">Gerar senha provisória</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>
  <div class="panel" style="margin-top:16px"><h2 id="userFormTitle">Novo usuário</h2><form id="adminUserForm" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:14px">
  <label>Login<input name="login" required minlength="3" maxlength="100" autocomplete="off" style="width:100%;min-height:44px"></label>
  <label>Nome<input name="nome" required maxlength="120" style="width:100%;min-height:44px"></label>
@@ -1455,6 +1612,7 @@ async function renderUsers(){
  <div><button type="submit" class="btn">Salvar usuário</button> <button type="button" id="newUserBtn" class="secondary">Novo usuário</button></div>
  <p id="userSaveStatus" role="status" style="grid-column:1/-1"></p></form></div>`;
  applyPageLook('users',data);
+ mountUserActivity(roles);
  const form=$('#adminUserForm'),field=n=>form.elements.namedItem(n);
  $$('[data-issue-password]').forEach(button=>button.onclick=async ()=>{
    const login=button.dataset.issuePassword;
@@ -1787,7 +1945,7 @@ function applyPageLook(page,p={}){
   cidades:['INTELIGÊNCIA TERRITORIAL',p.selected?p.selected.city+' em perspectiva.':'Faturamento por território.','Explore o faturamento de cada cidade e aprofunde produtos e clientes.',[['Faturamento da área',money(p.selected?.revenue??cities.reduce((a,x)=>a+x.revenue,0),true),p.selected?p.selected.city+' · '+p.selected.uf:'Área e período selecionados'],['Cidades com venda',integer(cities.filter(c=>c.revenue>0).length),'Municípios atendidos no recorte']]],
   metas:['PLANEJAMENTO COMERCIAL','Acompanhamento de realizado e meta.','Compare o realizado com as metas cadastradas ao longo do ano.',[['Meta do ano',money(p.totalMeta,true),'Planejamento no ano selecionado'],['Faturamento no ano',money(p.totalRevenue,true),p.totalMeta?pct(p.totalRevenue/p.totalMeta*100)+' da meta':'Sem meta cadastrada']]],
   coverage:['COBERTURA E ANÁLISE DE ÁREA','Cobertura e resultados por área.','Conecte a distribuição comercial aos resultados dos municípios.',[['Municípios no recorte',integer(coverage.length),'Linha e área selecionadas'],['Municípios conferidos',integer(coverage.filter(r=>!coveragePending(r,state.coverageFilters.department)).length),'Atribuição comercial validada']]],
-  users:['ADMINISTRAÇÃO DA PLATAFORMA','Cada pessoa, com o acesso certo.','Defina as áreas, os recortes de informação e o preenchimento manual do SAC.',[['Usuários cadastrados',integer(p.users?.length),'Contas do dashboard'],['Acessos ativos',integer((p.users||[]).filter(u=>u.ativo).length),'Contas habilitadas']]]
+  users:['ADMINISTRAÇÃO DA PLATAFORMA','Cada pessoa, com o acesso certo.','Defina as áreas, os recortes de informação e o preenchimento manual do SAC.',[['Usuários cadastrados',integer(p.users?.length),'Contas do dashboard'],['Contas habilitadas',integer((p.users||[]).filter(u=>u.ativo).length),'Usuários com acesso liberado']]]
  };
  if(page==='overview'){
   const hero=root.querySelector('.overview-hero');if(hero&&!hero.classList.contains('overview-summary-hero')){
@@ -1918,8 +2076,8 @@ const LOG_PAGES={overview:['Visão geral','Panorama operacional de cargas e entr
 function areaAllowed(area){return ['ADMIN','DIRETOR'].includes(state.user?.perfil)||(state.user?.areas||(['GERENTE'].includes(state.user?.perfil)?['commercial','logistics']:['commercial'])).includes(area);}
 function logAllowed(){return areaAllowed('logistics');}
 function moduleIcon(path){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg>`;}
-function showModules(){state.module='hub';state.page='hub';++state.requestId;++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#appView').classList.add('hidden');$('#loginView').classList.add('hidden');document.body.dataset.module='hub';let el=$('#moduleHub');if(!el){el=document.createElement('section');el.id='moduleHub';el.className='module-hub';document.body.append(el);}el.classList.remove('hidden');el.innerHTML=`<header class="hub-header"><img src="${esc($('.login-logo').src)}" alt="Rebanho"><div><span>${esc(state.user?.nome||state.user?.login||'')}</span><button class="btn ghost" id="hubLogout">Sair</button></div></header><main class="hub-main"><span class="history-eyebrow">REBANHO · INTELIGÊNCIA DE GESTÃO</span><h1>Qual operação vamos acompanhar?</h1><p>Escolha um painel para acessar os indicadores da sua área.</p><div class="module-cards"><button class="module-card commercial-module" id="openCommercial"><span class="module-card-icon">${moduleIcon(LOG_PAGES.overview[2])}</span><small>GESTÃO COMERCIAL</small><h2>Comercial</h2><p>Faturamento, metas, pedidos, clientes, produtos e cobertura territorial.</p><span class="module-card-link">Abrir Supervisão ${moduleIcon("M7 17L17 7M7 7h10v10")}</span></button><button class="module-card logistics-module" id="openLogistics"><span class="module-card-icon">${moduleIcon(LOG_PAGES.fleet[2])}</span><small>GESTÃO OPERACIONAL</small><h2>Logística</h2><p>Cargas, rotas, entregas, motoristas, ocorrências e desempenho.</p><span class="module-card-link">${logAllowed()?'Abrir Logística':'Acesso para perfis de gestão'} ${moduleIcon("M7 17L17 7M7 7h10v10")}</span></button></div></main>`;if(state.user?.transportOnly){$('#openLogistics h2').textContent='Transportadoras';$('#openLogistics small').textContent='ACOMPANHAMENTO DE TRANSPORTADORAS';$('#openLogistics p').textContent='Entregas, prazos, ocorrências e acompanhamento das notas.';}$('#openCommercial').hidden=!areaAllowed('commercial');$('#openLogistics').hidden=!logAllowed();if(state.user?.perfil==='ADMIN')$('.module-cards').insertAdjacentHTML('beforeend',`<button class="module-card admin-module" id="openAdministration"><span class="module-card-icon">${moduleIcon('M12 3l8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4zM9 12l2 2 4-4')}</span><small>ADMINISTRAÇÃO DA PLATAFORMA</small><h2>Usuários e acessos</h2><p>Perfis, áreas, equipes e permissões de consulta e edição.</p><span class="module-card-link">Gerenciar plataforma →</span></button>`);$('#openAdministration')?.addEventListener('click',()=>openModule('administration'));$('#openCommercial').onclick=()=>openModule('commercial');$('#openLogistics').onclick=()=>openModule('logistics');$('#hubLogout').onclick=async()=>{try{await api('/api/logout',{method:'POST'});}finally{location.reload();}};}
-async function openModule(which){if(which==='administration'&&state.user?.perfil!=='ADMIN'||which==='commercial'&&!areaAllowed('commercial')||which==='logistics'&&!logAllowed()){alert('Seu usuário não tem acesso a esta área.');return;}++state.requestId;destroyCharts();state.module=which;document.body.dataset.module=which;$('#moduleHub')?.classList.add('hidden');$('#appView').classList.remove('hidden');renderUser();if(!state.shellBound){bindShell();state.shellBound=true;}if(!$('#switchModule')){const b=document.createElement('button');b.type='button';b.id='switchModule';b.className='btn ghost module-switch';b.innerHTML=moduleIcon('M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z')+'<span>Áreas</span>';b.onclick=()=>{$('#menuClose')?.click();showModules();};$('.header-account').prepend(b);}
+function showModules(){state.module='hub';state.page='hub';sendDashboardActivity();++state.requestId;++LOG.epoch;destroyCharts();if(state.map){try{state.map.remove()}catch{}state.map=null;}$('#appView').classList.add('hidden');$('#loginView').classList.add('hidden');document.body.dataset.module='hub';let el=$('#moduleHub');if(!el){el=document.createElement('section');el.id='moduleHub';el.className='module-hub';document.body.append(el);}el.classList.remove('hidden');el.innerHTML=`<header class="hub-header"><img src="${esc($('.login-logo').src)}" alt="Rebanho"><div><span>${esc(state.user?.nome||state.user?.login||'')}</span><button class="btn ghost" id="hubLogout">Sair</button></div></header><main class="hub-main"><span class="history-eyebrow">REBANHO · INTELIGÊNCIA DE GESTÃO</span><h1>Qual operação vamos acompanhar?</h1><p>Escolha um painel para acessar os indicadores da sua área.</p><div class="module-cards"><button class="module-card commercial-module" id="openCommercial"><span class="module-card-icon">${moduleIcon(LOG_PAGES.overview[2])}</span><small>GESTÃO COMERCIAL</small><h2>Comercial</h2><p>Faturamento, metas, pedidos, clientes, produtos e cobertura territorial.</p><span class="module-card-link">Abrir Supervisão ${moduleIcon("M7 17L17 7M7 7h10v10")}</span></button><button class="module-card logistics-module" id="openLogistics"><span class="module-card-icon">${moduleIcon(LOG_PAGES.fleet[2])}</span><small>GESTÃO OPERACIONAL</small><h2>Logística</h2><p>Cargas, rotas, entregas, motoristas, ocorrências e desempenho.</p><span class="module-card-link">${logAllowed()?'Abrir Logística':'Acesso para perfis de gestão'} ${moduleIcon("M7 17L17 7M7 7h10v10")}</span></button></div></main>`;if(state.user?.transportOnly){$('#openLogistics h2').textContent='Transportadoras';$('#openLogistics small').textContent='ACOMPANHAMENTO DE TRANSPORTADORAS';$('#openLogistics p').textContent='Entregas, prazos, ocorrências e acompanhamento das notas.';}$('#openCommercial').hidden=!areaAllowed('commercial');$('#openLogistics').hidden=!logAllowed();if(state.user?.perfil==='ADMIN')$('.module-cards').insertAdjacentHTML('beforeend',`<button class="module-card admin-module" id="openAdministration"><span class="module-card-icon">${moduleIcon('M12 3l8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4zM9 12l2 2 4-4')}</span><small>ADMINISTRAÇÃO DA PLATAFORMA</small><h2>Usuários e acessos</h2><p>Perfis, áreas, equipes e permissões de consulta e edição.</p><span class="module-card-link">Gerenciar plataforma →</span></button>`);$('#openAdministration')?.addEventListener('click',()=>openModule('administration'));$('#openCommercial').onclick=()=>openModule('commercial');$('#openLogistics').onclick=()=>openModule('logistics');$('#hubLogout').onclick=async()=>{try{await api('/api/logout',{method:'POST'});}finally{location.reload();}};}
+async function openModule(which){if(which==='administration'&&state.user?.perfil!=='ADMIN'||which==='commercial'&&!areaAllowed('commercial')||which==='logistics'&&!logAllowed()){alert('Seu usuário não tem acesso a esta área.');return;}++state.requestId;destroyCharts();state.module=which;sendDashboardActivity();document.body.dataset.module=which;$('#moduleHub')?.classList.add('hidden');$('#appView').classList.remove('hidden');renderUser();if(!state.shellBound){bindShell();state.shellBound=true;}if(!$('#switchModule')){const b=document.createElement('button');b.type='button';b.id='switchModule';b.className='btn ghost module-switch';b.innerHTML=moduleIcon('M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z')+'<span>Áreas</span>';b.onclick=()=>{$('#menuClose')?.click();showModules();};$('.header-account').prepend(b);}
 $('#switchModule').classList.toggle('hidden',state.user?.formationOnly===true);
 $('#appMenu .menu-footer').textContent=which==='logistics'?'Dashboard de Logística':'Dashboard de Supervisão';document.title=which==='logistics'?'Rebanho · Logística':'Rebanho · Supervisão';$('#appMenu .menu-caption').textContent=which==='logistics'?'PAINEL LOGÍSTICO':'PAINEL COMERCIAL';$('#appMenu .menu-heading strong').textContent=which==='logistics'?'Inteligência logística':'Inteligência comercial';$('.topbar .eyebrow').textContent=which==='logistics'?'Dashboard de Logística':'Dashboard de Supervisão';$('#refreshData').innerHTML='<span aria-hidden="true">↻</span> '+(which==='logistics'?'Atualizar dados':'Atualizar bases');$('#refreshData').disabled=false;
 if(which==='administration'){state.page='users';document.title='Rebanho · Administração';$('.topbar .eyebrow').textContent='Central Rebanho';$('#pageTitle').textContent='Administração da plataforma';$('#pageSubtitle').textContent='Usuários, áreas e permissões';$('#activeMenuLabel').textContent='Administração';$('#appMenu .menu-heading strong').textContent='Administração';$('#appMenu .menu-caption').textContent='PLATAFORMA';$('#logFilters')?.classList.add('hidden');$('.filterbar').classList.add('hidden');$('#dataStatus').classList.add('hidden');$('#refreshData').hidden=true;$('#periodChip').hidden=true;$('#lastBaseUpdate').textContent='';$('#content').className='admin-content';renderUsers();return;}$('#refreshData').hidden=false;$('#periodChip').hidden=false;if(which==='commercial'){$('#content').className='';state.page=state.commercialPage||'overview';$('#activeMenuLabel').textContent=PAGE_META[state.page]?.[0]||'Comercial';$$('#appMenu [data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===state.page));$('#logFilters')?.classList.add('hidden');if(!BI.published)await biInit();if(!state.worker)initData();else queryPage();}
