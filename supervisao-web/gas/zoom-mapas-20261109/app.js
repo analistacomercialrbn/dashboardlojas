@@ -4870,11 +4870,12 @@ function cargoRouteQueue(d, finished) {
       return `<article class="panel cargo-queue-card"><header class="cargo-detail-header"><div>${cargoStatus(m)}
         <h3>${esc(m.name)}</h3><p>${m.orders} pedidos · ${esc(m.driver||'Motorista a definir')} · ${esc(m.vehicle?.plate||m.vehicleId||'Placa a definir')}</p>
         <small>${cargoDate(m[stamp])} · ${esc(finished?m.finalizedBy:m.routingBy)}</small>
-        ${finished?`<p>Data de entrega · <strong>${m.deliveryDate?transportDate(m.deliveryDate):'Não informada'}</strong></p>`:''}
+        ${finished?`<p>Data geral da carga · <strong>${m.deliveryDate?transportDate(m.deliveryDate):'Não informada'}</strong></p>`:''}
         ${editDelivery?`<label class="cargo-confirm"><input type="checkbox" data-cargo-delivery-select="${esc(m.id)}">Selecionar ${esc(m.name)}</label>`:''}
         ${expanded?'':`<div class="cargo-route-state">${cargoRouteBadge(m)}
           ${missing>0?`<small class="cargo-route-missing-label">${cargoRouteMissingLabel(missing)}</small>`:''}</div>`}</div>
         <div class="cargo-actions">${expanded?'':`<button type="button" class="btn primary" data-cargo-route="${esc(m.id)}">${finished||!canLog('formation','edit')?'Consultar roteiro':'Roteirizar'}</button>`}
+        ${finished?`<button type="button" class="btn" data-cargo-order-dates="${esc(m.id)}">Datas por pedido</button>`:''}
         ${editDelivery?`<button type="button" class="btn" data-cargo-delivery-edit="${esc(m.id)}">Atualizar data de entrega</button>`:''}
         ${finished&&m.route?.confirmed?`<button type="button" class="btn" data-cargo-delivery-order="${esc(m.id)}">Emitir Ordem de Entregas</button>`:''}
         ${canLog('formation','edit')?`<button type="button" class="btn" data-cargo-reopen="${esc(m.id)}">Reabrir montagem</button>`:''}</div></header>
@@ -4893,7 +4894,41 @@ function cargoDeliveryDateDialog(ids) {
     form=>({operation:'ENTREGA_DATA_SALVAR',montageIds:ids,deliveryDate:form.elements.deliveryDate.value}));
 }
 
+function cargoOrderDeliveryDialog(id) {
+  const montage = FEXP.data.montages.find(m => m.id === id && m.status === CARGO_FINAL);
+  if (!montage) return;
+  const orders = FEXP.data.orders.filter(order => order.montageId === id);
+  const title = 'Datas de entrega por pedido · ' + montage.name;
+  const edit = canLog('formation', 'edit');
+  if (!orders.length) {
+    formationDialog(title, '<p>Nenhum pedido nesta montagem.</p>');
+    return;
+  }
+  const revision = FEXP.data.revision;
+  const today = transportToday();
+  const rows = orders.map(order => {
+    const label = `<span><strong>Pedido ${esc(order.order)}</strong><small>${esc(order.client)}</small></span>`;
+    return edit
+      ? `<label class="cargo-weight-input">${label}<input type="date" data-delivery-key="${esc(order.key)}"
+          value="${esc(order.deliveryDate || '')}" max="${today}" aria-label="Data de entrega do pedido ${esc(order.order)}"></label>`
+      : `<div class="cargo-weight-input">${label}<time>${order.deliveryDate ? transportDate(order.deliveryDate) : 'Sem data'}</time></div>`;
+  }).join('');
+  if (!edit) {
+    formationDialog(title, rows);
+    return;
+  }
+  const originalDates = new Map(orders.map(order => [order.key, order.deliveryDate || '']));
+  cargoForm(title, `<p class="cargo-help">Preencha a data em que cada pedido foi entregue. Deixe em branco se ainda estiver pendente.</p>${rows}`, form => {
+    const changes = Array.from(form.querySelectorAll('[data-delivery-key]'))
+      .filter(input => input.value !== originalDates.get(input.dataset.deliveryKey))
+      .map(input => [input.dataset.deliveryKey, input.value]);
+    if (!changes.length) throw new Error('Altere pelo menos uma data para salvar.');
+    return {operation:'ENTREGA_PEDIDOS_SALVAR',target:id,revision,dates:Object.fromEntries(changes)};
+  });
+}
+
 function cargoBindWorkflow() {
+  $$('[data-cargo-order-dates]').forEach(button=>button.onclick=()=>cargoOrderDeliveryDialog(button.dataset.cargoOrderDates));
   $$('[data-cargo-delivery-edit]').forEach(button=>button.onclick=()=>cargoDeliveryDateDialog([button.dataset.cargoDeliveryEdit]));
   const bulk=$('#cargoBulkDelivery');
   if(bulk){
@@ -4954,7 +4989,8 @@ function cargoHistoryEvents(d) {
     REMOVER:'Pedidos retirados',RENOMEAR:'Montagem renomeada',CONFIGURAR_CARGA:'Veículo e motorista definidos',
     PESOS_PEDIDOS:'Pesos informados',FINALIZAR:'Montagem enviada para roteirização',ENVIAR_ROTEIRO:'Montagem enviada para roteirização',REABRIR:'Montagem reaberta',
     VEICULO_SALVAR:'Cadastro de veículo atualizado',MOTORISTA_SALVAR:'Cadastro de motorista atualizado',
-    UNIDADE_SALVAR:'Unidade de saída atualizada',ROTEIRIZACAO_CONFIGURAR:'Padrões do roteiro atualizados',ENTREGA_DATA_SALVAR:'Data de entrega atualizada'};
+    UNIDADE_SALVAR:'Unidade de saída atualizada',ROTEIRIZACAO_CONFIGURAR:'Padrões do roteiro atualizados',ENTREGA_DATA_SALVAR:'Data de entrega atualizada',
+    ENTREGA_PEDIDOS_SALVAR:'Datas de entrega dos pedidos atualizadas'};
   return `<section class="panel"><h2>Histórico de movimentações</h2><div class="cargo-history">${d.events.map(e => {
     const title = e.type==='ROTEIRO_SALVAR' ? (e.confirmed?'Roteiro confirmado':'Rascunho do roteiro salvo') : titles[e.type]||e.type;
     const names=e.montageIds?.map(id=>d.montages.find(m=>m.id===id)?.name).filter(Boolean);
