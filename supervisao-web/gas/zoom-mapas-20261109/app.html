@@ -11,6 +11,14 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
 .log-status-labels{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px;padding:14px 4px 4px}.log-status-labels button{display:grid;grid-template-columns:10px 1fr;gap:5px 9px;align-items:center;text-align:left;border:1px solid #f0dfd0;border-radius:9px;background:#fffaf5;color:#724a2e;padding:10px;min-width:0;cursor:pointer}.log-status-labels i{width:9px;height:9px;border-radius:50%}.log-status-labels span{overflow-wrap:anywhere;font-size:12px}.log-status-labels strong{grid-column:2;font-size:13px}.log-map-weight-label{background:rgba(255,252,247,.95);color:#6f3518;border:1px solid #c98b57;border-radius:6px;box-shadow:0 1px 5px #6f351826;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;line-height:1.2;white-space:nowrap;pointer-events:none}.log-map-weight-label span{max-width:160px;overflow:hidden;text-overflow:ellipsis}.log-map-weight-label strong{font-size:12px;color:#873c10}.log-map-total{padding:10px 0;font-size:15px;font-weight:700;color:#994b1c}.log-map-scale{display:flex;align-items:center;gap:10px;font-size:11px;color:#8c6040;padding-bottom:12px}.log-map-scale i{height:9px;width:160px;border-radius:8px;background:linear-gradient(90deg,#ffebd3,#ae450f)}.log-overview-scope{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:15px}.log-overview-scope label{font-weight:700;color:#874d29}.log-overview-scope select{min-height:38px;padding:8px;border:1px solid #dfbd9e;border-radius:8px;background:#fff;color:#7b4826}.log-overview-scope small{color:#8d7768}.log-identity-note{font-size:12px;line-height:1.6;color:#836d5c;padding:16px}.log-identity-note summary{cursor:pointer;font-weight:700;color:#9a5427}.log-overview-links{padding:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}.log-overview-links h3{width:100%;margin:0 0 6px}.logistics-content .kpi-label{overflow-wrap:anywhere}.logistics-content .log-kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}@media(max-width:600px){.log-status-labels{grid-template-columns:1fr}.log-map-weight-label{font-size:9px}.log-map-weight-label strong{font-size:11px}.log-overview-scope select{width:100%}}
+
+.user-activity-panel {margin-bottom:16px}
+.user-activity-panel .table-wrap {max-height:420px}
+.user-activity-status {white-space:nowrap;color:#555e72}
+.user-activity-status.recent {color:#146343;font-weight:700}
+.user-activity-status.recent::before {content:'●';margin-right:6px}
+.portfolio-evolution-chart {height:390px}
+@media(max-width:640px){.portfolio-evolution-chart {height:320px}}
 </style>
 <style>
 .formation-test-banner{display:flex;gap:16px;align-items:center;background:#fff0d9;border:1px solid #e0ae67;border-radius:14px;padding:14px 18px;margin-bottom:14px;color:#7a421f}.formation-test-banner span{flex:1;font-size:12px}.formation-workspace{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start;margin-top:18px}.formation-workspace>.panel{padding:18px;min-width:0}.formation-selection{position:sticky;top:18px}.formation-selection>strong{display:block;color:#a3501c;font-size:20px;line-height:1.5}.formation-actions{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0;align-items:center}.formation-actions .btn{white-space:normal}.formation-selection .formation-actions{flex-direction:column;align-items:stretch}.formation-map-controls{display:flex;gap:10px;padding:12px;align-items:center;flex-wrap:wrap}.formation-sort{border:0;background:transparent;color:inherit;font-weight:700;text-align:left;cursor:pointer}.formation-warning{display:block;color:#a5501c;background:#fff2dd;border-radius:8px;padding:9px;line-height:1.5;font-size:12px}.formation-orders input[type=checkbox],.formation-confirm input{width:18px;height:18px;accent-color:#b65c21}.formation-montages{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:15px;margin:18px 0}.formation-montage-card{text-align:left;padding:20px;cursor:pointer;color:#724727;border:2px solid #f0dfcf;background:#fffdf9}.formation-montage-card.is-active{border-color:#c56b28;background:#fff3e5}.formation-montage-card h3{margin:7px 0}.formation-montage-card strong{display:block;font-size:18px}.formation-montage-card small{display:block;line-height:1.6;overflow-wrap:anywhere}.formation-dialog{max-width:1100px;width:92vw;padding:24px;color:#67442d}.formation-dialog>header{display:flex;justify-content:space-between;align-items:center}.formation-dialog label{display:block;margin:12px 0;line-height:1.5}.formation-dialog input:not([type=checkbox]),.formation-dialog select,.formation-search input{display:block;width:100%;padding:11px;border:1px solid #daba9c;border-radius:8px;margin:6px 0;color:#67442d;background:#fff;box-sizing:border-box}.formation-link-sources{max-height:340px;overflow:auto}.formation-confirm{padding:12px;background:#fff2dd;border-radius:9px}.formation-confirm input{margin-right:8px}.formation-raw{max-height:280px;overflow:auto;white-space:pre-wrap;background:#faf7f2;padding:14px;font-size:12px}.formation-experimental .log-map-panel #logMapMetric{display:none}.formation-counter{color:#8e5c39}.formation-dialog form footer{margin-top:18px}@media(max-width:1100px){.formation-workspace{grid-template-columns:minmax(0,1fr)}.formation-selection{position:static}.formation-test-banner{flex-wrap:wrap}}@media(max-width:600px){.formation-dialog{padding:14px}.formation-montages{grid-template-columns:1fr}}
@@ -1154,17 +1162,84 @@ function ordersPage(filters){
   const meta=totalMeta(filterMetas(filters));
   return {...openOrderSummary(rows,revenue,meta),revenue,meta};
 }
+function portfolioGeography(filters){
+  const ufs=multi(filters.uf);
+  const region=filters.region&&filters.region!=='Todos'?norm(filters.region):null;
+  const city=filters.city&&filters.city!=='Todos'?norm(filters.city):null;
+  return location=>(!ufs.length||ufs.includes(String(location?.uf||''))) &&
+    (!region||norm(location?.region)===region) && (!city||norm(location?.city)===city);
+}
+
+function portfolioInactivityDays(cutoff,last){
+  const day=date=>Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate());
+  return (day(cutoff)-day(last))/86400000;
+}
+
+function portfolioEvolution(filters){
+  if(!SALES.length)return [];
+  let first=Infinity, last=0;
+  for(const sale of SALES){
+    const at=sale.date.getTime();
+    if(Number.isFinite(at)){first=Math.min(first,at);last=Math.max(last,at);}
+  }
+  if(!Number.isFinite(first))return [];
+  const start=new Date(first), ref=LATEST_DATE||new Date(last);
+  const year=filters.year&&filters.year!=='Todos'?Number(filters.year):null;
+  const yearStart=year?Date.UTC(year,0,1):-Infinity;
+  const yearEnd=year?Date.UTC(year+1,0,1)-1:Infinity;
+  const limit=Math.min(ref.getTime(),yearEnd);
+  const months=new Map();
+  for(let cursor=Math.max(Date.UTC(start.getUTCFullYear(),start.getUTCMonth(),1),yearStart);
+      cursor<=limit;){
+    const date=new Date(cursor), y=date.getUTCFullYear(), m=date.getUTCMonth()+1;
+    const next=Date.UTC(y,m,1);
+    const end=next-1;
+    const cutoff=Math.min(end,Date.UTC(ref.getUTCFullYear(),ref.getUTCMonth(),ref.getUTCDate(),23,59,59,999));
+    months.set(y+'-'+String(m).padStart(2,'0'),{
+      cutoff:new Date(cutoff),partial:cutoff<end,active:0,short:0,long:0,clients:new Set()
+    });
+    cursor=next;
+  }
+  if(!months.size)return [];
+  for(const sale of filterSales(filters,{ignoreMonth:true})){
+    if(sale.client==null)continue;
+    months.get(sale.year+'-'+String(sale.month).padStart(2,'0'))?.clients.add(sale.client);
+  }
+  const allowed=allowedRca(filters);
+  const departments=new Set(multi(filters.department));
+  const matchesGeography=portfolioGeography(filters);
+  for(const [client,history] of CLIENT_HISTORY){
+    const owner=CLIENTS.get(client)?.rca ?? history.at(-1)?.rca;
+    if(!allowed.has(owner))continue;
+    let cursor=0,lastPurchase=null;
+    for(const month of months.values()){
+      while(cursor<history.length&&history[cursor].date<=month.cutoff){
+        const purchase=history[cursor++];
+        if(!departments.size||departments.has(String(purchase.department)))lastPurchase=purchase.date;
+      }
+      if(!lastPurchase||!matchesGeography(history[cursor-1]))continue;
+      const days=portfolioInactivityDays(month.cutoff,lastPurchase);
+      if(days<90)month.active++;
+      else if(days<180)month.short++;
+      else month.long++;
+    }
+  }
+  return [...months].map(([month,row])=>({
+    month, cutoff:row.cutoff.toISOString(), partial:row.partial,
+    active:row.active, short:row.short, long:row.long, positive:row.clients.size
+  }));
+}
+
 function carteira(filters){
   const rows=filterSales(filters);
   const k=metrics(rows);
   const ref=LATEST_DATE||new Date(),year=filters.year&&filters.year!=='Todos'?Number(filters.year):ref.getFullYear(),month=filters.month&&filters.month!=='Todos'?Number(filters.month):ref.getMonth()+1;
   const cutoff=new Date(Date.UTC(year,month-1,0,23,59,59,999));
   if(!cutoff)return {kpis:{...k,newClients:0,short:0,long:0},byRca:[],inactive:[]};
-  const lim3=new Date(cutoff);lim3.setMonth(lim3.getMonth()-3);
-  const lim6=new Date(cutoff);lim6.setMonth(lim6.getMonth()-6);
   const lim12=new Date(cutoff);lim12.setMonth(lim12.getMonth()-12);
   const allowed=allowedRca(filters);
   const departments=multi(filters.department);
+  const matchesGeography=portfolioGeography(filters);
   const inactive=[];
   const by=new Map();
   let short=0,long=0;
@@ -1181,10 +1256,8 @@ function carteira(filters){
     }
     if(!last)continue;
     const location=[...hist].reverse().find(h=>h.date<=cutoff);
-    if(multi(filters.uf).length&&!multi(filters.uf).includes(String(location?.uf||'')))continue;
-    if(filters.region&&filters.region!=='Todos'&&norm(location?.region)!==norm(filters.region))continue;
-    if(filters.city&&filters.city!=='Todos'&&norm(location?.city)!==norm(filters.city))continue;
-    const days=Math.floor((Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth(),cutoff.getUTCDate())-Date.UTC(last.getUTCFullYear(),last.getUTCMonth(),last.getUTCDate()))/86400000);
+    if(!matchesGeography(location))continue;
+    const days=portfolioInactivityDays(cutoff,last);
     const isShort=days>=90&&days<180;
     const isLong=days>=180;
     if(!isShort && !isLong)continue;
@@ -1399,7 +1472,7 @@ onmessage=async(e)=>{
       let payload;
       if(msg.page==='history')payload=macroHistoryCurrent();
       else if(msg.page==='overview')payload=overview(f);
-      else if(msg.page==='carteira')payload=carteira(f);
+      else if(msg.page==='carteira')payload={...carteira(f),evolution:portfolioEvolution(f)};
       else if(msg.page==='produtos')payload=produtos(f);
       else if(msg.page==='cidades')payload=msg.coverageContext?{area:coverageArea(f,msg.coverageContext)}:cidades(f,msg.selectedCity);
       else if(msg.page==='metas')payload=metasPage(f);
@@ -1411,6 +1484,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c6748b7671964b9c12f3187eef76a220451b0eb8/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@dc6fb1f6fa6f5999dbf8dd289c859e9e66e9a8d4/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
