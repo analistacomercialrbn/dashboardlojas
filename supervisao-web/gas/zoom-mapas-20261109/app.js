@@ -4153,10 +4153,10 @@ function cargoRouteMarkup(m) {
     </div>`}
     <div class="cargo-route-layout"><div>
       <div class="cargo-section-heading"><div><h3>Paradas</h3>
-      <p>${readOnly?(m.route?.confirmed?'Sequência confirmada.':'Consulta da sequência atual.'):'Informe o endereço completo ou as coordenadas. Arraste pelo ícone ou use as setas para ordenar.'}</p></div></div>
+      <p>${readOnly?(m.route?.confirmed?'Sequência confirmada.':'Consulta da sequência atual.'):'Arraste pelo ícone ou use as setas para ordenar. Preencha os endereços ou as coordenadas se quiser traçar a rota no mapa.'}</p></div></div>
       <div class="cargo-route-readiness">
         <strong id="cargoRouteAddressSummary" aria-live="polite"></strong>
-        ${readOnly?'':'<button type="button" class="cargo-link" id="cargoRouteFirstMissing" hidden>Ir para o primeiro endereço pendente</button>'}
+        ${readOnly?'':'<button type="button" class="cargo-link" id="cargoRouteFirstMissing" hidden>Ir para a primeira parada sem endereço</button>'}
       </div>
       <ol id="cargoRouteStops" class="cargo-route-stops"></ol>
     </div><div class="cargo-route-map-column"><h3>Google Maps</h3>
@@ -4180,10 +4180,10 @@ function cargoRouteRenderStops(m, draft) {
     return `<li data-route-index="${index}" class="cargo-stop ${missing?'is-address-pending':''}">
       <header><span class="cargo-stop-number">${index+1}</span><div><strong>${esc(labels.join(' · '))}</strong>
       <small>${esc(cities.join(' · '))}</small>
-      <small class="cargo-route-missing-label" ${missing?'':'hidden'}>Endereço pendente</small>
+      <small class="cargo-route-missing-label" ${missing?'':'hidden'}>Sem endereço informado</small>
       <div class="cargo-stop-orders">${members.map(o=>`<button type="button" class="cargo-link" data-formation-detail="${esc(o.key)}">Pedido ${esc(o.order)}</button>`).join(' ')}</div></div>
       ${draft.readOnly?'':'<span class="cargo-stop-grip" data-route-grip title="Arrastar parada" aria-hidden="true">⠿</span>'}</header>
-      ${draft.readOnly?`<p>${esc(stop.address)}</p>`:`<label>Endereço da parada ${index+1}<textarea data-route-address="${index}" rows="2" maxlength="240"
+      ${draft.readOnly?`<p>${esc(stop.address)}</p>`:`<label>Endereço da parada ${index+1} (opcional)<textarea data-route-address="${index}" rows="2" maxlength="240"
         placeholder="Rua, número, cidade e UF ou coordenadas">${esc(stop.address)}</textarea></label>
       <div class="cargo-actions"><button type="button" class="btn" data-route-step="${index},-1" aria-label="Subir parada ${index+1}" ${index===0?'disabled':''}>↑ Subir</button>
       <button type="button" class="btn" data-route-step="${index},1" aria-label="Descer parada ${index+1}" ${index===draft.stops.length-1?'disabled':''}>↓ Descer</button></div>`}
@@ -4268,15 +4268,15 @@ function cargoRouteBind(m) {
 function cargoRouteConfirm(m,draft,confirmed) {
   const stops = cargoRouteGroups(draft.stops,draft.groupAddresses);
   const status = $('#cargoRouteSaveStatus');
-  if (confirmed && (!draft.unitId || stops.some(s => !s.address))) {
-    status.textContent = 'Escolha a unidade de saída e preencha os endereços de todas as paradas.';
+  if (confirmed && !draft.unitId) {
+    status.textContent = 'Escolha a unidade de saída para confirmar o roteiro.';
     return;
   }
   status.textContent = '';
   const dialog = cargoForm(confirmed?'Confirmar roteiro':'Salvar rascunho',
     `${cargoStatus(m)}<p><strong>${esc(m.name)}</strong> · ${stops.length} paradas · ${m.orders} pedidos</p>
     <p>${confirmed?'A ordem abaixo será gravada nos pedidos.':'Você poderá continuar editando os endereços e a sequência.'}</p>
-    <ol>${stops.map(s=>`<li>${esc(s.address || 'Endereço a preencher')} · ${s.keys.length} pedido(s)</li>`).join('')}</ol>
+    <ol>${stops.map(s=>`<li>${esc(s.address || 'Sem endereço informado')} · ${s.keys.length} pedido(s)</li>`).join('')}</ol>
     ${confirmed&&m.overCapacity?`<p>A carga excede a capacidade do veículo. A ocorrência ficará no histórico.</p>
       <label>Justificativa da liberação (opcional)<textarea name="overweightReason" maxlength="500" rows="3"></textarea></label>`:''}`,
     form => ({operation:'ROTEIRO_SALVAR',target:m.id,route:{unitId:draft.unitId,returnToUnit:draft.returnToUnit,
@@ -4320,14 +4320,14 @@ function cargoRoutePreview(draft) {
   links.innerHTML = segments.map((segment,i)=>`<a class="btn" target="_blank" rel="noopener noreferrer" href="${esc(cargoRouteLink(segment))}">
     ${segments.length>1?'Abrir trecho '+(i+1):'Abrir no Google Maps'} ↗</a>`).join('');
   const key = FEXP.data.googleMapsKey;
+  if (!points) {
+    box.hidden = true;
+    message.textContent = 'O mapa precisa da unidade de saída e dos endereços de todas as paradas. Você pode confirmar a sequência sem preencher os endereços.';
+    return;
+  }
   if (!key) {
     box.hidden = true;
     message.textContent = 'Mapa na Central aguardando ativação. O roteiro pode ser salvo e aberto no Google Maps.';
-    return;
-  }
-  if (!points) {
-    box.hidden = true;
-    message.textContent = 'Informe a unidade de saída e os endereços para desenhar a rota.';
     return;
   }
   box.hidden = false;
@@ -4700,7 +4700,7 @@ function cargoMontageDetail(m) {
     ${formationTable(members,FEXP.assemblySelected,true)}
     <details class="cargo-products"><summary>Produtos consolidados · ${products.length} produtos</summary>${formationProducts(products)}</details>
     ${!editable?'':`<footer class="cargo-finalize">${closed ? `<div><strong>${m.route?.confirmed?'Roteiro confirmado':'Montagem finalizada'}</strong>
-      <p>${m.route?.confirmed?`${m.route.stops.length} paradas · Confirmado por ${esc(m.route.by)} em ${cargoDate(m.route.at)}`:'Confira a sequência e os endereços das paradas.'}</p></div>`
+      <p>${m.route?.confirmed?`${m.route.stops.length} paradas · Confirmado por ${esc(m.route.by)} em ${cargoDate(m.route.at)}`:'Confira a sequência das paradas.'}</p></div>`
       : `<div><strong>Conferir e enviar para roteirização</strong><p>${m.canFinalize
         ? (m.alerts?.length?'Os alertas serão registrados no histórico ao enviar a montagem.':'Tudo pronto para roteirizar.')
         : esc(m.finishReasons.join(' · '))}</p></div>
