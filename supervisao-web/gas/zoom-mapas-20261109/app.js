@@ -770,12 +770,12 @@ function drawPortfolioEvolution(rows) {
     }
   };
   const series = [
-    ['active','Ativos','#1E4F8B'],
-    ['short','Inativos · curto','#A46612'],
-    ['long','Inativos · longo','#B43E51'],
-    ['positive','Positivações do mês','#207B51']
+    ['active','Ativos','#1E4F8B','Última compra há até 89 dias.'],
+    ['short','Inativos de curto prazo','#A46612','Sem comprar há 90 a 179 dias.'],
+    ['long','Inativos de longo prazo','#B43E51','Sem comprar há 180 dias ou mais.'],
+    ['positive','Positivações do mês','#207B51','Compraram no mês. Cada cliente conta uma vez.']
   ];
-  chart($('#portfolioEvolutionChart'),'line',{
+  const instance = chart($('#portfolioEvolutionChart'),'line',{
     labels,
     datasets:series.map(([key,label,color])=>({
       label,data:rows.map(row=>row[key]),borderColor:color,backgroundColor:color,
@@ -785,7 +785,7 @@ function drawPortfolioEvolution(rows) {
   },{
     interaction:{mode:'index',intersect:false},
     plugins:{
-      legend:{display:true,position:'top',align:'start',labels:{usePointStyle:true,boxWidth:9,padding:16}},
+      legend:{display:false},
       tooltip:{callbacks:{
         title:items=>labels[items[0].dataIndex]+(rows[items[0].dataIndex].partial?' · mês parcial':''),
         label:item=>item.dataset.label+' · '+integer(item.raw)
@@ -796,6 +796,22 @@ function drawPortfolioEvolution(rows) {
       y:{beginAtZero:true,ticks:{precision:0,callback:value=>integer(value)},grid:{color:'#EEF0F5'}}
     }
   },[valueLabels]);
+  const legend = $('#portfolioEvolutionLegend');
+  legend.innerHTML = series.map(([,label,color,description],index)=>`
+    <button type="button" class="portfolio-legend-item" data-series="${index}" aria-pressed="true"
+      aria-controls="portfolioEvolutionChart" style="--series-color:${color}">
+      <span class="portfolio-legend-dot" aria-hidden="true"></span>
+      <span><strong>${esc(label)}</strong><small>${esc(description)}</small></span>
+    </button>`).join('');
+  $$('[data-series]',legend).forEach(button=>{
+    button.onclick=()=>{
+      const index=Number(button.dataset.series);
+      const visible=!instance.isDatasetVisible(index);
+      instance.setDatasetVisibility(index,visible);
+      button.setAttribute('aria-pressed',String(visible));
+      instance.update();
+    };
+  });
 }
 
 function renderCarteira(p){
@@ -815,9 +831,8 @@ function renderCarteira(p){
 
     <section class="panel">
       <div class="panel-title-row"><div><h2>Evolução mensal da carteira</h2>
-        <p class="panel-sub">Positivações são clientes distintos que compraram no mês. Ativos e inativos são a posição no fechamento de cada mês.</p></div></div>
-      ${evolution.length?'<div class="chart-wrap portfolio-evolution-chart"><canvas id="portfolioEvolutionChart" role="img" aria-label="Ativos, inativos de curto e longo prazo e positivações por mês"></canvas></div>':'<p>Sem histórico de vendas para o ano selecionado.</p>'}
-      <p class="small-note">Ativos: até 89 dias sem compra. Inativos: 90 a 179 dias (curto) e 180 dias ou mais (longo). O gráfico mostra a sequência mensal conforme o filtro de ano.</p>
+        <p class="panel-sub">Ativos e inativos são contados na data de corte de cada mês. Toque em uma cor para ocultar ou exibir a linha.</p></div></div>
+      ${evolution.length?'<div id="portfolioEvolutionLegend" class="portfolio-evolution-legend" role="group" aria-label="Legenda do gráfico"></div><div class="chart-wrap portfolio-evolution-chart"><canvas id="portfolioEvolutionChart" role="img" aria-label="Ativos, inativos de curto e longo prazo e positivações por mês"></canvas></div>':'<p>Sem histórico de vendas para o ano selecionado.</p>'}
       ${evolution.at(-1)?.partial?`<p class="small-note">* Mês parcial até ${fmtDate(evolution.at(-1).cutoff)}.</p>`:''}
     </section>
 
