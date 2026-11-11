@@ -1,0 +1,20 @@
+--- Code.gs
++++ Code.gs
+@@ -287,7 +287,7 @@
+   passwordChangeSessionSeconds: 600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/20582f73ebe20475bc6cbb2a67559ed299b9af60/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/20ba82b115368bb937bdf7410d3059ebabb23a6a/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -3454,7 +3454,7 @@
+       if (!remaining.delete(key)) throw new Error('Pedido duplicado ou fora desta montagem.');
+     }
+     const address = logText_(raw.address);
+-    if (address.length > 240 || (confirmed && !address)) throw new Error('Confira os endereços de todas as paradas.');
++    if (address.length > 240) throw new Error('O endereço da parada deve ter até 240 caracteres.');
+     const group = address && groupAddresses ? logNorm_(address).replace(/\s+/g, ' ') : '';
+     if (group && groups.has(group)) {
+       groups.get(group).keys.push(...raw.keys);
