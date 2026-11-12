@@ -515,21 +515,30 @@
 <style>
 .history-annual-scroll{overflow-x:auto;max-width:100%}
 .history-annual-scroll .history-chart{min-width:820px}
-.history-study{display:grid;gap:16px;margin-bottom:18px}
-.history-study-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px}
-.history-study-controls label,.history-study-section label{display:grid;gap:5px;font-size:12px;color:#495a76;font-weight:600}
-.history-study-controls select,.history-study-section select{width:100%;min-width:0}
-.history-study .history-kpis{margin:12px 0}
-.history-study-status{min-height:1.3em}
-.history-study-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
-.history-study-grid>section,.history-study-section{min-width:0;padding:14px;border:1px solid #dfe8f3;border-radius:12px;margin-bottom:12px}
-.history-study h3{font-size:15px;margin:0 0 6px;color:#233f66}
-.history-study-chart{height:245px;margin-top:10px}
-.history-study-rank-buttons{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.history-study-rank-buttons .btn{padding:4px 9px;font-size:12px}
+ .history-study{display:grid;gap:14px;margin-bottom:20px}
+.history-study-controls{display:grid;grid-template-columns:minmax(190px,1.35fr) repeat(4,minmax(112px,1fr));gap:12px}
+.history-study-controls>label{display:grid;gap:5px;font-size:12px;color:#495a76;font-weight:600}
+.history-study-controls select{width:100%;min-width:0}
+.history-study-legend{display:flex;gap:12px 22px;flex-wrap:wrap;color:#374d71;font-size:12px;font-weight:700}
+.history-study-legend span{display:inline-flex;align-items:center;gap:6px}
+.history-study-legend i{width:20px;border-top:2px var(--study-line) var(--study-color)}
+.history-study-group>h3{font-size:16px;margin:17px 0 8px;color:#1d2a68}
+.history-study-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.history-study-card{min-width:0;padding:14px;border:1px solid #dfe8f3;border-radius:12px}
+.history-study-card:last-child:nth-child(odd){grid-column:1/-1}
+.history-study-card h3{font-size:16px;margin:0 0 4px;color:#233f66}
+.history-study-stats{display:flex;gap:8px 20px;flex-wrap:wrap;margin:10px 0}
+.history-study-stat{display:grid;gap:2px;color:var(--study-color)}
+.history-study-stat span,.history-study-stat small{font-size:10px}
+.history-study-stat strong{font-size:16px}
+.history-study-scroll{overflow-x:auto}
+.history-study-chart{height:230px;min-width:510px}
 .history-study-source summary{cursor:pointer;font-weight:600;color:#29476f}
 .history-study-source p{margin:8px 0 0}
-@media(max-width:760px){.history-study-grid{grid-template-columns:1fr}.history-study-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.history-study-section{padding:10px}.history-study-controls label{font-size:11px}}
+.history-study-empty{padding:12px 0;color:#52647e;font-size:13px}
+@media(max-width:1050px){.history-study-grid{grid-template-columns:1fr}}
+@media(max-width:660px){.history-study-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.history-study-controls>label:first-child{grid-column:1/-1}.history-study-card{padding:10px}}
+
 
 .history-annual-scroll:focus-visible{outline:2px solid #84a7da;outline-offset:2px}
 .history-map-body .history-map-stage{height:auto}
@@ -1175,76 +1184,36 @@ function macroHistoryCurrent(){
  return {monthly:[...groups.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(x=>({...x,value:Math.round(x.value*100)/100})),geoMonthly:[...geography.values()].map(x=>({month:x.month,cities:[...x.cities.values()].map(c=>[c[0],c[1],Math.round(c[2]*100)/100]),unlocated:Math.round(x.unlocated*100)/100})),updatedAt:SERVER_UPDATED_AT};
 }
 
-// A análise usa o mesmo cache de vendas das telas comerciais.
+// Os indicadores detalhados usam o cache comercial já carregado.
 function historyStudyBucket(){
-  return {revenue:0, clients:new Map(), marginValue:0, marginBase:0, rows:0, marginRows:0};
+  return {revenue:0, clients:new Map(), newcomers:new Set()};
 }
 
-function addHistoryStudySale(bucket,sale){
-  const value=Number(sale.value)||0;
-  bucket.rows++;
-  bucket.revenue+=value;
-  if(sale.client!=null)addSet(bucket.clients,sale.client,sale.product);
-  if(Number.isFinite(sale.marginPct)){
-    bucket.marginRows++;
-    bucket.marginBase+=value;
-    bucket.marginValue+=value*sale.marginPct;
-  }
-}
-
-function summarizeHistoryStudy(bucket){
-  const {revenue,clients,marginValue,marginBase,marginRows,rows}=bucket;
-  const pairs=[...clients.values()].reduce((total,products)=>total+products.size,0);
-  return {revenue,positive:clients.size,mix:clients.size?pairs/clients.size:null,
-    ticket:clients.size?revenue/clients.size:null,
-    margin:marginRows&&marginBase?100*marginValue/marginBase:null,
-    marginCoverage:rows?marginRows/rows:null};
-}
-
-function commercialHistoryStudy({years,months,summaryMonths,department,uf,group}){
+function commercialHistoryStudy({years,months,department,uf}){
   const filters={year:'Todos',month:'Todos',department:department?[department]:[],uf:uf?[uf]:[]};
-  const byYear=new Map(years.map(year=>[year,{
-    period:historyStudyBucket(),months:new Map(months.map(month=>[month,historyStudyBucket()]))
-  }]));
-  const summary=new Set(summaryMonths);
-  const breakdown=new Map();
+  const periods=new Map(years.map(year=>[year,new Map(months.map(month=>[month,historyStudyBucket()]))]));
   for(const sale of SALES){
-    const year=byYear.get(sale.year);
-    if(!year||sale.year===2024&&sale.month<8)continue;
+    const bucket=periods.get(sale.year)?.get(sale.month);
+    if(!bucket||sale.year===2024&&sale.month<8)continue;
     if(uf&&sale.uf!==uf||department&&sale.department!==department)continue;
-    const month=year.months.get(sale.month);
-    if(month)addHistoryStudySale(month,sale);
-    if(!summary.has(sale.month))continue;
-    addHistoryStudySale(year.period,sale);
-    const key=group==='uf'?sale.uf:sale.department;
-    if(key){
-      if(!breakdown.has(key))breakdown.set(key,new Map());
-      const values=breakdown.get(key);
-      values.set(sale.year,(values.get(sale.year)||0)+(Number(sale.value)||0));
-    }
+    bucket.revenue+=Number(sale.value)||0;
+    if(sale.client==null)continue;
+    addSet(bucket.clients,sale.client,sale.product);
+    const first=CLIENT_HISTORY.get(sale.client)?.[0]?.date;
+    if(first?.getUTCFullYear()===sale.year&&first.getUTCMonth()+1===sale.month)bucket.newcomers.add(sale.client);
   }
-  const evolution=summaryMonths.length||months.length?portfolioEvolution(filters):[];
-  const portfolio=new Map(evolution.map(row=>[row.month,row]));
-  const key=(year,month)=>year+'-'+String(month).padStart(2,'0');
-  const position=(year,month)=>{
-    const row=portfolio.get(key(year,month));
-    return row?{active:row.active,short:row.short,long:row.long}:{};
-  };
-  return {
-    years:years.map(year=>{
-      const source=byYear.get(year);
-      const points=Object.fromEntries(months.map(month=>[month,{
-        ...summarizeHistoryStudy(source.months.get(month)),...position(year,month)
-      }]));
-      const last=summaryMonths.at(-1);
-      return {year,points,total:last?{
-        ...summarizeHistoryStudy(source.period),
-        positive:summaryMonths.reduce((sum,month)=>sum+points[month].positive,0)/summaryMonths.length,
-        ...position(year,last)
-      }:{}};
-    }),
-    breakdown:[...breakdown].map(([key,values])=>({key,values:Object.fromEntries(values)}))
-  };
+  const portfolio=new Map(portfolioEvolution(filters).map(row=>[row.month,row]));
+  return {years:years.map(year=>{
+    const points=Object.fromEntries(months.map(month=>{
+      const b=periods.get(year).get(month);
+      const count=b.clients.size;
+      const pairs=[...b.clients.values()].reduce((sum,set)=>sum+set.size,0);
+      const p=portfolio.get(year+'-'+String(month).padStart(2,'0'));
+      return [month,{revenue:b.revenue,positive:count,newClients:b.newcomers.size,mix:count?pairs/count:null,
+        ticket:count?b.revenue/count:null,active:p?.active,short:p?.short,long:p?.long}];
+    }));
+    return {year,points};
+  })};
 }
 
 function overview(filters){
@@ -1595,6 +1564,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@33e73243977e1f7e16cf2321b650bc5dcb716b2d/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@0e3d88b33adceb2c4fbe27742f4c517de0f78b2d/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
