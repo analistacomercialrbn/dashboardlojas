@@ -2600,7 +2600,7 @@ function logFilters(all){let el=$('#logFilters');if(!el){el=document.createEleme
    LOG.search='';
    delete LOG.tableColumnFilters?.[LOG.page];
    if(LOG.page==='transport')resetTransportFilters();
-   if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;}
+   if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.priorityRegion='';FEXP.withoutInvoice=false;}
    updatePeriod();
  };
  const detailSearch=$('#logSearch');
@@ -2929,9 +2929,9 @@ h+=logMapMarkup();return h+transportQueue()+logTable('Acompanhamento das transpo
 
 function logMapMetric(a){const active=logPlanningRows(a);return LOG.metric==='late'?a.filter(r=>r.late||r.overdue).length:LOG.metric==='count'?active.length:LOG.metric==='wait'?logAvg(active,'wait'):LOG.metric==='occurrence'?a.filter(r=>r.occurrence).length:logSum(active,'weight');}
 function logMapMarkup(){const formation=LOG.kind!=='transport',active=logPlanningRows(LOG.tableRows||[]);return `<section class="panel log-map-panel"><div class="log-table-heading"><div><h3>${formation?'Prioridade para formação de carga':'Mapa de transportadoras'}</h3><p>${formation?'Peso aguardando formação por município · somente status em branco. Clique para filtrar os detalhes.':'Aproxime e clique em um município para filtrar toda a visão.'}</p></div><select id="logMapMetric" aria-label="Indicador do mapa">${biOptions({weight:formation?'Peso aguardando formação':'Peso em aberto',count:formation?'Registros aguardando formação':'Registros em aberto',...(formation?{wait:'Espera média'}:{late:'Atrasos'}),occurrence:'Ocorrências'},LOG.metric)}</select><button class="btn" id="logMapBack">Ver Nordeste</button></div><div id="logMapTotal" class="log-map-total" role="status"></div><div class="log-map-scale"><span>Menor peso</span><i></i><span>Maior peso</span></div><div class="log-map-layout"><div id="logMap" class="log-map"><div class="empty">Carregando malha municipal…</div></div><div><h4 id="logMapLegend">${formation?'Cidades prioritárias':'Peso em aberto por município'}</h4><div id="logMapRanking" class="log-map-ranking"></div></div></div><p class="log-map-note" id="logMapNote"></p></section>`;}
-function logMapLabels(map,layer,locs,metric,fmt){
- const labels=L.layerGroup().addTo(map),draw=()=>{if(state.map!==map)return;labels.clearLayers();const candidates=[];layer.eachLayer(l=>{const f=l.feature,k=aliasCity(f.properties.NM_MUN)+'|'+f.properties.SIGLA_UF,a=locs.get(k)||[],value=metric(a);if(!(value>0))return;const center=l.getBounds().getCenter();if(!map.getBounds().contains(center))return;candidates.push({center,name:f.properties.NM_MUN,value});});candidates.sort((a,b)=>b.value-a.value);const occupied=[],limit=map.getZoom()<7?18:map.getZoom()<9?45:120;let shown=0;
-  for(const c of candidates){if(shown>=limit)break;const p=map.latLngToContainerPoint(c.center),width=Math.min(170,Math.max(82,c.name.length*5.8)),rect={left:p.x-width/2,right:p.x+width/2,top:p.y-19,bottom:p.y+19};if(occupied.some(r=>!(rect.right+6<r.left||rect.left-6>r.right||rect.bottom+4<r.top||rect.top-4>r.bottom)))continue;occupied.push(rect);L.marker(c.center,{interactive:false,keyboard:false,icon:L.divIcon({className:'log-map-weight-label',html:`<span>${esc(c.name)}</span><strong>${esc(fmt(c.value))}</strong>`,iconSize:[width,38],iconAnchor:[width/2,19]})}).addTo(labels);shown++;}
+function logMapLabels(map,layer,locs,metric,fmt,nameFor=feature=>feature.properties.NM_MUN){
+ const labels=L.layerGroup().addTo(map),draw=()=>{if(state.map!==map)return;labels.clearLayers();const candidates=[];layer.eachLayer(l=>{const f=l.feature,k=aliasCity(f.properties.NM_MUN)+'|'+f.properties.SIGLA_UF,a=locs.get(k)||[],value=metric(a);if(!(value>0||value?.orderCount>0))return;const center=l.getBounds().getCenter();if(!map.getBounds().contains(center))return;candidates.push({center,name:nameFor(f,a),value});});candidates.sort((a,b)=>(b.value.weight??b.value)-(a.value.weight??a.value));const occupied=[],limit=map.getZoom()<7?18:map.getZoom()<9?45:120;let shown=0;
+  for(const c of candidates){if(shown>=limit)break;const p=map.latLngToContainerPoint(c.center),width=Math.min(170,Math.max(82,c.name.length*5.8,fmt(c.value).length*6.6)),rect={left:p.x-width/2,right:p.x+width/2,top:p.y-19,bottom:p.y+19};if(occupied.some(r=>!(rect.right+6<r.left||rect.left-6>r.right||rect.bottom+4<r.top||rect.top-4>r.bottom)))continue;occupied.push(rect);L.marker(c.center,{interactive:false,keyboard:false,icon:L.divIcon({className:'log-map-weight-label',html:`<span>${esc(c.name)}</span><strong>${esc(fmt(c.value))}</strong>`,iconSize:[width,38],iconAnchor:[width/2,19]})}).addTo(labels);shown++;}
  };map.on('zoomend moveend',draw);draw();
 }
 
@@ -5364,40 +5364,65 @@ function cargoPriorityCities(orders, features) {
     const uf = normalize(row.uf) || (matches?.size===1 ? [...matches][0] : '');
     return {key:city+'|'+uf,uf};
   };
-  const cities = new Map();
+  const cities = new Map(), regions = new Map();
+  const regionKey = order => normalize(order.region || '') || 'SEM REGIAO';
+  const add = (item, order) => {
+    item.orderCount++;
+    if (Number.isFinite(order.weight) && order.weight > 0 && !order.weightIncomplete) {
+      item.knownCount++;
+      item.weight += order.weight;
+    }
+  };
   for (const order of orders) {
+    const key = regionKey(order);
+    if (!regions.has(key)) regions.set(key,{key, name:order.region || 'Sem região',orderCount:0,knownCount:0,weight:0});
+    add(regions.get(key),order);
     if (!order.city) continue;
     const place = location(order);
-    if (!cities.has(place.key)) cities.set(place.key,{...place,city:order.city,orderCount:0});
-    cities.get(place.key).orderCount++;
+    if (!cities.has(place.key)) cities.set(place.key,{...place,city:order.city,regionKey:key,orderCount:0,knownCount:0,weight:0});
+    add(cities.get(place.key),order);
   }
   const ranked = [...cities.values()].sort((a,b) =>
     b.orderCount-a.orderCount || a.city.localeCompare(b.city,'pt-BR') || a.uf.localeCompare(b.uf));
-  return {ranked, location};
+  const regional = [...regions.values()].sort((a,b) =>
+    b.weight-a.weight || b.orderCount-a.orderCount || a.name.localeCompare(b.name,'pt-BR'));
+  return {ranked, location, regionKey, regions, regional};
+}
+
+function cargoPriorityTonnes(area) {
+  return area.knownCount ? logN(area.weight/1000,3)+' t' : 'Sem peso';
+}
+
+function cargoPriorityTotals(area) {
+  const missing=area.orderCount-area.knownCount;
+  return cargoPriorityTonnes(area)+' · '+orderCount(area.orderCount)
+    +(missing&&area.knownCount?' · '+logN(missing)+' sem peso':'');
 }
 
 function cargoPriorityMarkup() {
   return `<section id="cargoPriority" class="cargo-priority">
     <div class="cargo-section-heading"><div><h3>Prioridade para montagem</h3>
-      <p>Clique em uma cidade no mapa ou na lista para filtrar os pedidos.</p></div></div>
+      <p>Selecione uma região na lista ou uma cidade no mapa para filtrar os pedidos.</p></div></div>
     <div class="cargo-priority-layout">
-      <div><div id="cargoPriorityMap" class="log-map" aria-label="Mapa de prioridade por cidade"><p>Carregando malha municipal…</p></div>
-        <div class="log-map-scale"><span>Menos pedidos</span><i></i><span>Mais pedidos</span></div></div>
-      <aside aria-label="Cidades prioritárias">
-        <div class="cargo-priority-side"><strong>Cidades prioritárias</strong>
-          <button type="button" class="cargo-link" id="cargoPriorityClear">Todas as cidades</button></div>
-        <div id="cargoPriorityCities" class="cargo-priority-cities"></div>
+      <div><div id="cargoPriorityMap" class="log-map" aria-label="Mapa com toneladas e pedidos por região"><p>Carregando malha municipal…</p></div>
+        <div class="log-map-scale"><span>Menor peso</span><i></i><span>Maior peso</span></div></div>
+      <aside aria-label="Regiões e cidades prioritárias">
+        <div class="cargo-priority-side"><strong>Regiões</strong>
+          <button type="button" class="cargo-link" id="cargoPriorityClear">Limpar seleção</button></div>
+        <div class="cargo-priority-cities">
+          <div id="cargoPriorityRegions" class="cargo-priority-list"></div>
+          <details><summary>Cidades</summary><div id="cargoPriorityCities" class="cargo-priority-list"></div></details>
+        </div>
       </aside>
     </div>
-    <p class="cargo-priority-note">Prioridade pela quantidade de pedidos disponíveis no Força de Vendas. A cidade selecionada mostra a idade dos pedidos e o peso informado no recorte.</p>
+    <p class="cargo-priority-note">A cor indica o peso informado dos pedidos disponíveis por região. Pedidos sem peso entram na contagem. Regiões sem peso informado aparecem em cinza.</p>
   </section>`;
 }
 
-function cargoPriorityDraw(box, features, cities, pick, view) {
-  const locs = new Map(cities.filter(city => city.uf).map(city => [city.key,[city]]));
-  const metric = rows => rows[0]?.orderCount ?? 0;
-  const fmt = orderCount;
-  const max = Math.max(1,...cities.map(city => city.orderCount));
+function cargoPriorityDraw(box, features, model, pick, view) {
+  const cities=model.ranked;
+  const locs = new Map(cities.filter(city => city.uf).map(city => [city.key,city]));
+  const max = Math.max(1,...model.regional.map(region=>region.weight));
   const ufs = new Set(cities.map(city => city.uf).filter(Boolean));
   const visible = features.filter(feature => !ufs.size || ufs.has(feature.properties.SIGLA_UF));
   box.innerHTML = '';
@@ -5406,19 +5431,20 @@ function cargoPriorityDraw(box, features, cities, pick, view) {
   const keyOf = feature => aliasCity(feature.properties.NM_MUN)+'|'+feature.properties.SIGLA_UF;
   const layer = L.geoJSON({type:'FeatureCollection',features:visible},{
     style:feature => {
-      const key = keyOf(feature), city = locs.get(key)?.[0];
-      const count = city?.orderCount ?? 0;
-      const selected = key === FEXP.priorityCity;
-      const t = Math.pow(Math.max(0,count/max),.65);
+      const key = keyOf(feature), city = locs.get(key);
+      const region = city && model.regions.get(city.regionKey);
+      const selected = key === FEXP.priorityCity || !!city && city.regionKey === FEXP.priorityRegion;
+      const t = Math.pow((region?.weight || 0)/max,.65);
       const rgb = [255,235,211].map((x,i)=>Math.round(x+([174,69,15][i]-x)*t));
       return {color:selected?'#59300f':city?'#9e633c':'#d9c6b6',weight:selected?3:city?1:.5,
-        fillColor:city?'rgb('+rgb.join(',')+')':'#eee8e2',fillOpacity:city ? .95 : .45};
+        fillColor:region?.knownCount?'rgb('+rgb.join(',')+')':'#eee8e2',fillOpacity:city ? .95 : .45};
     },
     onEachFeature:(feature, polygon) => {
-      const key = keyOf(feature), city = locs.get(key)?.[0];
+      const key = keyOf(feature), city = locs.get(key);
       if (!city) return;
-      polygon.bindTooltip('<b>'+esc(city.city)+' · '+esc(city.uf)+'</b><br>'+
-        fmt(city.orderCount)+(city.orderCount===1?' disponível':' disponíveis'),{sticky:true});
+      const region=model.regions.get(city.regionKey);
+      polygon.bindTooltip('<b>'+esc(region.name)+'</b><br>'+esc(cargoPriorityTotals(region))+
+        '<br>'+esc(city.city+' · '+city.uf+' · '+cargoPriorityTotals(city)),{sticky:true});
       polygon.on('click',()=>pick(key));
     }
   }).addTo(map);
@@ -5426,13 +5452,23 @@ function cargoPriorityDraw(box, features, cities, pick, view) {
   if (view) map.setView(view.center,view.zoom);
   else if (focus.getBounds().isValid()) map.fitBounds(focus.getBounds(),{padding:[18,18],maxZoom:8});
   else map.setView([-7.5,-40],5);
-  logMapLabels(map,layer,locs,metric,fmt);
+  const anchorByRegion=new Map();
+  layer.eachLayer(polygon=>{
+    const city=locs.get(keyOf(polygon.feature));
+    if(!city) return;
+    const best=anchorByRegion.get(city.regionKey);
+    if(!best || city.weight>best.weight || city.weight===best.weight && city.orderCount>best.orderCount)
+      anchorByRegion.set(city.regionKey,city);
+  });
+  const labels=new Map([...anchorByRegion].map(([key,city])=>[city.key,[model.regions.get(key)]]));
+  logMapLabels(map,layer,labels,rows=>rows[0]||null,region=>cargoPriorityTonnes(region)+' · '+orderCount(region.orderCount),(_feature,rows)=>rows[0].name);
   requestAnimationFrame(()=>{if(box.isConnected && state.map===map)map.invalidateSize();});
   return () => layer.setStyle(layer.options.style);
 }
 
 function cargoPriorityBind(panel, orders, view) {
   const list = panel.querySelector('#cargoPriorityCities');
+  const regions = panel.querySelector('#cargoPriorityRegions');
   const box = panel.querySelector('#cargoPriorityMap');
   const clear = panel.querySelector('#cargoPriorityClear');
   const results = $('#cargoPlanOrders');
@@ -5441,6 +5477,7 @@ function cargoPriorityBind(panel, orders, view) {
   let updateMap = null;
   let model = cargoPriorityCities(orders,LOG.geo?.features || []);
   const syncCity = previousCity => {
+    if (FEXP.priorityRegion && !model.regions.has(FEXP.priorityRegion)) FEXP.priorityRegion='';
     if (!FEXP.priorityCity || model.ranked.some(city=>city.key===FEXP.priorityCity)) return;
     const resolved = previousCity && !previousCity.uf ? model.location(previousCity).key : '';
     FEXP.priorityCity = model.ranked.some(city=>city.key===resolved) ? resolved : '';
@@ -5449,9 +5486,12 @@ function cargoPriorityBind(panel, orders, view) {
 
   const renderOrders = () => {
     const city = model.ranked.find(item=>item.key===FEXP.priorityCity);
-    const filtered = city ? orders.filter(order=>model.location(order).key===city.key) : orders;
-    if (FEXP.page*30>=filtered.length) FEXP.page=0;
-    results.innerHTML = (city ? cargoPlanCitySummary(city,filtered,today) : '')
+    const region=model.regions.get(FEXP.priorityRegion);
+    const filtered = city ? orders.filter(order=>model.location(order).key===city.key)
+      : region ? orders.filter(order=>model.regionKey(order)===region.key) : orders;
+    if (FEXP.page*40>=filtered.length) FEXP.page=0;
+    results.innerHTML = (city ? cargoPlanCitySummary(city,filtered,today)
+      : region ? '<p class="cargo-priority-filter" role="status">'+esc(region.name+' · '+cargoPriorityTotals(region))+'</p>' : '')
       + formationTable(filtered,FEXP.selected);
     formationBindOrders(results,FEXP.selected,renderOrders);
     selection.innerHTML=canLog('formation','edit')?formationSummary(FEXP.data.orders.filter(order=>FEXP.selected.has(order.key))):'';
@@ -5459,26 +5499,40 @@ function cargoPriorityBind(panel, orders, view) {
     results.querySelectorAll('[data-formation-detail]').forEach(button=>button.onclick=()=>formationDetail(button.dataset.formationDetail));
     cargoBindOrderPreviews(results);
   };
-  const pick = key => {
-    FEXP.priorityCity = FEXP.priorityCity===key ? '' : key;
-    FEXP.page = 0;
-    for (const button of list.querySelectorAll('[data-cargo-city]')) {
-      button.setAttribute('aria-pressed',String(button.dataset.cargoCity===FEXP.priorityCity));
+  const pick = (key, regional=false) => {
+    if(regional){
+      FEXP.priorityRegion=FEXP.priorityRegion===key?'':key;
+      FEXP.priorityCity='';
+    } else {
+      FEXP.priorityCity=FEXP.priorityCity===key?'':key;
+      FEXP.priorityRegion='';
     }
-    clear.disabled = !FEXP.priorityCity;
+    FEXP.page=0;
+    for(const button of list.querySelectorAll('[data-cargo-city]'))
+      button.setAttribute('aria-pressed',String(button.dataset.cargoCity===FEXP.priorityCity));
+    for(const button of regions.querySelectorAll('[data-cargo-region]'))
+      button.setAttribute('aria-pressed',String(button.dataset.cargoRegion===FEXP.priorityRegion));
+    clear.disabled=!FEXP.priorityCity&&!FEXP.priorityRegion;
     updateMap?.();
     renderOrders();
   };
   const renderCities = () => {
+    regions.innerHTML=model.regional.map(region=>`<button type="button" data-cargo-region="${esc(region.key)}" aria-pressed="${region.key===FEXP.priorityRegion}">
+      <span><strong>${esc(region.name)}</strong><small>${esc(orderCount(region.orderCount))}${region.knownCount&&region.knownCount<region.orderCount?' · '+logN(region.orderCount-region.knownCount)+' sem peso':''}</small></span>
+      <span>${esc(cargoPriorityTonnes(region))}</span></button>`).join('') || '<p>Nenhuma região no recorte.</p>';
     list.innerHTML = model.ranked.map(city => `<button type="button" data-cargo-city="${esc(city.key)}" aria-pressed="${city.key===FEXP.priorityCity}">
-      <span><strong>${esc(city.city)}${city.uf?' · '+esc(city.uf):''}</strong></span>
-      <span>${orderCount(city.orderCount)}</span></button>`).join('') || '<p>Nenhuma cidade no recorte.</p>';
-    clear.disabled = !FEXP.priorityCity;
+      <span><strong>${esc(city.city)}${city.uf?' · '+esc(city.uf):''}</strong><small>${esc(orderCount(city.orderCount))}</small></span>
+      <span>${esc(cargoPriorityTonnes(city))}</span></button>`).join('') || '<p>Nenhuma cidade no recorte.</p>';
+    clear.disabled=!FEXP.priorityCity&&!FEXP.priorityRegion;
   };
   clear.onclick = () => pick('');
   list.onclick = event => {
     const button = event.target.closest('[data-cargo-city]');
     if (button) pick(button.dataset.cargoCity);
+  };
+  regions.onclick = event => {
+    const button = event.target.closest('[data-cargo-region]');
+    if (button) pick(button.dataset.cargoRegion,true);
   };
 
   syncCity();
@@ -5492,7 +5546,7 @@ function cargoPriorityBind(panel, orders, view) {
     syncCity(previousCity);
     renderCities();
     renderOrders();
-    updateMap = cargoPriorityDraw(box,features,model.ranked,pick,view);
+    updateMap = cargoPriorityDraw(box,features,model,pick,view);
   }).catch(() => {
     if (!panel.isConnected) return;
     if (state.map?.getContainer() === box) { state.map.remove(); state.map = null; }
