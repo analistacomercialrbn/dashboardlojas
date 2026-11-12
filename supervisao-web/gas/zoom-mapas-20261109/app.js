@@ -1792,199 +1792,236 @@ function buildHistoryExperience(rows,geoRows){
  return {rows,byMonth,years,complete,frames:{year:annual,month:monthly}};
 }
 const HISTORY_STUDY_METRICS = {
-  revenue:['Faturamento','money','Soma das vendas registradas. A base recente usa a data de faturamento.'],
-  positive:['Clientes positivados','count','Clientes únicos em cada mês. No período, média das positivações mensais.'],
-  active:['Clientes ativos','count','Última compra há até 89 dias, na posição do fechamento.'],
-  short:['Inativos de curto prazo','count','Última compra há 90 a 179 dias, na posição do fechamento.'],
-  long:['Inativos de longo prazo','count','Última compra há 180 dias ou mais, na posição do fechamento.'],
-  mix:['Mix médio por cliente','decimal','Pares distintos de cliente e produto divididos pelos clientes compradores do recorte.'],
-  ticket:['Ticket médio por cliente','money','Faturamento dividido pelos clientes únicos que compraram no recorte.'],
-  margin:['Margem comercial','percent','Margem ponderada pelo faturamento das linhas com margem informada. A cobertura é exibida quando houver dados.']
+  mix:['Mix médio','Produtos distintos por cliente','decimal'],
+  margin:['Margem comercial','Lucro sobre o faturamento das vendas com margem informada','percent'],
+  positive:['Clientes positivados','Compraram no mês, contados uma vez','count'],
+  newClients:['Clientes novos','Primeira compra identificada na base detalhada','count'],
+  active:['Clientes ativos','Última compra há até 89 dias','count'],
+  short:['Inativos de curto prazo','De 90 a 179 dias sem comprar','count'],
+  long:['Inativos de longo prazo','180 dias ou mais sem comprar','count'],
+  revenue:['Faturamento','Vendas registradas no mês','revenue'],
+  ticket:['Ticket médio por cliente','Faturamento por cliente positivado no mês','money']
 };
+const HISTORY_STUDY_GROUPS = [
+  ['Mix e rentabilidade',['mix','margin']],
+  ['Carteira e positivação',['positive','newClients','active','short','long']],
+  ['Vendas e ticket',['revenue','ticket']]
+];
+const HISTORY_STUDY_COLORS=['#265ea8','#687f9f','#655494','#187c76','#a55f28','#99445f','#647934'];
 
-function historyStudyFormat(value, type, axis=false) {
+function historyStudyFormat(value,unit,compact=false) {
   if(value==null||!Number.isFinite(value))return '—';
-  if(type==='money')return money(value,axis);
-  if(type==='percent')return pct(value);
-  return new Intl.NumberFormat('pt-BR',{maximumFractionDigits:type==='decimal'?2:1}).format(value);
+  if(unit==='money'&&!compact)return money(value);
+  if(unit==='revenue'&&!compact)return money(value,true);
+  const digits=['decimal','revenue','percent'].includes(unit)?2:0;
+  const n=(unit==='revenue'?value/1000000:value).toLocaleString('pt-BR',{maximumFractionDigits:digits,minimumFractionDigits:digits});
+  return n+(unit==='percent'?'%':'');
 }
 
-function historyStudyDelta(now,before,type){
-  if(now==null||before==null)return '—';
-  if(type==='percent'){
-    const diff=now-before;
-    return (diff>0?'+':'')+historyStudyFormat(diff,'decimal')+' p.p.';
-  }
-  if(before===0)return '—';
-  const diff=(now-before)/Math.abs(before)*100;
-  return (diff>0?'+':'')+pct(diff);
+function historyStudyLabels(unit){
+  return {id:'historyStudyLabels',afterDatasetsDraw(instance){
+    const {ctx,chartArea}=instance;
+    if(!chartArea)return;
+    ctx.save();
+    ctx.font='600 10px Inter, sans-serif';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    const rows=instance.data.labels.length;
+    for(let i=0;i<rows;i++){
+      const labels=instance.data.datasets.flatMap((dataset,j)=>{
+        if(!instance.isDatasetVisible(j)||dataset.data[i]==null)return [];
+        const point=instance.getDatasetMeta(j).data[i];
+        return point&&Number.isFinite(point.y)?[{point,caption:historyStudyFormat(dataset.data[i],unit,true),color:dataset.borderColor}]:[];
+      }).sort((a,b)=>a.point.y-b.point.y);
+      const gap=13, top=chartArea.top+1, bottom=chartArea.bottom-2;
+      for(let j=0;j<labels.length;j++){
+        const label=labels[j];
+        label.y=Math.max(j?labels[j-1].y+gap:top,label.point.y-10);
+      }
+      for(let j=labels.length-1;j>=0;j--)labels[j].y=Math.min(labels[j].y,j===labels.length-1?bottom:labels[j+1].y-gap);
+      for(const {point,caption,color,y} of labels){
+        if(Math.abs(point.y-y)>13){
+          ctx.strokeStyle=color;ctx.lineWidth=.75;ctx.beginPath();ctx.moveTo(point.x,point.y);ctx.lineTo(point.x,y);ctx.stroke();
+        }
+        ctx.lineWidth=3.5;ctx.strokeStyle='#fff';ctx.strokeText(caption,point.x,y);
+        ctx.fillStyle=color;ctx.fillText(caption,point.x,y);
+      }
+    }
+    ctx.restore();
+  }};
 }
 
-function historyStudyRequest(model,year,filters,today){
-  const years=[year,filters.reference||year-1];
-  const covered=(y,m,detail=false)=>{
-    const key=y+'-'+String(m).padStart(2,'0');
-    const row=model.byMonth.get(key);
-    return !!row&&key!=='2017-06'&&key<today.slice(0,7)&&(!detail||row.source==='WinThor / BI');
-  };
-  const lastClosed=Array.from({length:12},(_,i)=>i+1).findLast(m=>covered(year,m))||12;
-  const months=Array.from({length:filters.end||lastClosed},(_,i)=>i+1);
-  const scopeMonths=filters.month?months.filter(m=>m===filters.month):months;
-  const common=detail=>scopeMonths.filter(m=>years.every(y=>covered(y,m,detail)));
-  return {
-    covered, years, months, scopeMonths, macroMonths:common(false),
-    worker:{years,months,summaryMonths:common(true),department:filters.department,uf:filters.uf,group:filters.group}
-  };
-}
-
-function mountHistoryStudy(model,year,changeYear){
-  const filters=state.historyStudyFilters||={
-    reference:null,end:0,month:0,department:'',uf:'',group:'department',metric:'revenue'
-  };
-  if(filters.reference===year)filters.reference=null;
-  if(filters.month>historyStudyRequest(model,year,filters,transportToday()).months.length)filters.month=0;
+function mountHistoryStudy(model,year,updatedAt){
   const root=$('#historyStudy');
+  const available=model.years.map(y=>Number(y.year)).reverse();
+  const filters=state.historyStudyFilters||={
+    years:available.slice(0,3),end:12,month:0,department:'',uf:''
+  };
+  filters.years=filters.years.filter(y=>available.includes(y));
+  if(!filters.years.length)filters.years=available.slice(0,3);
+  if(state.historyStudyMacroYear!=null&&state.historyStudyMacroYear!==year&&!filters.years.includes(year)){
+    filters.years=[year,...filters.years];
+  }
+  state.historyStudyMacroYear=year;
   const monthNames=Array.from({length:12},(_,i)=>historyMonthLabel('2000-'+String(i+1).padStart(2,'0')).slice(0,3));
-  const monthOptions=monthNames.map((label,i)=>[i+1,label]);
-  const closedMonths=historyStudyRequest(model,year,{...filters,end:0,month:0},transportToday()).months;
-  const yearOptions=model.years.map(y=>[Number(y.year),y.year]).reverse();
+  const today=transportToday(), currentMonth=today.slice(0,7);
+  const latest=model.rows.at(-1)?.month;
+  const cache=state.historyMarginCache?.updatedAt===updatedAt?state.historyMarginCache:{updatedAt,years:new Map()};
+  state.historyMarginCache=cache;
   const departments=(state.dimensions?.departments||[]).map(value=>[value,value]);
   const ufs=[...new Set((state.dimensions?.geography||[]).map(row=>row.uf).filter(Boolean))].sort().map(value=>[value,value]);
   const select=(id,label,options,value)=>`<label>${esc(label)}<select id="${id}">${options.map(([key,name])=>`<option value="${esc(key)}" ${String(key)===String(value)?'selected':''}>${esc(name)}</option>`).join('')}</select></label>`;
   root.innerHTML=`
-    <div class="history-section-head"><div><h2>Indicadores comparativos</h2><p class="panel-sub">Estude a evolução mensal e compare os mesmos meses entre os anos.</p></div><button type="button" class="btn" id="historyStudyClear">Limpar recortes</button></div>
+    <div class="history-section-head"><div><h2>Histórico de indicadores</h2><p class="panel-sub">Compare a evolução mensal de vendas, rentabilidade e carteira.</p></div></div>
     <div class="history-study-controls">
-      ${select('historyStudyYear','Ano em análise',yearOptions,year)}
-      ${select('historyStudyReference','Ano de referência',[[0,'Ano anterior · '+(year-1)],...yearOptions.filter(([v])=>v!==year)],filters.reference||0)}
-      ${select('historyStudyEnd','Comparar até',[[0,'Último mês fechado disponível'],...monthOptions],filters.end)}
-      ${select('historyStudyMonth','Mês em destaque',[[0,'Todos do período'],...monthOptions.slice(0,filters.end||closedMonths.length)],filters.month)}
+      <label>Anos para comparar<div id="historyStudyYears" class="multi-select"></div></label>
+      ${select('historyStudyEnd','Período até',monthNames.map((m,i)=>[i+1,m]),filters.end)}
+      ${select('historyStudyMonth','Mês em foco',[[0,'Último disponível'],...monthNames.slice(0,filters.end).map((m,i)=>[i+1,m])],filters.month)}
       ${select('historyStudyDepartment','Departamento',[['','Todos'],...departments],filters.department)}
       ${select('historyStudyUf','UF',[['','Todas'],...ufs],filters.uf)}
-      ${select('historyStudyMetric','Indicador do gráfico',Object.entries(HISTORY_STUDY_METRICS).map(([key,[label]])=>[key,label]),filters.metric)}
     </div>
+    <div id="historyStudyLegend" class="history-study-legend"></div>
     <p class="panel-sub history-study-status" id="historyStudyStatus" role="status"></p>
-    <div id="historyStudyBody"></div>`;
+    <div id="historyStudyBody"></div>
+    <details class="history-study-source"><summary>Cobertura e critérios</summary>
+      <p>Shop Control recuperado até julho de 2024: faturamento total. Desde agosto de 2024: base comercial atual por data de faturamento. Os filtros de departamento e UF precisam de registros detalhados.</p>
+      <p>Clientes novos usa a primeira compra identificada na base detalhada disponível. Na transição de origem, clientes anteriores ao início dessa base podem aparecer como novos.</p>
+      <p>A margem é calculada a partir de Vl Lucro da base comercial. Mês em andamento com registros aparece como parcial. Meses sem dados ficam em branco.</p>
+    </details>`;
   const read=()=>{
-    const setup=historyStudyRequest(model,year,filters,transportToday());
+    const years=filters.years.slice().sort((a,b)=>b-a);
+    const months=Array.from({length:filters.end},(_,i)=>i+1);
+    const focus=filters.month||Math.min(filters.end,Number(latest?.slice(5,7))||filters.end);
     const id=(state.historyStudyRequest||0)+1;
     state.historyStudyRequest=id;
     $('#historyStudyStatus').textContent='Calculando indicadores do recorte…';
-    state.historyStudyReceive=(reply)=>{
-      if(reply.requestId!==id||!root.isConnected||state.page!=='history'||state.module!=='commercial')return;
-      if(reply.error){$('#historyStudyStatus').textContent=reply.error;return;}
-      drawHistoryStudy(root,model,filters,setup,reply.result,monthNames,update);
+    const scope={department:filters.department,uf:filters.uf};
+    const active=()=>state.historyStudyRequest===id&&root.isConnected&&state.page==='history'&&state.module==='commercial';
+    const margins=new Map();
+    const requestMargin=selected=>{
+      if(selected<2024||!state.dimensions?.years?.some(y=>Number(y)===selected))return Promise.resolve([]);
+      if(!cache.years.has(selected)){
+        const request=api('/api/historyMargin',{body:JSON.stringify({year:selected})}).then(result=>result.rows||[])
+          .catch(error=>{cache.years.delete(selected);throw error;});
+        cache.years.set(selected,request);
+      }
+      return cache.years.get(selected);
     };
-    state.worker.postMessage({type:'historyStudy',requestId:id,study:setup.worker});
+    state.historyStudyReceive=(reply)=>{
+      if(reply.requestId!==id||!active())return;
+      if(reply.error){$('#historyStudyStatus').textContent=reply.error;return;}
+      const settings={years,months,focus,currentMonth,latest,scope,monthNames,margins,update};
+      drawHistoryStudy(root,model,settings,reply.result,true);
+      // Consultas em série evitam várias leituras grandes simultâneas da base.
+      (async()=>{
+        for(const y of years){
+          if(!active())return;
+          try{margins.set(y,await requestMargin(y));}catch(error){margins.set(y,null);}
+        }
+        if(active())drawHistoryStudy(root,model,settings,reply.result,false);
+      })();
+    };
+    state.worker.postMessage({type:'historyStudy',requestId:id,study:{years,months,...scope}});
   };
-  const update=(patch)=>{
+  const update=patch=>{
     Object.assign(filters,patch);
-    const limit=filters.end||closedMonths.length;
-    if(filters.month>limit)filters.month=0;
+    if(filters.month>filters.end)filters.month=0;
     const monthSelect=$('#historyStudyMonth');
-    monthSelect.replaceChildren(new Option('Todos do período','0'),
-      ...monthOptions.slice(0,limit).map(([month,name])=>new Option(name,String(month))));
-    for(const [id,key] of Object.entries(fields))$('#'+id).value=filters[key]??0;
+    monthSelect.replaceChildren(new Option('Último disponível','0'),
+      ...monthNames.slice(0,filters.end).map((m,i)=>new Option(m,String(i+1))));
+    monthSelect.value=String(filters.month);
     read();
   };
-  const fields={historyStudyReference:'reference',historyStudyEnd:'end',historyStudyMonth:'month',
-    historyStudyDepartment:'department',historyStudyUf:'uf',historyStudyMetric:'metric'};
-  $('#historyStudyYear').onchange=e=>changeYear(e.target.value);
-  for(const [id,key] of Object.entries(fields))$('#'+id).onchange=e=>update({[key]:['reference','end','month'].includes(key)?Number(e.target.value):e.target.value});
-  $('#historyStudyClear').onclick=()=>update({reference:null,end:0,month:0,department:'',uf:''});
+  const yearMenu=$('#historyStudyYears');
+  const yearsUi=()=>fillMultiSelect(yearMenu,available.map(y=>({value:String(y),label:String(y)})),filters.years,()=>{
+    const selected=selectedMulti(yearMenu.id).map(Number);
+    update({years:selected.length?selected:available.slice(0,3)});
+    if(!selected.length)yearsUi();
+  });
+  yearsUi();
+  $('#historyStudyEnd').onchange=e=>update({end:Number(e.target.value)});
+  $('#historyStudyMonth').onchange=e=>update({month:Number(e.target.value)});
+  $('#historyStudyDepartment').onchange=e=>update({department:e.target.value});
+  $('#historyStudyUf').onchange=e=>update({uf:e.target.value});
   read();
 }
 
-function drawHistoryStudy(root,model,filters,setup,analysis,monthNames,update){
+function drawHistoryStudy(root,model,settings,analysis,loadingMargin){
+  const {years,months,focus,currentMonth,scope,monthNames,margins,update}=settings;
+  const colors=years.map((_,i)=>HISTORY_STUDY_COLORS[i%HISTORY_STUDY_COLORS.length]);
+  const scoped=!!(scope.department||scope.uf);
+  const rowsByYear=new Map(analysis.years.map(row=>[row.year,row.points]));
+  const key=(year,month)=>year+'-'+String(month).padStart(2,'0');
+  const marginValue=(year,month)=>{
+    let revenue=0,profit=0,known=0,total=0;
+    for(const [m,department,uf,base,value,count,rows] of margins.get(year)||[]){
+      if(m!==month||scope.department&&scope.department!==department||scope.uf&&scope.uf!==uf)continue;
+      revenue+=base;profit+=value;known+=count;total+=rows;
+    }
+    return {value:known&&revenue?100*profit/revenue:null,coverage:total?known/total:null};
+  };
+  const lookup=(year,month,metric)=>{
+    const row=model.byMonth.get(key(year,month));
+    if(!row)return null;
+    if(metric==='revenue'&&!scoped)return row.value;
+    if(row.source!=='WinThor / BI')return null;
+    if(metric==='margin')return marginValue(year,month).value;
+    return rowsByYear.get(year)?.[month]?.[metric]??null;
+  };
+  const selectMonth=month=>update({month:focus===month?0:month});
+  const partial=years.some(y=>key(y,focus)===currentMonth&&model.byMonth.has(currentMonth));
+  $('#historyStudyStatus').textContent='Mês em foco: '+monthNames[focus-1]+(partial?' · Inclui mês em andamento, com resultado parcial.':'.')+
+    ' Clique em um mês de qualquer gráfico para destacar o mesmo período nos demais.';
+  $('#historyStudyLegend').innerHTML=years.map((year,i)=>`<span><i style="--study-color:${colors[i]};--study-line:${i?'dashed':'solid'}"></i>${year}</span>`).join('');
+  const pending=new Map();
+  for(const [metric,[title,description,unit]] of Object.entries(HISTORY_STUDY_METRICS)){
+    const values=years.map(year=>months.map(month=>lookup(year,month,metric)));
+    const hasValues=values.some(series=>series.some(v=>v!==null));
+    const snapshots=years.map((year,i)=>{
+      const value=lookup(year,focus,metric), p=key(year,focus)===currentMonth&&model.byMonth.has(currentMonth);
+      const coverage=metric==='margin'?marginValue(year,focus).coverage:null;
+      return `<div class="history-study-stat" style="--study-color:${colors[i]}"><span>${year} · ${monthNames[focus-1]}${p?' · parcial':''}</span>
+        <strong>${esc(historyStudyFormat(value,unit))}</strong>${coverage!=null&&coverage<1?`<small>${pct(coverage*100)} das linhas com margem</small>`:''}</div>`;
+    }).join('');
+    const empty=metric==='margin'&&loadingMargin?'Consultando margem na base comercial…':
+      metric==='margin'&&years.some(y=>margins.get(y)===null)?'Margem indisponível nesta consulta.':'Sem dados neste recorte.';
+    const markup=`<section class="history-study-card"><h3>${esc(title)}</h3><p class="panel-sub">${esc(description)}${unit==='revenue'?' · Rótulos em R$ milhões':unit==='money'?' · Rótulos em R$':''}</p>
+      <div class="history-study-stats">${snapshots}</div>${hasValues?`<div class="history-study-scroll"><div class="chart-wrap history-study-chart"><canvas id="historyStudy-${metric}"></canvas></div></div>`:`<p class="history-study-empty">${empty}</p>`}</section>`;
+    pending.set(metric,{unit,values,markup,hasValues});
+  }
   for(const instance of root.studyCharts||[]){
     instance.$motionCleanup?.();instance.destroy();
-    state.charts=state.charts.filter(chart=>chart!==instance);
+    state.charts=state.charts.filter(item=>item!==instance);
   }
-  const {years,months,macroMonths,worker,covered}=setup;
-  const [current,reference]=years;
-  const macro=!filters.department&&!filters.uf;
-  const detailMonths=worker.summaryMonths;
-  const totals=(index,key)=>{
-    if(key!=='revenue'||!macro)return analysis.years[index].total[key]??null;
-    if(!macroMonths.length)return null;
-    return macroMonths.reduce((sum,m)=>sum+model.byMonth.get(years[index]+'-'+String(m).padStart(2,'0')).value,0);
-  };
-  const points=(index,key)=>months.map(m=>{
-    const y=years[index];
-    if(!covered(y,m,key!=='revenue'||!macro))return null;
-    if(key==='revenue'&&macro)return model.byMonth.get(y+'-'+String(m).padStart(2,'0')).value;
-    return analysis.years[index].points[m]?.[key]??null;
-  });
-  const describe=selected=>selected.length?selected.map(m=>monthNames[m-1]).join(', '):'Sem meses equivalentes';
-  const [label,type,definition]=HISTORY_STUDY_METRICS[filters.metric];
-  const values=[points(0,filters.metric),points(1,filters.metric)];
-  const now=totals(0,filters.metric),before=totals(1,filters.metric);
-  const info=$('#historyStudyStatus');
-  const shown=filters.metric==='revenue'&&macro?macroMonths:detailMonths;
-  info.textContent=current+' × '+reference+' · '+(filters.month?'Mês em destaque: '+monthNames[filters.month-1]+' · ':'')+'Meses comparáveis no resumo: '+describe(shown)+'.';
-  const format=value=>historyStudyFormat(value,type);
-  const delta=historyStudyDelta(now,before,type);
-  const cell=(key,index)=>historyStudyFormat(totals(index,key),HISTORY_STUDY_METRICS[key][1]);
-  const rows=Object.entries(HISTORY_STUDY_METRICS).map(([key,[name,unit,help]])=>{
-    const both=key==='revenue'&&macro?macroMonths:detailMonths;
-    return `<tr><th scope="row"><button type="button" class="history-year-link" data-study-metric="${key}" aria-pressed="${key===filters.metric}" title="${esc(help)}">${esc(name)}</button></th><td>${esc(cell(key,0))}</td><td>${esc(cell(key,1))}</td><td>${esc(historyStudyDelta(totals(0,key),totals(1,key),unit))}</td><td>${both.length?esc(describe(both)):'—'}</td></tr>`;
-  }).join('');
-  const groupLabel=filters.group==='uf'?'UF':'departamento';
-  const ranks=analysis.breakdown.slice().sort((a,b)=>(b.values[current]??0)-(a.values[current]??0)||
-    (b.values[reference]??0)-(a.values[reference]??0)||a.key.localeCompare(b.key,'pt-BR')).slice(0,10);
-  const hasValues=values.some(series=>series.some(value=>value!==null));
-  const comparisonPoints=values[0].map((v,i)=>v==null||values[1][i]==null?null:type==='percent'?v-values[1][i]:values[1][i]===0?null:(v-values[1][i])/Math.abs(values[1][i])*100);
-  const coverage=analysis.years.map(entry=>entry.total.marginCoverage);
-  const bars=ranks.length?`<div class="chart-wrap history-study-chart"><canvas id="historyStudyRank"></canvas></div>
-    <div class="history-study-rank-buttons">${ranks.map(row=>`<button type="button" class="btn" data-study-group-key="${esc(row.key)}">${esc(row.key)}</button>`).join('')}</div>`:'<p class="panel-sub">Sem detalhamento para meses equivalentes nesse recorte.</p>';
-  $('#historyStudyBody').innerHTML=`
-    <div class="history-kpis">${kpi(label+' · '+current,format(now),describe(shown))}${kpi(label+' · '+reference,format(before),describe(shown))}
-      ${kpi('Variação',delta,type==='percent'?'Diferença em pontos percentuais':'Sobre o mesmo conjunto de meses')}</div>
-    <p class="panel-sub">${esc(definition)}${filters.metric==='margin'&&coverage.some(v=>v>0)?' Cobertura das linhas: '+coverage.map(v=>v==null?'—':pct(v*100)).join(' × ')+'.':''}</p>
-    <div class="history-study-grid">
-      <section><h3>Evolução mensal</h3><p class="panel-sub">Selecione um ponto ou use Mês em destaque para atualizar o resumo e o ranking.</p>
-        ${hasValues?'<div class="chart-wrap history-study-chart"><canvas id="historyStudyTrend"></canvas></div>':'<p class="panel-sub">Sem registros para este indicador nos anos selecionados.</p>'}</section>
-      <section><h3>Variação por mês</h3><p class="panel-sub">${type==='percent'?'Diferença em pontos percentuais.':'Diferença percentual sobre o ano de referência.'}</p>
-        ${comparisonPoints.some(v=>v!==null)?'<div class="chart-wrap history-study-chart"><canvas id="historyStudyChange"></canvas></div>':'<p class="panel-sub">Sem meses equivalentes com base de comparação.</p>'}</section>
-    </div>
-    <section class="history-study-section"><div class="history-section-head"><div><h3>Faturamento por ${groupLabel}</h3><p class="panel-sub">${esc(describe(detailMonths))} · Clique em uma barra ou no rótulo para filtrar os indicadores.</p></div>
-      <label>Agrupar por<select id="historyStudyGroup"><option value="department">Departamento</option><option value="uf" ${filters.group==='uf'?'selected':''}>UF</option></select></label></div>${bars}</section>
-    <details class="history-study-section history-study-source"><summary>Ver valores mensais de ${esc(label)}</summary>
-      <div class="table-wrap"><table><thead><tr><th>Mês</th><th>${current}</th><th>${reference}</th><th>Variação</th></tr></thead><tbody>
-        ${months.map((month,i)=>`<tr><th scope="row"><button type="button" class="history-year-link" data-study-month="${month}" aria-pressed="${month===filters.month}">${monthNames[month-1]}</button></th><td>${format(values[0][i])}</td><td>${format(values[1][i])}</td><td>${historyStudyDelta(values[0][i],values[1][i],type)}</td></tr>`).join('')}
-      </tbody></table></div></details>
-    <section class="history-study-section"><h3>Resumo dos indicadores</h3><div class="table-wrap"><table><thead><tr><th>Indicador</th><th>${current}</th><th>${reference}</th><th>Variação</th><th>Meses equivalentes</th></tr></thead><tbody>${rows}</tbody></table></div></section>
-    <details class="history-study-section history-study-source"><summary>Cobertura das fontes e critérios</summary>
-      <p>Shop Control recuperado até julho de 2024: faturamento total. Desde agosto de 2024: WinThor / BI, pela data de faturamento, com detalhamento conforme o cadastro. A base do planejamento pode usar outra data de referência.</p>
-      <p>Os gráficos comparam meses fechados. O mês em andamento fica fora do estudo. Ativos e inativos usam a carteira registrada na base disponível. Para um intervalo, a posição corresponde ao último mês equivalente.</p>
-      <p>Margem depende de dados por linha. Ramo, recorrência por ramo, prazo médio, PMR e inadimplência aguardam os campos de origem correspondentes. Os valores sem cobertura ficam em branco.</p>
-    </details>`;
-  const chartLabels=months.map(m=>monthNames[m-1]+(m===filters.month?' ●':''));
-  const selectMonth=index=>{
-    const month=months[index];
-    update({month:month===filters.month?0:month});
-  };
-  const selectGroup=key=>{
-    const field=filters.group==='uf'?'uf':'department';
-    update({[field]:filters[field]===key?'':key});
-  };
-  const monthlyClick=(_event,hits)=>{if(hits.length)selectMonth(hits[0].index);};
-  const chartSeries=(label,data,color,dash=false)=>({label:String(label),data,borderColor:color,backgroundColor:color,borderDash:dash?[5,4]:[],solidColor:true,tension:.22,spanGaps:false});
-  const draw=(id,type,data,options)=>{
-    const canvas=$('#'+id);
-    if(canvas)root.studyCharts.push(chart(canvas,type,data,{animation:false,...options}));
-  };
   root.studyCharts=[];
-  draw('historyStudyTrend','line',{labels:chartLabels,datasets:[chartSeries(current,values[0],'#2059a8'),chartSeries(reference,values[1],'#7389a6',true)]},
-    {onClick:monthlyClick,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true},tooltip:{callbacks:{label:c=>c.dataset.label+' · '+format(c.raw)}}},scales:{y:{ticks:{callback:v=>historyStudyFormat(v,type,true)}}}});
-  const unit=type==='percent'?' p.p.':'%';
-  draw('historyStudyChange','bar',{labels:chartLabels,datasets:[{label:'Variação',data:comparisonPoints,backgroundColor:comparisonPoints.map(v=>v<0?'#b44e58':'#3d779f'),borderRadius:5}]},
-    {onClick:monthlyClick,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>historyStudyFormat(c.raw,'decimal')+unit}}},scales:{y:{ticks:{callback:v=>v+unit}}}});
-  draw('historyStudyRank','bar',{labels:ranks.map(r=>r.key),datasets:years.map((year,i)=>({label:String(year),data:ranks.map(r=>r.values[year]??0),backgroundColor:i?'#9fb1c9':'#2059a8',solidColor:true,borderRadius:4}))},
-    {indexAxis:'y',onClick:(_event,hits)=>{if(hits.length)selectGroup(ranks[hits[0].index].key);},plugins:{legend:{display:true},tooltip:{callbacks:{label:c=>c.dataset.label+' · '+money(c.raw)}}},scales:{x:{ticks:{callback:v=>money(v,true)}}}});
-  $('#historyStudyGroup').onchange=e=>update({group:e.target.value});
-  $$('[data-study-group-key]',root).forEach(button=>button.onclick=()=>selectGroup(button.dataset.studyGroupKey));
-  $$('[data-study-month]',root).forEach(button=>button.onclick=()=>selectMonth(months.indexOf(Number(button.dataset.studyMonth))));
-  $$('[data-study-metric]',root).forEach(button=>button.onclick=()=>update({metric:button.dataset.studyMetric}));
+  $('#historyStudyBody').innerHTML=HISTORY_STUDY_GROUPS.map(([title,metrics])=>`<section class="history-study-group"><h3>${title}</h3>
+    <div class="history-study-grid">${metrics.map(metric=>pending.get(metric).markup).join('')}</div></section>`).join('');
+  const highlight={id:'historyStudyFocus',beforeDatasetsDraw(instance){
+    const area=instance.chartArea, i=months.indexOf(focus);
+    if(!area||i<0)return;
+    const x=instance.scales.x.getPixelForValue(i);
+    const left=Math.max(area.left-5,x-12),right=Math.min(area.right+5,x+12);
+    instance.ctx.save();instance.ctx.fillStyle='#edf4ff';
+    instance.ctx.fillRect(left,area.top,right-left,area.bottom-area.top);
+    instance.ctx.restore();
+  }};
+  for(const [metric,{unit,values,hasValues}] of pending){
+    if(!hasValues)continue;
+    const instance=chart($('#historyStudy-'+metric),'line',{
+      labels:months.map(m=>monthNames[m-1]+(years.some(y=>key(y,m)===currentMonth&&model.byMonth.has(currentMonth))?'*':'')),
+      datasets:years.map((year,i)=>({
+        label:String(year),data:values[i],borderColor:colors[i],backgroundColor:colors[i],solidColor:true,
+        borderDash:i?[5,4]:[],pointRadius:months.map(m=>m===focus?4:2),pointHoverRadius:5,tension:.2,spanGaps:false
+      }))
+    },{
+      animation:false,interaction:{mode:'index',intersect:false},
+      layout:{padding:{top:9,right:20,left:7}},
+      onClick:(_event,hits)=>{if(hits.length)selectMonth(months[hits[0].index]);},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:item=>item.dataset.label+' · '+historyStudyFormat(item.raw,unit)}}},
+      scales:{x:{grid:{display:false},ticks:{autoSkip:false}},y:{grace:'12%',ticks:{maxTicksLimit:5,callback:v=>historyStudyFormat(v,unit,true)}}}
+    },[highlight,historyStudyLabels(unit)]);
+    root.studyCharts.push(instance);
+  }
 }
 
 async function renderMacroHistory(payload){
@@ -2009,7 +2046,7 @@ async function renderMacroHistory(payload){
  <div class="grid equal-col history-details-grid"><section class="panel"><div class="history-section-head"><div><span class="history-eyebrow">${year.year}</span><h2>Vendas mês a mês</h2></div></div><div class="chart-wrap"><canvas id="macroMonthly"></canvas></div><p class="panel-sub">Linha clara: mesmo mês do ano anterior, quando houver registros completos nos mesmos meses.</p></section><section class="panel"><span class="history-eyebrow">SAZONALIDADE</span><h2>Onde o crescimento se concentra</h2><p class="panel-sub">Variação de cada mês sobre o mesmo mês do ano anterior. Células neutras indicam ausência de comparação válida.</p><div class="history-heatmap-scroll"><div id="historyHeatmap" class="history-heatmap"></div></div></section></div>
  <details class="panel history-data-detail"><summary>Consultar valores anuais e critérios</summary><div class="table-wrap"><table><thead><tr><th>Ano</th><th>Vendas registradas</th><th>Variação comparável</th><th>Cobertura / origem</th></tr></thead><tbody>${model.years.map(y=>`<tr><td><button class="history-year-link" data-macro-year="${y.year}">${y.year}</button></td><td>${money(y.value)}</td><td>${y.growth===null?'Sem base comparável':pct(y.growth)}</td><td>${y.months.length} meses${y.partial?' · parcial':''} · ${esc(y.sources.join(' + '))}</td></tr>`).join('')}</tbody></table></div><p>Shop Control recuperado: jun/2017 a jul/2024, valores de venda incluindo negativos, sem conciliação contábil confirmada. WinThor/BI: desde ago/2024 por data de faturamento. Comparamos os valores registrados independentemente da fonte de origem. No mapa anual usamos os meses completos disponíveis e comparamos o mesmo conjunto de meses; a visão mensal não compara meses parciais. As áreas representam municípios de venda e não a atuação histórica de vendedores ou RCAs. Valores sem município identificado permanecem no total geral, sem distribuição fictícia no mapa.</p></details>`;
  const pick=value=>{state.historyYear=String(value);destroyCharts();renderMacroHistory(payload);};$('#macroYear').onchange=e=>pick(e.target.value);Array.from(document.querySelectorAll('[data-macro-year]')).forEach(b=>b.onclick=()=>pick(b.dataset.macroYear));
- mountHistoryStudy(model,Number(year.year),pick);
+ mountHistoryStudy(model,Number(year.year),payload.updatedAt);
  const annualChanges=model.years.map(y=>y.growth);
  chart($('#macroAnnual'),'bar',{
   labels:model.years.map(y=>y.year+(y.partial?' *':'')),
