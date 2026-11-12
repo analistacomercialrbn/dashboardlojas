@@ -4367,7 +4367,7 @@ function cargoRouteDraft(m) {
   const suggested = units.find(unit => unit.id === settings.defaultUnitId) || (m.company && units.length === 1 ? units[0] : null);
   const orders = FEXP.data.orders.filter(o => o.montageId === m.id);
   orders.sort((a,b) => (a.city || '').localeCompare(b.city || '', 'pt-BR') || a.order.localeCompare(b.order,'pt-BR',{numeric:true}));
-  const initial = orders.map(o => ({keys:[o.key], address:o.deliveryStop?.address || ''}));
+  const initial = orders.map(o => ({keys:[o.key], address:o.deliveryStop?.address || o.deliveryAddress || ''}));
   CARGO_ROUTE.draft = {
     id:m.id,
     routingAt:m.routingAt,
