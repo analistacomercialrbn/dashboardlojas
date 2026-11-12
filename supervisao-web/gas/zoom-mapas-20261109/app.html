@@ -516,7 +516,7 @@
 .history-annual-scroll{overflow-x:auto;max-width:100%}
 .history-annual-scroll .history-chart{min-width:820px}
  .history-study{display:grid;gap:14px;margin-bottom:20px}
-.history-study-controls{display:grid;grid-template-columns:minmax(190px,1.35fr) repeat(4,minmax(112px,1fr));gap:12px}
+.history-study-controls{display:grid;grid-template-columns:minmax(175px,1.25fr) repeat(4,minmax(105px,1fr)) minmax(150px,1.2fr);gap:12px}
 .history-study-controls>label{display:grid;gap:5px;font-size:12px;color:#495a76;font-weight:600}
 .history-study-controls select{width:100%;min-width:0}
 .history-study-legend{display:flex;gap:12px 22px;flex-wrap:wrap;color:#374d71;font-size:12px;font-weight:700}
@@ -537,6 +537,7 @@
 .history-study-source p{margin:8px 0 0}
 .history-study-empty{padding:12px 0;color:#52647e;font-size:13px}
 @media(max-width:1050px){.history-study-grid{grid-template-columns:1fr}}
+@media(max-width:1100px){.history-study-controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:660px){.history-study-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.history-study-controls>label:first-child{grid-column:1/-1}.history-study-card{padding:10px}}
 
 
@@ -1189,20 +1190,33 @@ function historyStudyBucket(){
   return {revenue:0, clients:new Map(), newcomers:new Set()};
 }
 
-function commercialHistoryStudy({years,months,department,uf}){
+function commercialHistoryStudy({years,months,department,uf,ramo,ramoClients=[]}){
+  const categories=new Map();
+  for(const [year,month,client,category] of ramoClients){
+    if(!categories.has(client))categories.set(client,new Map());
+    categories.get(client).set(year*12+month,category);
+  }
+  const selectedPeriods=ramo?new Map([...categories].map(([client,periods])=>[
+    client,[...periods].sort((a,b)=>b[0]-a[0])
+  ])):null;
+  const portfolioMatches=selectedPeriods?(client,cutoff)=>{
+    const period=cutoff.getUTCFullYear()*12+cutoff.getUTCMonth()+1;
+    return selectedPeriods.get(client)?.find(([start])=>start<=period)?.[1]===ramo;
+  }:null;
   const filters={year:'Todos',month:'Todos',department:department?[department]:[],uf:uf?[uf]:[]};
   const periods=new Map(years.map(year=>[year,new Map(months.map(month=>[month,historyStudyBucket()]))]));
   for(const sale of SALES){
     const bucket=periods.get(sale.year)?.get(sale.month);
     if(!bucket||sale.year===2024&&sale.month<8)continue;
     if(uf&&sale.uf!==uf||department&&sale.department!==department)continue;
+    if(ramo&&categories.get(sale.client)?.get(sale.year*12+sale.month)!==ramo)continue;
     bucket.revenue+=Number(sale.value)||0;
     if(sale.client==null)continue;
     addSet(bucket.clients,sale.client,sale.product);
     const first=CLIENT_HISTORY.get(sale.client)?.[0]?.date;
     if(first?.getUTCFullYear()===sale.year&&first.getUTCMonth()+1===sale.month)bucket.newcomers.add(sale.client);
   }
-  const portfolio=new Map(portfolioEvolution(filters).map(row=>[row.month,row]));
+  const portfolio=new Map(portfolioEvolution(filters,portfolioMatches).map(row=>[row.month,row]));
   return {years:years.map(year=>{
     const points=Object.fromEntries(months.map(month=>{
       const b=periods.get(year).get(month);
@@ -1247,7 +1261,7 @@ function portfolioInactivityDays(cutoff,last){
   return (day(cutoff)-day(last))/86400000;
 }
 
-function portfolioEvolution(filters){
+function portfolioEvolution(filters,matchesClient=null){
   if(!SALES.length)return [];
   let first=Infinity, last=0;
   for(const sale of SALES){
@@ -1289,7 +1303,7 @@ function portfolioEvolution(filters){
         const purchase=history[cursor++];
         if(!departments.size||departments.has(String(purchase.department)))lastPurchase=purchase.date;
       }
-      if(!lastPurchase||!matchesGeography(history[cursor-1]))continue;
+      if(!lastPurchase||!matchesGeography(history[cursor-1])||matchesClient&&!matchesClient(client,month.cutoff))continue;
       const days=portfolioInactivityDays(month.cutoff,lastPurchase);
       if(days<90)month.active++;
       else if(days<180)month.short++;
@@ -1564,6 +1578,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@0e3d88b33adceb2c4fbe27742f4c517de0f78b2d/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ee4f6b628c59db424d8ebb149468e6a59162259c/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
