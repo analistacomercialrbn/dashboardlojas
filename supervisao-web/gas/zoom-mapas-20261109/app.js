@@ -2600,7 +2600,7 @@ function logFilters(all){let el=$('#logFilters');if(!el){el=document.createEleme
    LOG.search='';
    delete LOG.tableColumnFilters?.[LOG.page];
    if(LOG.page==='transport')resetTransportFilters();
-   if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;}
+   if(LOG.page==='formation'&&FEXP.tab==='plan'){FEXP.priorityCity='';FEXP.withoutInvoice=false;FEXP.orderStatus='';FEXP.orderFrom='';}
    updatePeriod();
  };
  const detailSearch=$('#logSearch');
@@ -3846,7 +3846,7 @@ function formationHasInvoice(order) {
     return invoice && !/^(?:0+(?:[.,]0+)?|[-–—]+|#?N\/A|SEM NF|NAO INFORMAD[AO])$/.test(invoice);
   });
 }
-function formationOrderRows(){const all=FEXP.data.orders,filteredSource=new Set(logRows(FEXP.data.mapRows).map(r=>r.sourceKey)),q=normalize(FEXP.query);return all.filter(o=>!o.montageId&&!o.blocked&&(!FEXP.withoutInvoice||!formationHasInvoice(o))).filter(o=>o.sourceRows.some(r=>filteredSource.has(r.sourceKey))).filter(o=>!q||normalize([o.order,o.clientCode,o.client,o.city,o.uf,o.internalStatus,...o.products.map(p=>p.code+' '+p.description)].join(' ')).includes(q)).sort((a,b)=>{const x=a[FEXP.sort],y=b[FEXP.sort];return (typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),'pt-BR',{numeric:true}))*FEXP.direction;});}
+function formationOrderRows(){const all=FEXP.data.orders,filteredSource=new Set(logRows(FEXP.data.mapRows).map(r=>r.sourceKey)),q=normalize(FEXP.query);return all.filter(o=>!o.montageId&&!o.blocked&&(!FEXP.orderStatus||o.originalStatuses.includes(FEXP.orderStatus))&&(!FEXP.orderFrom||o.date>=FEXP.orderFrom)&&(!FEXP.withoutInvoice||!formationHasInvoice(o))).filter(o=>o.sourceRows.some(r=>filteredSource.has(r.sourceKey))).filter(o=>!q||normalize([o.order,o.clientCode,o.client,o.city,o.uf,o.internalStatus,...o.products.map(p=>p.code+' '+p.description)].join(' ')).includes(q)).sort((a,b)=>{const x=a[FEXP.sort],y=b[FEXP.sort];return (typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),'pt-BR',{numeric:true}))*FEXP.direction;});}
 function formationTable(rows,selection,assembly=false){const start=assembly?0:FEXP.page*40,part=assembly?rows:rows.slice(start,start+40);return `<div class="table-wrap"><table class="log-table formation-orders"><thead><tr><th><input type="checkbox" id="formationSelectPage" aria-label="Selecionar pedidos disponíveis desta página" ${part.some(o=>assembly||!o.blocked&&!o.montageId)?'':'disabled'}></th>${[['order','Pedido'],['clientCode','Cód. cliente'],['client','Cliente'],['city','Cidade'],['uf','UF'],['volumes','Volumes'],['weight','Peso'],['internalStatus','Situação']].map(([k,label])=>`<th><button class="formation-sort" data-formation-sort="${k}">${label} ↕</button></th>`).join('')}<th>Montagem</th><th>Detalhes</th></tr></thead><tbody>${part.map(o=>`<tr><td><input type="checkbox" data-formation-select="${esc(o.key)}" aria-label="Selecionar pedido ${esc(o.order)}" ${selection.has(o.key)?'checked':''} ${!assembly&&(o.blocked||o.montageId)?'disabled':''}></td><td><strong>${esc(o.order)}</strong></td><td>${esc(o.clientCode)}</td><td>${esc(o.client)}</td><td>${esc(o.city||o.sourceRows[0]?.cityLabel||'—')}</td><td>${esc(o.uf||o.sourceRows[0]?.uf||'—')}</td><td>${cargoVolumes(o.volumes)}</td><td>${o.weightIncomplete?'—':formationWeight(o.weight)}</td><td>${esc(o.internalStatus)}${o.sourceIssue?`<small class="formation-warning">${esc(o.sourceIssue)}</small>`:''}</td><td>${esc(FEXP.data.montages.find(m=>m.id===o.montageId)?.name||'—')}</td><td><button class="btn" data-formation-detail="${esc(o.key)}">Ver pedido</button></td></tr>`).join('')||'<tr><td colspan="11">Nenhum pedido em aberto na base do Força de Vendas para este recorte.</td></tr>'}</tbody></table></div>${assembly?'':`<div class="log-pagination"><button class="btn" id="formationPrev" ${FEXP.page===0?'disabled':''}>Anterior</button><span>${rows.length?start+1:0}–${Math.min(start+40,rows.length)} de ${rows.length}</span><button class="btn" id="formationNext" ${start+40>=rows.length?'disabled':''}>Próxima</button></div>`}`;}
 function formationProducts(products){return `<div class="table-wrap"><table class="log-table"><thead><tr><th>Código</th><th>Produto</th><th>Quantidade pedida</th></tr></thead><tbody>${products.map(p=>`<tr><td>${esc(p.code??'—')}</td><td>${esc(p.description)}</td><td>${formationN(p.quantity,2)}</td></tr>`).join('')||'<tr><td colspan="3">Nenhum produto selecionado.</td></tr>'}</tbody></table></div>`;}
 function formationSourceTable(rows){return `<div class="table-wrap"><table class="log-table"><thead><tr><th>Cliente na formação</th><th>Cidade</th><th>Grupo de produto</th><th>Volumes</th><th>Peso</th><th>Status original</th><th>Implantação</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.client)}</td><td>${esc(r.cityLabel)}</td><td>${esc(r.product)}</td><td>${cargoVolumes(r.volumes)}</td><td>${formationWeight(r.weight)}</td><td>${esc(r.status)}</td><td>${transportDate(r.date)}</td></tr>`).join('')}</tbody></table></div>`;}
@@ -5630,6 +5630,54 @@ function cargoPriorityBind(panel, orders, view) {
   });
 }
 
+function formationOrderFilters() {
+  return `<div class="filterbar-main">
+    <label class="filter-group">Situação do pedido <select id="formationOrderStatus">${biOptions({
+      '':'Em aberto · todos',PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado',FECHADO:'Fechado / faturado'
+    },FEXP.orderStatus||'')}</select></label>
+    <label class="filter-group">Data do pedido a partir de <input type="date" id="formationOrderFrom" value="${esc(FEXP.orderFrom||'')}"></label>
+    <label class="cargo-invoice-filter"><input type="checkbox" id="formationWithoutInvoice" ${FEXP.withoutInvoice?'checked':''}> Somente pedidos sem nota fiscal</label>
+  </div>`;
+}
+
+function formationClosedPanel() {
+  return `<section class="panel"><div id="formationClosedResults" aria-live="polite"></div></section>`;
+}
+
+async function formationLoadClosed() {
+  const box=$('#formationClosedResults');
+  if(!box)return;
+  if(!FEXP.orderFrom){
+    box.textContent='Selecione a data inicial da consulta.';
+    return;
+  }
+  box.textContent='Consultando a base de vendas…';
+  try{
+    const result=await formationApi({action:'closedOrders',from:FEXP.orderFrom,query:FEXP.query,withoutInvoice:FEXP.withoutInvoice});
+    const orders=result.orders;
+    if(!box.isConnected)return;
+    const render=()=>{
+      const start=FEXP.page*30;
+      box.innerHTML=`<div class="table-wrap"><table class="log-table"><thead><tr>
+        <th>Pedido</th><th>Cliente</th><th>Cidade</th><th>Data do pedido</th><th>NF</th><th>Faturamento</th>
+        </tr></thead><tbody>${orders.slice(start,start+30).map(o=>`<tr><td>${esc(o.order)}</td><td>${esc(o.client)}</td>
+        <td>${esc([o.city,o.uf].filter(Boolean).join(' / '))}</td><td>${esc(transportDate(o.date))}</td>
+        <td>${esc(o.invoices.join(' / ')||'—')}</td><td>${esc(transportDate(o.billingDate))}</td></tr>`).join('')
+        ||'<tr><td colspan="6">Nenhum pedido fechado neste recorte.</td></tr>'}</tbody></table></div>
+        <div class="cargo-pagination"><button class="btn" id="formationClosedPrev" ${start?'':'disabled'}>Anterior</button>
+        <span>${orders.length?start+1:0}–${Math.min(start+30,orders.length)} de ${result.total}</span>
+        <button class="btn" id="formationClosedNext" ${start+30>=orders.length?'disabled':''}>Próxima</button></div>
+        ${result.total>orders.length?'<p>Exibindo os 1.000 mais recentes. Refine a data ou a busca para ver outros pedidos.</p>':''}`;
+      $('#formationClosedPrev',box).onclick=()=>{FEXP.page--;render();};
+      $('#formationClosedNext',box).onclick=()=>{FEXP.page++;render();};
+    };
+    FEXP.page=0;
+    render();
+  }catch(error){
+    if(box.isConnected)box.textContent=error.message;
+  }
+}
+
 function formationShow({keepFilters=false}={}) {
   if (state.module!=='logistics' || LOG.page!=='formation') return;
   LOG.epoch++;
@@ -5664,7 +5712,8 @@ function formationShow({keepFilters=false}={}) {
     FEXP.directInitialized=true;
   }
   if(FEXP.tab==='plan'){
-    if(!keepFilters)logFilters(d.mapRows);
+    if(FEXP.orderStatus==='FECHADO')$('#logFilters')?.classList.add('hidden');
+    else if(!keepFilters)logFilters(d.mapRows);
   }else $('#logFilters')?.classList.add('hidden');
   $('#lastBaseUpdate').textContent = 'Consulta: '+cargoDate(d.updatedAt);
   $('#periodChip').textContent = FEXP.tab==='plan'?logPeriodLabel():'Força de Vendas';
@@ -5677,15 +5726,16 @@ function formationShow({keepFilters=false}={}) {
   let m = d.montages.find(x => x.id===FEXP.montage);
   let orders = [];
   if (FEXP.tab==='plan') {
-    orders = formationOrderRows();
-    html += `<section class="panel cargo-plan"><div class="cargo-section-heading"><div><h2>Escolha os pedidos da carga</h2>
-      <p>Use a cidade ou a busca para localizar clientes e produtos.</p></div>
-      ${canLog('formation','edit')?'<button class="cargo-link" id="formationCreateEmpty">Criar montagem vazia</button>':''}</div>
+    const closed=FEXP.orderStatus==='FECHADO';
+    if(!closed)orders = formationOrderRows();
+    html += `<section class="panel cargo-plan"><div class="cargo-section-heading"><div><h2>${closed?'Consultar pedidos fechados':'Escolha os pedidos da carga'}</h2>
+      <p>${closed?'Consulte pedidos pela data de emissão do pedido.':'Use a cidade ou a busca para localizar clientes e produtos.'}</p></div>
+      ${!closed&&canLog('formation','edit')?'<button class="cargo-link" id="formationCreateEmpty">Criar montagem vazia</button>':''}</div>
       <label class="cargo-search">Buscar pedido, cliente ou produto<input type="search" id="formationQuery" value="${esc(FEXP.query)}"
        placeholder="Digite o pedido, nome do cliente ou produto"></label>
-      <label class="cargo-invoice-filter"><input type="checkbox" id="formationWithoutInvoice" ${FEXP.withoutInvoice?'checked':''}> Somente pedidos sem nota fiscal</label>
-      ${cargoPriorityMarkup()}<div id="cargoPlanOrders"></div>
-      </section><div id="cargoPlanSelection"></div>`;
+      ${formationOrderFilters()}
+      ${closed?formationClosedPanel():cargoPriorityMarkup()+'<div id="cargoPlanOrders"></div>'}
+      </section>${closed?'':'<div id="cargoPlanSelection"></div>'}`;
   } else if (['routing','finished'].includes(FEXP.tab)) {
     html += cargoRouteQueue(d,FEXP.tab==='finished');
     m = d.montages.find(item=>item.id===FEXP.routeExpanded);
@@ -5711,17 +5761,21 @@ function formationShow({keepFilters=false}={}) {
   $('#cargoBackToBoard')?.addEventListener('click', () => cargoSwitchFormationTab('montages'));
   cargoBindWorkflow();
   if (FEXP.tab==='plan') {
-    cargoPriorityBind($('#cargoPriority'),orders,priorityView);
-    $('#formationWithoutInvoice').onchange = event => {
-      FEXP.withoutInvoice = event.currentTarget.checked;
-      FEXP.page = 0;
-      formationShow();
-      $('#formationWithoutInvoice')?.focus({preventScroll:true});
-    };
+    if(FEXP.orderStatus==='FECHADO')formationLoadClosed();
+    else cargoPriorityBind($('#cargoPriority'),orders,priorityView);
+    for(const [id,key] of Object.entries({formationOrderStatus:'orderStatus',formationOrderFrom:'orderFrom',formationWithoutInvoice:'withoutInvoice'})){
+      $('#'+id).onchange = event => {
+        const input=event.currentTarget;
+        FEXP[key]=input.type==='checkbox'?input.checked:input.value;
+        FEXP.page=0;
+        formationShow();
+        $('#'+id)?.focus({preventScroll:true});
+      };
+    }
   }
   if (!FEXP.timer) FEXP.timer = setInterval(()=>{
     if (state.module==='logistics' && LOG.page==='formation' && (['plan','montages','history','finished'].includes(FEXP.tab)||FEXP.tab==='routing'&&!FEXP.routeExpanded)
-        && !document.hidden && !document.querySelector('.formation-dialog[open], .cargo-montage-board.is-dragging, .cargo-montage-order-menu[open]') && !FEXP.busy) {
+        && FEXP.orderStatus!=='FECHADO' && !document.hidden && !document.querySelector('.formation-dialog[open], .cargo-montage-board.is-dragging, .cargo-montage-order-menu[open]') && !FEXP.busy) {
       formationReload();
     }
   },120000);
