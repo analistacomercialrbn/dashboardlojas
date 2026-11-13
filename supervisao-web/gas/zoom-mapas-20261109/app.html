@@ -227,6 +227,51 @@
 <style>
 .cargo-invoice-filter { display:flex; width:fit-content; align-items:center; gap:8px; margin:0 0 12px; min-height:40px; font-size:14px; font-weight:600; cursor:pointer; }
 .cargo-invoice-filter input { accent-color:#a94e19; width:18px; height:18px; }
+/* Filtros de pedidos na Formação de Cargas */
+.cargo-plan > .filterbar-main {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr);
+  align-items:end;
+  gap:12px 16px;
+  margin:14px 0 16px;
+  min-width:0;
+}
+.cargo-plan > .filterbar-main > .filter-group {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr);
+  gap:6px;
+  width:100%;
+  min-width:0;
+  margin:0;
+  font-size:14px;
+  font-weight:600;
+}
+.cargo-plan > .filterbar-main :is(select, input[type="date"]) {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  min-height:44px;
+  margin:0;
+  font-size:14px;
+}
+.cargo-plan > .filterbar-main > .cargo-invoice-filter {
+  width:auto;
+  min-width:0;
+  min-height:44px;
+  margin:0;
+}
+.cargo-plan > .filterbar-main > .cargo-invoice-filter input {
+  flex:0 0 18px;
+  margin:0;
+}
+@media (min-width:620px) {
+  .cargo-plan > .filterbar-main {grid-template-columns:repeat(2, minmax(0, 1fr));}
+  .cargo-plan > .filterbar-main > .cargo-invoice-filter {grid-column:1 / -1;}
+}
+@media (min-width:1020px) {
+  .cargo-plan > .filterbar-main {grid-template-columns:minmax(220px, 270px) minmax(190px, 235px) minmax(0, 1fr);}
+  .cargo-plan > .filterbar-main > .cargo-invoice-filter {grid-column:auto;}
+}
 .cargo-priority { margin:0 0 20px; padding:14px; border:1px solid #e6dbce; border-radius:12px; background:#fdfaf6; }
 .cargo-priority .cargo-section-heading { margin-bottom:10px; }
 .cargo-priority .cargo-section-heading h3 { margin:0; }
