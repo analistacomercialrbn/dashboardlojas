@@ -4348,36 +4348,39 @@ function cargoStatus(m) {
   }</span>`;
 }
 
-const CARGO_ROUTE = {draft:null, map:null, mapBox:null, markers:[], polylines:[], generation:0, timer:null, loader:null};
+const CARGO_ROUTE = {draft:null, editing:'', map:null, mapBox:null, markers:[], polylines:[], generation:0, timer:null, loader:null};
 
-function cargoRouteOpen(id) {
+function cargoRouteOpen(id, edit = false) {
   const m=FEXP.data.montages.find(item=>item.id===id);
   if(!m||m.status===CARGO_OPEN)return;
   FEXP.montage=id;
   FEXP.tab=m.status===CARGO_FINAL?'finished':'routing';
   FEXP.routeExpanded=id;
+  CARGO_ROUTE.editing = edit ? id : '';
   formationShow();
 }
 
 function cargoRouteDraft(m) {
-  if (CARGO_ROUTE.draft?.id === m.id && CARGO_ROUTE.draft.routingAt === m.routingAt) return CARGO_ROUTE.draft;
   const settings = FEXP.data.routing;
   const saved = m.route;
+  const readOnly = !canLog('formation','edit') || (m.status===CARGO_FINAL && CARGO_ROUTE.editing!==m.id);
+  if (CARGO_ROUTE.draft?.id === m.id && CARGO_ROUTE.draft.routingAt === m.routingAt
+    && CARGO_ROUTE.draft.baseAt === (saved?.at || '') && CARGO_ROUTE.draft.readOnly === readOnly) return CARGO_ROUTE.draft;
   const units = cargoRouteUnits(m);
   const suggested = units.find(unit => unit.id === settings.defaultUnitId) || (m.company && units.length === 1 ? units[0] : null);
   const orders = FEXP.data.orders.filter(o => o.montageId === m.id);
   orders.sort((a,b) => (a.city || '').localeCompare(b.city || '', 'pt-BR') || a.order.localeCompare(b.order,'pt-BR',{numeric:true}));
-  const initial = orders.map(o => ({keys:[o.key], address:o.deliveryStop?.address || o.deliveryAddress || ''}));
+  const initial = orders.map(o => ({keys:[o.key], address:o.deliveryAddress || ''}));
   CARGO_ROUTE.draft = {
     id:m.id,
     routingAt:m.routingAt,
     unitSnapshot:saved?.unit||suggested||null,
-    readOnly:m.status===CARGO_FINAL||!canLog('formation','edit'),
+    readOnly,
     baseAt:saved?.at || '',
     unitId:saved ? saved.unit?.id || '' : suggested?.id || '',
     returnToUnit:saved?.returnToUnit ?? settings.returnToUnit,
     groupAddresses:saved?.groupAddresses ?? settings.groupAddresses,
-    stops:saved ? structuredClone(saved.stops) : initial,
+    stops:saved ? structuredClone(saved.stops) : cargoRouteGroups(initial,settings.groupAddresses),
     dirty:false
   };
   return CARGO_ROUTE.draft;
@@ -4401,8 +4404,8 @@ function cargoRouteGroups(stops, groupAddresses) {
 }
 
 function cargoRouteState(m,draft) {
-  if (m.route?.confirmed) return {label:'Ordem confirmada',tone:'confirmed'};
   if (draft?.dirty) return {label:'Alterações não salvas',tone:'pending'};
+  if (m.route?.confirmed) return {label:'Ordem confirmada',tone:'confirmed'};
   if (m.route) return {label:'Rascunho salvo',tone:'draft'};
   return {label:'Roteiro pendente',tone:'pending'};
 }
@@ -4454,16 +4457,19 @@ function cargoRouteMarkup(m) {
       <p>${readOnly?(m.route?.confirmed?'Sequência confirmada.':'Consulta da sequência atual.'):'Arraste pelo ícone ou use as setas para ordenar. Preencha os endereços ou as coordenadas se quiser traçar a rota no mapa.'}</p></div></div>
       <div class="cargo-route-readiness">
         <strong id="cargoRouteAddressSummary" aria-live="polite"></strong>
-        ${readOnly?'':'<button type="button" class="cargo-link" id="cargoRouteFirstMissing" hidden>Ir para a primeira parada sem endereço</button>'}
+        ${readOnly?'':`<button type="button" class="cargo-link" id="cargoRouteFirstMissing" hidden>Ir para a primeira parada sem endereço</button>
+          <button type="button" class="btn" id="cargoRouteSuggest">Sugerir sequência</button>
+          <small id="cargoRouteSuggestStatus" role="status"></small>`}
       </div>
       <ol id="cargoRouteStops" class="cargo-route-stops"></ol>
     </div><div class="cargo-route-map-column"><h3>Google Maps</h3>
       <p id="cargoRouteMapStatus" role="status"></p><div id="cargoRouteMap" hidden aria-label="Mapa do roteiro"></div>
       <div id="cargoRouteLinks" class="cargo-actions"></div>
     </div></div>
-    ${readOnly?'':`<footer class="cargo-finalize"><div><strong>Concluir roteirização</strong><p>A ordem confirmada fica nos pedidos e a carga passa para Finalizadas.</p></div>
+    ${readOnly?'':`<footer class="cargo-finalize"><div><strong>${m.route?.confirmed?'Editar roteiro confirmado':'Concluir roteirização'}</strong>
+      <p>${m.route?.confirmed?'A Ordem de Entregas usará a nova sequência e os endereços salvos.':'A ordem confirmada fica nos pedidos e a carga passa para Finalizadas.'}</p></div>
       <div class="cargo-actions">${m.route?.confirmed?'':'<button class="btn" id="cargoRouteDraft">Salvar rascunho</button>'}
-      <button class="btn primary" id="cargoRouteConfirm">Confirmar roteiro</button></div>
+      <button class="btn primary" id="cargoRouteConfirm">${m.route?.confirmed?'Salvar alterações':'Confirmar roteiro'}</button></div>
     </footer><p id="cargoRouteSaveStatus" role="status"></p>`}</section>`;
 }
 
@@ -4475,6 +4481,7 @@ function cargoRouteRenderStops(m, draft) {
     const labels = [...new Set(members.map(o => o.client))];
     const cities = [...new Set(members.map(o => [o.city,o.uf].filter(Boolean).join(' / ')))].filter(Boolean);
     const missing = !String(stop.address||'').trim();
+    const baseAddresses = [...new Set(members.map(o=>o.deliveryAddress).filter(Boolean))];
     return `<li data-route-index="${index}" class="cargo-stop ${missing?'is-address-pending':''}">
       <header><span class="cargo-stop-number">${index+1}</span><div><strong>${esc(labels.join(' · '))}</strong>
       <small>${esc(cities.join(' · '))}</small>
@@ -4483,7 +4490,9 @@ function cargoRouteRenderStops(m, draft) {
       ${draft.readOnly?'':'<span class="cargo-stop-grip" data-route-grip title="Arrastar parada" aria-hidden="true">⠿</span>'}</header>
       ${draft.readOnly?`<p>${esc(stop.address)}</p>`:`<label>Endereço da parada ${index+1} (opcional)<textarea data-route-address="${index}" rows="2" maxlength="240"
         placeholder="Rua, número, cidade e UF ou coordenadas">${esc(stop.address)}</textarea></label>
-      <div class="cargo-actions"><button type="button" class="btn" data-route-step="${index},-1" aria-label="Subir parada ${index+1}" ${index===0?'disabled':''}>↑ Subir</button>
+      <div class="cargo-actions">${baseAddresses.length===1 && baseAddresses[0]!==stop.address
+        ?`<button type="button" class="cargo-link" data-route-source="${index}">Usar endereço da base</button>`:''}
+      <button type="button" class="btn" data-route-step="${index},-1" aria-label="Subir parada ${index+1}" ${index===0?'disabled':''}>↑ Subir</button>
       <button type="button" class="btn" data-route-step="${index},1" aria-label="Descer parada ${index+1}" ${index===draft.stops.length-1?'disabled':''}>↓ Descer</button></div>`}
       </li>`;
   }).join('');
@@ -4501,6 +4510,13 @@ function cargoRouteRenderStops(m, draft) {
   list.querySelectorAll('[data-route-step]').forEach(b => b.onclick = () => {
     const [i, delta] = b.dataset.routeStep.split(',').map(Number);
     move(i,i+delta);
+  });
+  list.querySelectorAll('[data-route-source]').forEach(button => button.onclick = () => {
+    const stop = draft.stops[Number(button.dataset.routeSource)];
+    stop.address = stop.keys.map(key=>orders.get(key)?.deliveryAddress).find(Boolean);
+    draft.dirty = true;
+    cargoRouteRenderStops(m,draft);
+    cargoRoutePreview(draft);
   });
   list.querySelectorAll('[data-route-address]').forEach(input => {
     input.oninput = () => {
@@ -4540,7 +4556,7 @@ function cargoRouteRenderStops(m, draft) {
 
 function cargoRouteBind(m) {
   const d = cargoRouteDraft(m);
-  $('#cargoRouteBack').onclick = () => {FEXP.routeExpanded='';formationShow();};
+  $('#cargoRouteBack').onclick = () => {FEXP.routeExpanded='';CARGO_ROUTE.editing='';formationShow();};
   if(d.readOnly){
     cargoRouteRenderStops(m,d);
     cargoRoutePreview(d);
@@ -4548,7 +4564,20 @@ function cargoRouteBind(m) {
   }
   $('#cargoRouteNewUnit')?.addEventListener('click', () => cargoSettingsOpen('units'));
   $('#cargoRouteFirstMissing').onclick = () => $('#cargoRouteStops .is-address-pending [data-route-address]')?.focus();
-  $('#cargoRouteUnit').onchange = e => {d.unitId=e.target.value;d.dirty=true;cargoRouteUpdateReadiness(m,d);cargoRoutePreview(d);};
+  const suggestIfNew = () => {
+    if (!m.route && !d.autoSuggested && d.unitId && cargoRouteMissing(d.stops) === 0) {
+      d.autoSuggested = true;
+      cargoRouteSuggest(m,d);
+    }
+  };
+  $('#cargoRouteUnit').onchange = e => {
+    const canSuggest = !d.dirty;
+    d.unitId=e.target.value;
+    d.dirty=true;
+    cargoRouteUpdateReadiness(m,d);
+    cargoRoutePreview(d);
+    if (canSuggest) suggestIfNew();
+  };
   $('#cargoRouteReturn').onchange = e => {d.returnToUnit=e.target.checked;d.dirty=true;cargoRouteUpdateReadiness(m,d);cargoRoutePreview(d);};
   $('#cargoRouteGroup').onchange = e => {
     d.groupAddresses = e.target.checked;
@@ -4559,8 +4588,67 @@ function cargoRouteBind(m) {
   };
   $('#cargoRouteDraft')?.addEventListener('click', () => cargoRouteConfirm(m,d,false));
   $('#cargoRouteConfirm').onclick = () => cargoRouteConfirm(m,d,true);
+  $('#cargoRouteSuggest').onclick = () => cargoRouteSuggest(m,d);
   cargoRouteRenderStops(m,d);
   cargoRoutePreview(d);
+  if (!d.dirty) suggestIfNew();
+}
+
+async function cargoRouteSuggest(m,draft) {
+  const button = $('#cargoRouteSuggest'), message = $('#cargoRouteSuggestStatus');
+  const unit = cargoRouteUnits(m).find(item => item.id === draft.unitId);
+  const stops = cargoRouteGroups(draft.stops,draft.groupAddresses);
+  const key = FEXP.data.googleMapsKey;
+  if (!unit?.address || cargoRouteMissing(stops)) {
+    message.textContent = 'Escolha a unidade de saída e confira os endereços para sugerir a sequência.';
+    return;
+  }
+  if (stops.length < 2) {
+    message.textContent = 'Há apenas uma parada no roteiro.';
+    return;
+  }
+  if (stops.length > 25 || !key) {
+    message.textContent = stops.length > 25
+      ? 'A sugestão aceita até 25 paradas. Ajuste a sequência pelas setas.'
+      : 'O Google Maps ainda precisa ser ativado para sugerir a sequência.';
+    return;
+  }
+  const signature = () => JSON.stringify([draft.unitId,draft.returnToUnit,draft.groupAddresses,draft.stops]);
+  const before = signature();
+  const controls = [button,$('#cargoRouteConfirm'),$('#cargoRouteDraft')].filter(Boolean);
+  controls.forEach(control=>control.disabled=true);
+  message.textContent = 'Calculando a sequência…';
+  try {
+    await cargoMapsLoad(key);
+    const {Route} = await google.maps.importLibrary('routes');
+    const {routes} = await Route.computeRoutes({
+      origin:cargoRouteLocation(unit.address),
+      // Usar a unidade como destino permite que a API também escolha a última entrega.
+      destination:cargoRouteLocation(unit.address),
+      intermediates:stops.map(stop=>({location:cargoRouteLocation(stop.address)})),
+      travelMode:'DRIVING',region:'br',optimizeWaypointOrder:true,
+      fields:['optimizedIntermediateWaypointIndices']
+    });
+    if (!button.isConnected || CARGO_ROUTE.draft !== draft) return;
+    if (signature() !== before) {
+      message.textContent = 'As alterações foram mantidas. Clique em Sugerir sequência para recalcular.';
+      return;
+    }
+    const indices = routes?.[0]?.optimizedIntermediateWaypointIndices;
+    if (!Array.isArray(indices) || indices.length !== stops.length
+      || new Set(indices).size !== indices.length || indices.some(index=>!Number.isInteger(index)||!stops[index])) {
+      throw new Error('Sequência indisponível');
+    }
+    draft.stops = indices.map(index=>stops[index]);
+    draft.dirty = true;
+    cargoRouteRenderStops(m,draft);
+    cargoRoutePreview(draft);
+    message.textContent = 'Sequência sugerida. Você pode ajustar pelas setas.';
+  } catch {
+    message.textContent = 'Não foi possível sugerir a sequência. Confira os endereços ou ajuste pelas setas.';
+  } finally {
+    controls.forEach(control=>control.disabled=false);
+  }
 }
 
 function cargoScheduleFields(schedule) {
@@ -4586,6 +4674,7 @@ function cargoScheduleDialog(m) {
 }
 
 function cargoRouteConfirm(m,draft,confirmed) {
+  const editingConfirmed = m.route?.confirmed === true;
   const stops = cargoRouteGroups(draft.stops,draft.groupAddresses);
   const status = $('#cargoRouteSaveStatus');
   if (confirmed && !draft.unitId) {
@@ -4593,18 +4682,19 @@ function cargoRouteConfirm(m,draft,confirmed) {
     return;
   }
   status.textContent = '';
-  const dialog = cargoForm(confirmed?'Confirmar roteiro':'Salvar rascunho',
+  const label = editingConfirmed?'Salvar alterações':confirmed?'Confirmar roteiro':'Salvar rascunho';
+  const dialog = cargoForm(label,
     `${cargoStatus(m)}<p><strong>${esc(m.name)}</strong> · ${stops.length} paradas · ${m.orders} pedidos</p>
     <p>${confirmed?'A ordem abaixo será gravada nos pedidos.':'Você poderá continuar editando os endereços e a sequência.'}</p>
-    ${confirmed?`<p class="cargo-help">Se as datas já estiverem definidas, preencha as duas para programar o motorista. Você também pode informar depois em Finalizadas.</p>${cargoScheduleFields(m.schedule)}`:''}
+    ${confirmed&&!editingConfirmed?`<p class="cargo-help">Se as datas já estiverem definidas, preencha as duas para programar o motorista. Você também pode informar depois em Finalizadas.</p>${cargoScheduleFields(m.schedule)}`:''}
     <ol>${stops.map(s=>`<li>${esc(s.address || 'Sem endereço informado')} · ${s.keys.length} pedido(s)</li>`).join('')}</ol>
-    ${confirmed&&m.overCapacity?`<p>A carga excede a capacidade do veículo. A ocorrência ficará no histórico.</p>
+    ${confirmed&&!editingConfirmed&&m.overCapacity?`<p>A carga excede a capacidade do veículo. A ocorrência ficará no histórico.</p>
       <label>Justificativa da liberação (opcional)<textarea name="overweightReason" maxlength="500" rows="3"></textarea></label>`:''}`,
     form => ({operation:'ROTEIRO_SALVAR',target:m.id,route:{unitId:draft.unitId,returnToUnit:draft.returnToUnit,
-      groupAddresses:draft.groupAddresses,stops,confirmed,baseAt:draft.baseAt,routingAt:draft.routingAt,
+      groupAddresses:draft.groupAddresses,stops,confirmed,editingConfirmed,baseAt:draft.baseAt,routingAt:draft.routingAt,
       overweightReason:form.elements.overweightReason?.value || '',
-      ...(confirmed?{schedule:cargoScheduleValues(form)}:{})}}));
-  dialog.querySelector('button[type=submit]').textContent = confirmed?'Confirmar roteiro':'Salvar rascunho';
+      ...(confirmed&&!editingConfirmed?{schedule:cargoScheduleValues(form)}:{})}}));
+  dialog.querySelector('button[type=submit]').textContent = label;
 }
 
 function cargoRoutePoints(draft) {
@@ -5198,6 +5288,7 @@ function cargoRouteQueue(d, finished) {
         ${expanded?'':`<div class="cargo-route-state">${cargoRouteBadge(m)}
           ${missing>0?`<small class="cargo-route-missing-label">${cargoRouteMissingLabel(missing)}</small>`:''}</div>`}</div>
         <div class="cargo-actions">${expanded?'':`<button type="button" class="btn primary" data-cargo-route="${esc(m.id)}">${finished||!canLog('formation','edit')?'Consultar roteiro':'Roteirizar'}</button>`}
+        ${editDelivery&&m.route?.confirmed&&(!expanded||CARGO_ROUTE.editing!==m.id)?`<button type="button" class="btn" data-cargo-route-edit="${esc(m.id)}">Editar ordem e endereços</button>`:''}
         ${editDelivery&&m.route?.confirmed?`<button type="button" class="btn" data-cargo-schedule="${esc(m.id)}">${m.schedule?'Editar programação':'Programar carga'}</button>`:''}
         ${finished?`<button type="button" class="btn" data-cargo-order-dates="${esc(m.id)}">Datas por pedido</button>`:''}
         ${editDelivery?`<button type="button" class="btn" data-cargo-delivery-edit="${esc(m.id)}">Atualizar data de entrega</button>`:''}
@@ -5266,6 +5357,7 @@ function cargoBindWorkflow() {
     bulk.onclick=()=>cargoDeliveryDateDialog(selected());
   }
   $$('[data-cargo-route]').forEach(b=>b.onclick=()=>cargoRouteOpen(b.dataset.cargoRoute));
+  $$('[data-cargo-route-edit]').forEach(b=>b.onclick=()=>cargoRouteOpen(b.dataset.cargoRouteEdit,true));
   $$('[data-cargo-delivery-order]').forEach(b=>b.onclick=()=>cargoOpenDeliveryOrder(b.dataset.cargoDeliveryOrder));
   $$('[data-cargo-reopen]').forEach(b=>b.onclick=()=>{
     FEXP.montage=b.dataset.cargoReopen;
@@ -5321,7 +5413,7 @@ function cargoHistoryEvents(d) {
     ENTREGA_PEDIDOS_SALVAR:'Datas de entrega dos pedidos atualizadas',
     CARGA_AGENDA_SALVAR:'Programação da carga atualizada'};
   return `<section class="panel"><h2>Histórico de movimentações</h2><div class="cargo-history">${d.events.map(e => {
-    const title = e.type==='ROTEIRO_SALVAR' ? (e.confirmed?'Roteiro confirmado':'Rascunho do roteiro salvo') : titles[e.type]||e.type;
+    const title = e.type==='ROTEIRO_SALVAR' ? (e.routeEdited?'Ordem e endereços editados':e.confirmed?'Roteiro confirmado':'Rascunho do roteiro salvo') : titles[e.type]||e.type;
     const names=e.montageIds?.map(id=>d.montages.find(m=>m.id===id)?.name).filter(Boolean);
     return `<article><strong>${esc(title)}</strong><p>${esc(names?.length?names.join(', '):d.montages.find(m=>m.id===e.to)?.name||'Cadastro')}
       ${e.keys.length?' · '+e.keys.length+' pedidos':''}</p><small>${cargoDate(e.at)} · ${esc(e.by)}</small>
@@ -5368,12 +5460,22 @@ function cargoPriorityCities(orders, features) {
   for (const order of orders) {
     if (!order.city) continue;
     const place = location(order);
-    if (!cities.has(place.key)) cities.set(place.key,{...place,city:order.city,orderCount:0});
-    cities.get(place.key).orderCount++;
+    if (!cities.has(place.key)) cities.set(place.key,{...place,city:order.city,orderCount:0,weightKg:0,knownWeights:0});
+    const totals = cities.get(place.key);
+    totals.orderCount++;
+    if (!order.weightIncomplete && Number.isFinite(order.weight)) {
+      totals.weightKg += order.weight;
+      totals.knownWeights++;
+    }
   }
   const ranked = [...cities.values()].sort((a,b) =>
     b.orderCount-a.orderCount || a.city.localeCompare(b.city,'pt-BR') || a.uf.localeCompare(b.uf));
   return {ranked, location};
+}
+
+function cargoPriorityWeight(city) {
+  if (!city.knownWeights) return 'Peso não informado';
+  return logN(city.weightKg/1000,3)+' t'+(city.knownWeights<city.orderCount?' · peso parcial':'');
 }
 
 function cargoPriorityMarkup() {
@@ -5418,7 +5520,7 @@ function cargoPriorityDraw(box, features, cities, pick, view) {
       const key = keyOf(feature), city = locs.get(key)?.[0];
       if (!city) return;
       polygon.bindTooltip('<b>'+esc(city.city)+' · '+esc(city.uf)+'</b><br>'+
-        fmt(city.orderCount)+(city.orderCount===1?' disponível':' disponíveis'),{sticky:true});
+        fmt(city.orderCount)+(city.orderCount===1?' disponível':' disponíveis')+'<br>'+cargoPriorityWeight(city),{sticky:true});
       polygon.on('click',()=>pick(key));
     }
   }).addTo(map);
@@ -5472,7 +5574,7 @@ function cargoPriorityBind(panel, orders, view) {
   const renderCities = () => {
     list.innerHTML = model.ranked.map(city => `<button type="button" data-cargo-city="${esc(city.key)}" aria-pressed="${city.key===FEXP.priorityCity}">
       <span><strong>${esc(city.city)}${city.uf?' · '+esc(city.uf):''}</strong></span>
-      <span>${orderCount(city.orderCount)}</span></button>`).join('') || '<p>Nenhuma cidade no recorte.</p>';
+      <span>${orderCount(city.orderCount)}<small>${cargoPriorityWeight(city)}</small></span></button>`).join('') || '<p>Nenhuma cidade no recorte.</p>';
     clear.disabled = !FEXP.priorityCity;
   };
   clear.onclick = () => pick('');
@@ -5637,7 +5739,8 @@ async function cargoSave(payload,dialog,status) {
     if(['ROTEIRO_SALVAR','REABRIR'].includes(payload.operation))CARGO_ROUTE.draft=null;
     if(payload.operation==='ROTEIRO_SALVAR' && payload.route.confirmed){
       FEXP.tab='finished';
-      FEXP.finalPeriod='7';
+      CARGO_ROUTE.editing='';
+      if(!payload.route.editingConfirmed)FEXP.finalPeriod='7';
       FEXP.routeExpanded=payload.target;
     }
     if(payload.operation==='REABRIR'){
