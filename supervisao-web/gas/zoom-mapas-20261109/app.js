@@ -1856,9 +1856,11 @@ function mountHistoryStudy(model,year,updatedAt){
   const root=$('#historyStudy');
   const available=model.years.map(y=>Number(y.year)).reverse();
   const filters=state.historyStudyFilters||={
-    years:available.slice(0,3),end:12,month:0,department:'',uf:'',ramo:''
+    years:available.slice(0,3),end:12,month:0,department:'',uf:'',ramo:'',supervisor:'',rca:''
   };
   filters.ramo??='';
+  filters.supervisor??='';
+  filters.rca??='';
   filters.years=filters.years.filter(y=>available.includes(y));
   if(!filters.years.length)filters.years=available.slice(0,3);
   if(state.historyStudyMacroYear!=null&&state.historyStudyMacroYear!==year&&!filters.years.includes(year)){
@@ -1871,6 +1873,8 @@ function mountHistoryStudy(model,year,updatedAt){
   const cache=state.historyMarginCache?.updatedAt===updatedAt?state.historyMarginCache:{updatedAt,years:new Map()};
   state.historyMarginCache=cache;
   const departments=(state.dimensions?.departments||[]).map(value=>[value,value]);
+  const supervisors=(state.dimensions?.supervisors||[]).map(value=>[value,value]);
+  const rcas=(state.dimensions?.rcas||[]).map(item=>[item.code,item.name]);
   const ufs=[...new Set((state.dimensions?.geography||[]).map(row=>row.uf).filter(Boolean))].sort().map(value=>[value,value]);
   const select=(id,label,options,value)=>`<label>${esc(label)}<select id="${id}">${options.map(([key,name])=>`<option value="${esc(key)}" ${String(key)===String(value)?'selected':''}>${esc(name)}</option>`).join('')}</select></label>`;
   root.innerHTML=`
@@ -1882,14 +1886,16 @@ function mountHistoryStudy(model,year,updatedAt){
       ${select('historyStudyDepartment','Departamento',[['','Todos'],...departments],filters.department)}
       ${select('historyStudyUf','UF',[['','Todas'],...ufs],filters.uf)}
       ${select('historyStudyRamo','Ramo de atividade',[['','Todos']],filters.ramo)}
+      ${select('historyStudySupervisor','Supervisão',[['','Todas'],...supervisors],filters.supervisor)}
+      ${select('historyStudyRca','RCA',[['','Todos'],...rcas],filters.rca)}
     </div>
     <div id="historyStudyLegend" class="history-study-legend"></div>
     <p class="panel-sub history-study-status" id="historyStudyStatus" role="status"></p>
     <div id="historyStudyBody"></div>
     <details class="history-study-source"><summary>Cobertura e critérios</summary>
-      <p>Shop Control recuperado até julho de 2024: faturamento total. Desde agosto de 2024: base comercial atual por data de faturamento. Os filtros de departamento, UF e ramo precisam de registros detalhados. O ramo usa a última classificação registrada para o cliente em cada mês. Na carteira, considera a classificação mais recente conhecida até o mês analisado.</p>
+      <p>Shop Control recuperado até julho de 2024: faturamento total. Desde agosto de 2024: base comercial atual por data de faturamento. Os filtros de departamento, UF e ramo precisam de registros detalhados. O ramo usa a última classificação registrada para o cadastro em cada mês. A carteira usa apenas as compras que passam pelos filtros e consolida os cadastros pelo Cliente Principal. Sem vínculo, vale o código do cadastro.</p>
       <p>Clientes novos usa a primeira compra identificada na base detalhada disponível. Na transição de origem, clientes anteriores ao início dessa base podem aparecer como novos.</p>
-      <p>A margem é calculada a partir de Vl Lucro da base comercial. Mês em andamento com registros aparece como parcial. Meses sem dados ficam em branco.</p>
+      <p>A margem é calculada a partir de Vl Lucro da base comercial e fica indisponível ao filtrar RCA ou supervisão. Mês em andamento com registros aparece como parcial. Meses sem dados ficam em branco.</p>
     </details>`;
   const ramoSelect=$('#historyStudyRamo');
   ramoSelect.disabled=true;
@@ -1930,7 +1936,7 @@ function mountHistoryStudy(model,year,updatedAt){
     const id=(state.historyStudyRequest||0)+1;
     state.historyStudyRequest=id;
     $('#historyStudyStatus').textContent='Calculando indicadores do recorte…';
-    const scope={department:filters.department,uf:filters.uf,ramo:filters.ramo};
+    const scope={department:filters.department,uf:filters.uf,ramo:filters.ramo,supervisor:filters.supervisor,rca:filters.rca};
     const active=()=>state.historyStudyRequest===id&&root.isConnected&&state.page==='history'&&state.module==='commercial';
     const margins=new Map();
     state.historyStudyReceive=(reply)=>{
@@ -1977,16 +1983,20 @@ function mountHistoryStudy(model,year,updatedAt){
   $('#historyStudyDepartment').onchange=e=>update({department:e.target.value});
   $('#historyStudyUf').onchange=e=>update({uf:e.target.value});
   ramoSelect.onchange=e=>update({ramo:e.target.value});
+  $('#historyStudySupervisor').onchange=e=>update({supervisor:e.target.value});
+  $('#historyStudyRca').onchange=e=>update({rca:e.target.value});
   read();
 }
 
 function drawHistoryStudy(root,model,settings,analysis,loadingMargin){
   const {years,months,focus,currentMonth,scope,monthNames,margins,update}=settings;
   const colors=years.map((_,i)=>HISTORY_STUDY_COLORS[i%HISTORY_STUDY_COLORS.length]);
-  const scoped=!!(scope.department||scope.uf||scope.ramo);
+  const teamScope=!!(scope.supervisor||scope.rca);
+  const scoped=!!(scope.department||scope.uf||scope.ramo||teamScope);
   const rowsByYear=new Map(analysis.years.map(row=>[row.year,row.points]));
   const key=(year,month)=>year+'-'+String(month).padStart(2,'0');
   const marginValue=(year,month)=>{
+    if(teamScope)return {value:null,coverage:null};
     let revenue=0,profit=0,known=0,total=0;
     for(const [m,department,uf,base,value,count,rows,ramo] of margins.get(year)||[]){
       if(m!==month||scope.department&&scope.department!==department||scope.uf&&scope.uf!==uf||scope.ramo&&scope.ramo!==ramo)continue;
