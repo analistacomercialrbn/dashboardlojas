@@ -827,13 +827,14 @@ function renderCarteira(p){
       ${kpi('Novos',integer(k.newClients),'Primeira compra no período')}
       ${kpi('Inativos • curto',integer(k.short),'90 a 179 dias no fechamento anterior')}
       ${kpi('Inativos • longo',integer(k.long),'180 dias ou mais no fechamento anterior')}
-      ${kpi('Mix por cliente',dec(k.mix),'Produtos distintos por cliente')}
+      ${kpi('Mix por cliente',dec(k.mix),'Média de produtos distintos por cliente principal')}
+      ${kpi('Ticket médio por cliente',k.ticket==null?'—':money(k.ticket),'Faturamento ÷ clientes que compraram no recorte')}
       ${kpi('Produtos ativos no recorte',integer(k.products),'Itens faturados')}
     </div>
 
     <section class="panel">
       <div class="panel-title-row"><div><h2>Evolução mensal da carteira</h2>
-        <p class="panel-sub">Ativos e inativos são contados na data de corte de cada mês. Toque em uma cor para ocultar ou exibir a linha.</p></div></div>
+        <p class="panel-sub">Os cadastros vinculados contam como um cliente principal dentro dos filtros. Ativos e inativos são contados na data de corte de cada mês. Toque em uma cor para ocultar ou exibir a linha.</p></div></div>
       ${evolution.length?'<div id="portfolioEvolutionLegend" class="portfolio-evolution-legend" role="group" aria-label="Legenda do gráfico"></div><div class="chart-wrap portfolio-evolution-chart"><canvas id="portfolioEvolutionChart" role="img" aria-label="Ativos, inativos de curto e longo prazo e positivações por mês"></canvas></div>':'<p>Sem histórico de vendas para o ano selecionado.</p>'}
       ${evolution.at(-1)?.partial?`<p class="small-note">* Mês parcial até ${fmtDate(evolution.at(-1).cutoff)}.</p>`:''}
     </section>
@@ -844,7 +845,7 @@ function renderCarteira(p){
     </div>
 
     <div class="grid two-col carteira-secondary">
-      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Clique em uma faixa ou RCA para filtrar a lista; as seleções se combinam.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
+      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Cada cliente é atribuído ao RCA da última compra dentro do recorte. Clique em uma faixa ou RCA para filtrar a lista.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
       <div class="panel"><div class="panel-title-row"><div><h2>Leitura da carteira</h2><div class="panel-sub">Data de corte: ${fmtDate(k.cutoff)}</div></div></div>
         <div class="metric-list">
           <div class="metric-line"><div class="name">Relação curto / novos</div><div class="value">${ratio}</div></div>
