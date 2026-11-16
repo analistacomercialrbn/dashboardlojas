@@ -1235,33 +1235,28 @@ function historyStudyBucket(){
   return {revenue:0, clients:new Map(), newcomers:new Set()};
 }
 
-function commercialHistoryStudy({years,months,department,uf,ramo,ramoClients=[]}){
+function commercialHistoryStudy({years,months,department,uf,ramo,supervisor,rca,ramoClients=[]},links) {
   const categories=new Map();
   for(const [year,month,client,category] of ramoClients){
     if(!categories.has(client))categories.set(client,new Map());
     categories.get(client).set(year*12+month,category);
   }
-  const selectedPeriods=ramo?new Map([...categories].map(([client,periods])=>[
-    client,[...periods].sort((a,b)=>b[0]-a[0])
-  ])):null;
-  const portfolioMatches=selectedPeriods?(client,cutoff)=>{
-    const period=cutoff.getUTCFullYear()*12+cutoff.getUTCMonth()+1;
-    return selectedPeriods.get(client)?.find(([start])=>start<=period)?.[1]===ramo;
-  }:null;
-  const filters={year:'Todos',month:'Todos',department:department?[department]:[],uf:uf?[uf]:[]};
+  const filters={year:'Todos',month:'Todos',department,uf,supervisor,rca};
+  const sales=filterSales(filters).filter(sale=>!ramo||categories.get(sale.client)?.get(sale.year*12+sale.month)===ramo);
+  const directory=portfolioDirectory(links);
+  const clients=portfolioGroups(sales,directory);
   const periods=new Map(years.map(year=>[year,new Map(months.map(month=>[month,historyStudyBucket()]))]));
-  for(const sale of SALES){
+  for(const sale of sales){
     const bucket=periods.get(sale.year)?.get(sale.month);
     if(!bucket||sale.year===2024&&sale.month<8)continue;
-    if(uf&&sale.uf!==uf||department&&sale.department!==department)continue;
-    if(ramo&&categories.get(sale.client)?.get(sale.year*12+sale.month)!==ramo)continue;
     bucket.revenue+=Number(sale.value)||0;
-    if(sale.client==null)continue;
-    addSet(bucket.clients,sale.client,sale.product);
-    const first=CLIENT_HISTORY.get(sale.client)?.[0]?.date;
-    if(first?.getUTCFullYear()===sale.year&&first.getUTCMonth()+1===sale.month)bucket.newcomers.add(sale.client);
+    const id=portfolioClientKey(sale,directory);
+    if(id==null)continue;
+    addSet(bucket.clients,id,sale.product);
+    const first=clients.get(id)?.history[0];
+    if(first?.monthKey===sale.monthKey)bucket.newcomers.add(id);
   }
-  const portfolio=new Map(portfolioEvolution(filters,portfolioMatches).map(row=>[row.month,row]));
+  const portfolio=new Map(groupedPortfolioPeriods(filters,clients).map(row=>[row.month,row]));
   return {years:years.map(year=>{
     const points=Object.fromEntries(months.map(month=>{
       const b=periods.get(year).get(month);
@@ -1417,13 +1412,18 @@ function carteira(filters){
   inactive.sort((a,b)=>b.revenue12-a.revenue12);
   return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),inactive:inactive};
 }
-function portfolioGrouped(filters, links) {
-  const directory=new Map(links.map(([code,principal,name])=>[code,{principal,name}]));
-  const key=sale=>directory.get(sale.client)?.principal ?? sale.client;
-  const rows=filterSales(filters);
+function portfolioDirectory(links) {
+  return new Map(links.map(([code,principal,name])=>[code,{principal,name}]));
+}
+
+function portfolioClientKey(sale,directory) {
+  return directory.get(sale.client)?.principal ?? sale.client;
+}
+
+function portfolioGroups(sales,directory) {
   const clients=new Map();
-  for(const sale of filterSales({...filters,year:'Todos',month:'Todos'})){
-    const id=key(sale);
+  for(const sale of sales){
+    const id=portfolioClientKey(sale,directory);
     if(id==null)continue;
     if(!clients.has(id))clients.set(id,{history:[],name:''});
     const group=clients.get(id);
@@ -1431,10 +1431,34 @@ function portfolioGrouped(filters, links) {
     group.name ||= directory.get(sale.client)?.name || '';
   }
   for(const group of clients.values())group.history.sort((a,b)=>a.date-b.date);
+  return clients;
+}
+
+function groupedPortfolioPeriods(filters,clients) {
+  const periods=portfolioEvolutionPeriods(filters).map(({clients,...period})=>({...period,positive:0}));
+  for(const {history} of clients.values()){
+    let cursor=0,last=null;
+    for(const period of periods){
+      while(cursor<history.length&&history[cursor].date<=period.cutoff)last=history[cursor++];
+      if(!last)continue;
+      if(last.monthKey===period.month)period.positive++;
+      const days=portfolioInactivityDays(period.cutoff,last.date);
+      if(days<90)period.active++;
+      else if(days<180)period.short++;
+      else period.long++;
+    }
+  }
+  return periods.map(period=>({...period,cutoff:period.cutoff.toISOString()}));
+}
+
+function portfolioGrouped(filters, links) {
+  const directory=portfolioDirectory(links);
+  const rows=filterSales(filters);
+  const clients=portfolioGroups(filterSales({...filters,year:'Todos',month:'Todos'}),directory);
   const buyers=new Map();
   let newClients=0;
   for(const sale of rows){
-    const id=key(sale);
+    const id=portfolioClientKey(sale,directory);
     if(id==null)continue;
     if(!buyers.has(id)){
       buyers.set(id,new Set());
@@ -1449,10 +1473,10 @@ function portfolioGrouped(filters, links) {
   const month=filters.month&&filters.month!=='Todos'?Number(filters.month):ref.getUTCMonth()+1;
   const cutoff=new Date(Date.UTC(year,month-1,0,23,59,59,999));
   const from12=new Date(Date.UTC(cutoff.getUTCFullYear()-1,cutoff.getUTCMonth()+1,1));
-  const inactive=[], byRca=new Map(), evolution=portfolioEvolutionPeriods(filters).map(({clients,...period})=>({...period,positive:0}));
+  const inactive=[], byRca=new Map();
   let short=0,long=0;
   for(const [id,group] of clients){
-    let last=null,rev12=0,cursor=0;
+    let last=null,rev12=0;
     for(const sale of group.history){
       if(sale.date>cutoff)break;
       last=sale;
@@ -1470,22 +1494,13 @@ function portfolioGrouped(filters, links) {
           rca:owner,rcaName,last:last.date.toISOString(),days,revenue12:rev12,isShort,isLong:!isShort});
       }
     }
-    last=null;
-    for(const period of evolution){
-      while(cursor<group.history.length&&group.history[cursor].date<=period.cutoff)last=group.history[cursor++];
-      if(!last)continue;
-      if(last.monthKey===period.month)period.positive++;
-      const days=portfolioInactivityDays(period.cutoff,last.date);
-      if(days<90)period.active++;
-      else if(days<180)period.short++;
-      else period.long++;
-    }
+
   }
   const mix=buyers.size?[...buyers.values()].reduce((sum,products)=>sum+products.size,0)/buyers.size:0;
   return {kpis:{...k,clients:buyers.size,mix,ticket:buyers.size?k.revenue/buyers.size:null,newClients,short,long,cutoff:cutoff.toISOString()},
     byRca:[...byRca.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),
     inactive:inactive.sort((a,b)=>b.revenue12-a.revenue12),
-    evolution:evolution.map(p=>({...p,cutoff:p.cutoff.toISOString()}))};
+    evolution:groupedPortfolioPeriods(filters,clients)};
 }
 
 let portfolioLinks;
@@ -1681,7 +1696,7 @@ onmessage=async(e)=>{
   if(msg.type==='init'){CACHE_KEY='server-daily-all-orders-v2|'+String(msg.userScope||'');FORCE_REFRESH=!!msg.force;PREFER_FRESH=!!msg.preferFresh;return init();}
   if(msg.type==='historyStudy'){
     try{
-      postMessage({type:'historyStudy',requestId:msg.requestId,result:commercialHistoryStudy(msg.study)});
+      postMessage({type:'historyStudy',requestId:msg.requestId,result:commercialHistoryStudy(msg.study,await loadPortfolioLinks())});
     }catch(error){
       postMessage({type:'historyStudy',requestId:msg.requestId,error:error.message});
     }
@@ -1705,6 +1720,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@be2b9a64f6c9f8932cbc03d3d453b0cb71224813/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@296085d41668a09794af152b5031529307376f1d/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
