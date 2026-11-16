@@ -1306,7 +1306,7 @@ function portfolioInactivityDays(cutoff,last){
   return (day(cutoff)-day(last))/86400000;
 }
 
-function portfolioEvolution(filters,matchesClient=null){
+function portfolioEvolutionPeriods(filters){
   if(!SALES.length)return [];
   let first=Infinity, last=0;
   for(const sale of SALES){
@@ -1331,6 +1331,11 @@ function portfolioEvolution(filters,matchesClient=null){
     });
     cursor=next;
   }
+  return [...months].map(([month,period])=>({...period,month}));
+}
+
+function portfolioEvolution(filters,matchesClient=null){
+  const months=new Map(portfolioEvolutionPeriods(filters).map(period=>[period.month,period]));
   if(!months.size)return [];
   for(const sale of filterSales(filters,{ignoreMonth:true})){
     if(sale.client==null)continue;
@@ -1412,6 +1417,83 @@ function carteira(filters){
   inactive.sort((a,b)=>b.revenue12-a.revenue12);
   return {kpis:{...k,newClients,short,long,cutoff:cutoff.toISOString()},byRca:[...by.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),inactive:inactive};
 }
+function portfolioGrouped(filters, links) {
+  const directory=new Map(links.map(([code,principal,name])=>[code,{principal,name}]));
+  const key=sale=>directory.get(sale.client)?.principal ?? sale.client;
+  const rows=filterSales(filters);
+  const clients=new Map();
+  for(const sale of filterSales({...filters,year:'Todos',month:'Todos'})){
+    const id=key(sale);
+    if(id==null)continue;
+    if(!clients.has(id))clients.set(id,{history:[],name:''});
+    const group=clients.get(id);
+    group.history.push(sale);
+    group.name ||= directory.get(sale.client)?.name || '';
+  }
+  for(const group of clients.values())group.history.sort((a,b)=>a.date-b.date);
+  const buyers=new Map();
+  let newClients=0;
+  for(const sale of rows){
+    const id=key(sale);
+    if(id==null)continue;
+    if(!buyers.has(id)){
+      buyers.set(id,new Set());
+      const first=clients.get(id)?.history[0];
+      if(first&&(filters.year==='Todos'||!filters.year||first.year===Number(filters.year))&&
+        (filters.month==='Todos'||!filters.month||first.month===Number(filters.month)))newClients++;
+    }
+    if(sale.product!=null)buyers.get(id).add(sale.product);
+  }
+  const k=metrics(rows), ref=LATEST_DATE||new Date();
+  const year=filters.year&&filters.year!=='Todos'?Number(filters.year):ref.getUTCFullYear();
+  const month=filters.month&&filters.month!=='Todos'?Number(filters.month):ref.getUTCMonth()+1;
+  const cutoff=new Date(Date.UTC(year,month-1,0,23,59,59,999));
+  const from12=new Date(Date.UTC(cutoff.getUTCFullYear()-1,cutoff.getUTCMonth()+1,1));
+  const inactive=[], byRca=new Map(), evolution=portfolioEvolutionPeriods(filters).map(({clients,...period})=>({...period,positive:0}));
+  let short=0,long=0;
+  for(const [id,group] of clients){
+    let last=null,rev12=0,cursor=0;
+    for(const sale of group.history){
+      if(sale.date>cutoff)break;
+      last=sale;
+      if(sale.date>=from12)rev12+=sale.value;
+    }
+    if(last){
+      const days=portfolioInactivityDays(cutoff,last.date);
+      if(days>=90){
+        const isShort=days<180, band=isShort?'short':'long';
+        if(isShort)short++;else long++;
+        const owner=last.rca, rcaName=RCA_BY_CODE.get(owner)?.name||String(owner);
+        if(!byRca.has(owner))byRca.set(owner,{rca:owner,name:rcaName,short:0,long:0});
+        byRca.get(owner)[band]++;
+        inactive.push({client:id,name:group.name||CLIENTS.get(id)?.name||CLIENTS.get(last.client)?.name||String(id),
+          rca:owner,rcaName,last:last.date.toISOString(),days,revenue12:rev12,isShort,isLong:!isShort});
+      }
+    }
+    last=null;
+    for(const period of evolution){
+      while(cursor<group.history.length&&group.history[cursor].date<=period.cutoff)last=group.history[cursor++];
+      if(!last)continue;
+      if(last.monthKey===period.month)period.positive++;
+      const days=portfolioInactivityDays(period.cutoff,last.date);
+      if(days<90)period.active++;
+      else if(days<180)period.short++;
+      else period.long++;
+    }
+  }
+  const mix=buyers.size?[...buyers.values()].reduce((sum,products)=>sum+products.size,0)/buyers.size:0;
+  return {kpis:{...k,clients:buyers.size,mix,ticket:buyers.size?k.revenue/buyers.size:null,newClients,short,long,cutoff:cutoff.toISOString()},
+    byRca:[...byRca.values()].sort((a,b)=>(b.short+b.long)-(a.short+a.long)),
+    inactive:inactive.sort((a,b)=>b.revenue12-a.revenue12),
+    evolution:evolution.map(p=>({...p,cutoff:p.cutoff.toISOString()}))};
+}
+
+let portfolioLinks;
+async function loadPortfolioLinks(){
+  portfolioLinks ||= serverRequest('portfolioClients').then(data=>data.links).catch(error=>{portfolioLinks=null;throw error;});
+  return portfolioLinks;
+}
+
 function produtos(filters){
   const rows=filterSales(filters);
   const byProd=new Map();
@@ -1556,7 +1638,7 @@ function metasPage(filters){
 }
 
 
-function biComponents_(filters,widgets){
+function biComponents_(filters,widgets,groupedPortfolio=null){
  const sales=filterSales(filters),open=filterOpenOrders(filters),goals=filterMetas(filters),cache=new Map();let portfolio;
  const key=(row,dim)=>{if(dim==='none')return {key:'total',label:'Total'};if(dim==='month'){const k=row.monthKey||String(row.date?.getUTCFullYear()||row.year)+'-'+String(row.date?.getUTCMonth()+1||row.month).padStart(2,'0');return {key:k,label:k.slice(5,7)+'/'+k.slice(0,4)};}if(dim==='year'){const k=String(row.year||row.date?.getUTCFullYear());return {key:k,label:k};}if(dim==='rca'){return {key:String(row.rca),label:RCA_BY_CODE.get(row.rca)?.name||row.rcaName||String(row.rca)};}if(dim==='city')return {key:String(row.city||'Sem cidade')+'|'+String(row.uf||''),label:String(row.city||'Sem cidade')+' · '+String(row.uf||''),city:row.city,uf:row.uf};if(dim==='product')return {key:String(row.product),label:row.productName||String(row.product)};if(dim==='client')return {key:String(row.client),label:CLIENTS.get(row.client)?.name||String(row.client)};return {key:String(row[dim]||'Sem informação'),label:String(row[dim]||'Sem informação')};};
  const groups=(source,dim)=>{const map=new Map();source.forEach(r=>{const k=key(r,dim);if(!map.has(k.key))map.set(k.key,{...k,rows:[]});map.get(k.key).rows.push(r)});return map;};
@@ -1564,7 +1646,7 @@ function biComponents_(filters,widgets){
  const signature=JSON.stringify([f,metric,dim]);if(cache.has(signature))return cache.get(signature);
  const same=f===filters,ss=same?sales:filterSales(f),oo=same?open:filterOpenOrders(f),gg=same?goals:filterMetas(f);
  if(['inactiveShort','inactiveLong','newClients'].includes(metric)){
-  const p=same?(portfolio||(portfolio=carteira(f))):carteira(f);let out=[];
+  const p=same?(groupedPortfolio||portfolio||(portfolio=carteira(f))):carteira(f);let out=[];
   if(metric==='newClients'){const period=new Set(ss.map(s=>s.client));const m=new Map();period.forEach(c=>{const first=CLIENT_HISTORY.get(c)?.[0];if(!first)return;if(f.year!=='Todos'&&first.date.getFullYear()!==Number(f.year))return;if(f.month!=='Todos'&&first.date.getMonth()+1!==Number(f.month))return;const rca=CLIENTS.get(c)?.rca??first.rca;m.set(rca,(m.get(rca)||0)+1);});out=dim==='none'?[{key:'total',label:'Total',value:p.kpis.newClients}]:[...m].map(([rca,value])=>({key:String(rca),label:RCA_BY_CODE.get(rca)?.name||String(rca),value}));}
   else{const field=metric==='inactiveShort'?'short':'long';out=dim==='none'?[{key:'total',label:'Total',value:p.kpis[field]}]:p.byRca.map(r=>({key:String(r.rca),label:r.name,value:r[field]}));}cache.set(signature,out);return out;
  }
@@ -1611,18 +1693,18 @@ onmessage=async(e)=>{
       let payload;
       if(msg.page==='history')payload=macroHistoryCurrent();
       else if(msg.page==='overview')payload=overview(f);
-      else if(msg.page==='carteira')payload={...carteira(f),evolution:portfolioEvolution(f)};
+      else if(msg.page==='carteira')payload=portfolioGrouped(f,await loadPortfolioLinks());
       else if(msg.page==='produtos')payload=produtos(f);
       else if(msg.page==='cidades')payload=msg.coverageContext?{area:coverageArea(f,msg.coverageContext)}:cidades(f,msg.selectedCity);
       else if(msg.page==='metas')payload=metasPage(f);
       else if(msg.page==='pedidos')payload=ordersPage(f);
       else payload={};
-      payload.bi=biComponents_(f,msg.biWidgets||[]);
+      payload.bi=biComponents_(f,msg.biWidgets||[],msg.page==='carteira'?payload:null);
       postMessage({type:'result',requestId:msg.requestId,page:msg.page,payload});
     }catch(err){postMessage({type:'queryError',requestId:msg.requestId,message:err?.message||String(err)});}
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@102461c924609fdfd7b947644e701c7ce8de59d0/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@be2b9a64f6c9f8932cbc03d3d453b0cb71224813/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
