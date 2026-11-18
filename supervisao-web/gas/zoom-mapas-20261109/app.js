@@ -3994,9 +3994,11 @@ function formationOrderContext(orders) {
   return Object.fromEntries(orders.map(order=>[order.key,{version:order.version,montageId:order.montageId || ''}]));
 }
 
-function formationMoveDialog(operation,keys){const d=FEXP.data,create=operation==='CRIAR',transfer=['TRANSFERIR','REMOVER'].includes(operation),rename=operation==='RENOMEAR',targets=d.montages.filter(m=>m.status===CARGO_OPEN&&(!transfer||m.id!==FEXP.montage)),members=d.orders.filter(o=>keys.includes(o.key)),t=formationAggregate(members),current=d.montages.find(m=>m.id===FEXP.montage),titles={CRIAR:'Criar montagem',ADICIONAR:'Adicionar pedidos à montagem',TRANSFERIR:'Confirmar transferência',REMOVER:'Confirmar retirada dos pedidos',RENOMEAR:'Renomear montagem'},requestId=crypto.randomUUID().replace(/-/g,'');
- const dialog=formationDialog(titles[operation],`<form id="formationMoveForm">${create?`<label>Empresa de saída<select name="company" required>${cargoOptions(d.assemblyCompanies,'','Escolha Rebanho ou Nutriranch','code')}</select></label><p class="sac-help">O código é gerado ao salvar com a sigla da empresa, ano, mês e sequência mensal.</p>`:rename?`<label>Nome da montagem<input name="name" maxlength="100" value="${esc(current?.name||'')}" required></label>`:''}${['ADICIONAR','TRANSFERIR'].includes(operation)?`<label>Montagem de destino<select name="target" required><option value="">Selecione</option>${targets.map(m=>`<option value="${esc(m.id)}">${esc(m.name)} · ${logN(m.orders)} pedidos</option>`).join('')}</select></label>`:''}${rename?'':`<p><strong>${logN(keys.length)} pedidos</strong> · ${formationWeight(t.weight)} · ${cargoVolumes(t.volumes)} volumes</p><ul>${members.map(o=>`<li>Pedido ${esc(o.order)} · ${esc(o.client)}</li>`).join('')}</ul>`}${transfer?`<label class="formation-confirm"><input type="checkbox" name="confirm" required>Confirmo ${operation==='REMOVER'?'a retirada desses pedidos e o retorno à disponibilidade':'a transferência desses pedidos, retirando-os automaticamente da montagem anterior'}.</label>`:''}<p class="sac-help">A movimentação será registrada na planilha auxiliar da montagem.</p><p role="status" id="formationMoveStatus"></p><footer><button type="submit" class="btn primary">${create?'Criar montagem':transfer?'Confirmar operação':'Salvar'}</button></footer></form>`);
- const form=dialog.querySelector('form');form.onsubmit=e=>{e.preventDefault();formationSave({operation,keys,ordersAtConfirmation:formationOrderContext(members),company:form.elements.namedItem('company')?.value||'',name:form.elements.namedItem('name')?.value||'',target:rename?FEXP.montage:form.elements.namedItem('target')?.value||'',confirmed:transfer?form.elements.namedItem('confirm').checked:false,revision:d.revision,sourceVersion:d.sourceVersion},dialog,dialog.querySelector('#formationMoveStatus'),requestId);};}
+function formationMoveDialog(operation,keys){const d=FEXP.data,create=operation==='CRIAR',transfer=['TRANSFERIR','REMOVER'].includes(operation),rename=operation==='RENOMEAR',targets=d.montages.filter(m=>(m.status===CARGO_OPEN||operation==='ADICIONAR'&&m.status===CARGO_PENDING)&&(!transfer||m.id!==FEXP.montage)),members=d.orders.filter(o=>keys.includes(o.key)),t=formationAggregate(members),current=d.montages.find(m=>m.id===FEXP.montage),titles={CRIAR:'Criar montagem',ADICIONAR:'Adicionar pedidos à montagem',TRANSFERIR:'Confirmar transferência',REMOVER:'Confirmar retirada dos pedidos',RENOMEAR:'Renomear montagem'},requestId=crypto.randomUUID().replace(/-/g,'');
+ const dialog=formationDialog(titles[operation],`<form id="formationMoveForm">${create?`<label>Empresa de saída<select name="company" required>${cargoOptions(d.assemblyCompanies,'','Escolha Rebanho ou Nutriranch','code')}</select></label><p class="sac-help">O código é gerado ao salvar com a sigla da empresa, ano, mês e sequência mensal.</p>`:rename?`<label>Nome da montagem<input name="name" maxlength="100" value="${esc(current?.name||'')}" required></label>`:''}${['ADICIONAR','TRANSFERIR'].includes(operation)?`<label>Montagem de destino<select name="target" required><option value="">Selecione</option>${targets.map(m=>`<option value="${esc(m.id)}">${m.status===CARGO_PENDING?'🟠':'🟡'} ${esc(m.name)} · ${esc(m.status)} · ${orderCount(m.orders)}</option>`).join('')}</select></label><div id="formationDestinationStatus" aria-live="polite"></div>${targets.length?'':'<p class="sac-help">Nenhuma montagem disponível para esta operação.</p>'}`:''}${rename?'':`<p><strong>${logN(keys.length)} pedidos</strong> · ${formationWeight(t.weight)} · ${cargoVolumes(t.volumes)} volumes</p><ul>${members.map(o=>`<li>Pedido ${esc(o.order)} · ${esc(o.client)}</li>`).join('')}</ul>`}${transfer?`<label class="formation-confirm"><input type="checkbox" name="confirm" required>Confirmo ${operation==='REMOVER'?'a retirada desses pedidos e o retorno à disponibilidade':'a transferência desses pedidos, retirando-os automaticamente da montagem anterior'}.</label>`:''}<p class="sac-help">A movimentação será registrada na planilha auxiliar da montagem.</p><p role="status" id="formationMoveStatus"></p><footer><button type="submit" class="btn primary">${create?'Criar montagem':transfer?'Confirmar operação':'Salvar'}</button></footer></form>`);
+ const form=dialog.querySelector('form'),target=form.elements.namedItem('target');
+ if(target)target.onchange=()=>{const montage=targets.find(m=>m.id===target.value);dialog.querySelector('#formationDestinationStatus').innerHTML=montage?cargoStatus(montage)+(montage.status===CARGO_PENDING?'<p class="sac-help">A carga continuará aguardando roteirização. O peso será atualizado e os novos pedidos entrarão no roteiro para conferir a sequência e os endereços.</p>':''):'';};
+ form.onsubmit=e=>{e.preventDefault();formationSave({operation,keys,ordersAtConfirmation:formationOrderContext(members),company:form.elements.namedItem('company')?.value||'',name:form.elements.namedItem('name')?.value||'',target:rename?FEXP.montage:form.elements.namedItem('target')?.value||'',confirmed:transfer?form.elements.namedItem('confirm').checked:false,revision:d.revision,sourceVersion:d.sourceVersion},dialog,dialog.querySelector('#formationMoveStatus'),requestId);};}
 function formationLinkDialog(){const candidates=logRows(FEXP.data.mapRows).filter(r=>r.awaitingFormation&&!r.linked),chosen=new Set(),requestId=crypto.randomUUID().replace(/-/g,'');let lookup=null,selectedOrder=null;
  const dialog=formationDialog('Identificar pedido na base auxiliar',`<p>Selecione todos os registros de formação que pertencem ao mesmo pedido comercial. Registros repetidos não podem ser vinculados automaticamente.</p><div class="formation-link-sources table-wrap"><table class="log-table"><thead><tr><th>Selecionar</th><th>Cliente</th><th>Cidade</th><th>Grupo</th><th>Volumes</th><th>Peso</th></tr></thead><tbody>${candidates.slice(0,200).map(r=>`<tr><td><input type="checkbox" data-formation-source="${esc(r.sourceKey)}" ${r.ambiguous?'disabled':''}></td><td>${esc(r.client)}</td><td>${esc(r.cityLabel)}</td><td>${esc(r.product)}</td><td>${cargoVolumes(r.volumes)}</td><td>${formationWeight(r.weight)}</td></tr>`).join('')}</tbody></table></div><p>${candidates.length>200?'Exibindo 200 registros. Refine cidade, região ou período para localizar os demais.':''}</p><form id="formationLookupForm"><label>Número exato do pedido comercial<input name="orderNumber" inputmode="numeric" pattern="[0-9]{1,20}"></label><label>Ou pesquise pelo nome do cliente<input name="clientSearch" placeholder="Se vazio, usa o nome do registro selecionado"></label><p class="sac-help">A busca por cliente sugere até 30 pedidos próximos à implantação. Confira o ano e os produtos; nenhum vínculo é automático.</p><button class="btn" type="submit">Buscar pedido e conferir</button></form><section id="formationLinkReview"></section><p role="status" id="formationLinkStatus"></p>`);
  const status=dialog.querySelector('#formationLinkStatus'),review=dialog.querySelector('#formationLinkReview');dialog.querySelectorAll('[data-formation-source]').forEach(c=>c.onchange=()=>{if(c.checked){if(chosen.size>=50){c.checked=false;status.textContent='Selecione até 50 registros para o mesmo pedido.';return;}chosen.add(c.dataset.formationSource);}else chosen.delete(c.dataset.formationSource);lookup=null;selectedOrder=null;review.innerHTML='';});
@@ -4405,7 +4407,7 @@ function cargoRouteDraft(m) {
   const saved = m.route;
   const readOnly = !canLog('formation','edit') || (m.status===CARGO_FINAL && CARGO_ROUTE.editing!==m.id);
   if (CARGO_ROUTE.draft?.id === m.id && CARGO_ROUTE.draft.routingAt === m.routingAt
-    && CARGO_ROUTE.draft.baseAt === (saved?.at || '') && CARGO_ROUTE.draft.readOnly === readOnly) return CARGO_ROUTE.draft;
+    && CARGO_ROUTE.draft.compositionAt === (m.compositionAt || '') && CARGO_ROUTE.draft.baseAt === (saved?.at || '') && CARGO_ROUTE.draft.readOnly === readOnly) return CARGO_ROUTE.draft;
   const units = cargoRouteUnits(m);
   const suggested = units.find(unit => unit.id === settings.defaultUnitId) || (m.company && units.length === 1 ? units[0] : null);
   const orders = FEXP.data.orders.filter(o => o.montageId === m.id);
@@ -4414,6 +4416,7 @@ function cargoRouteDraft(m) {
   CARGO_ROUTE.draft = {
     id:m.id,
     routingAt:m.routingAt,
+    compositionAt:m.compositionAt || '',
     unitSnapshot:saved?.unit||suggested||null,
     readOnly,
     baseAt:saved?.at || '',
@@ -5483,24 +5486,44 @@ function cargoHistory(d) {
 }
 
 function cargoPriorityCities(orders, features) {
-  const states = new Map();
+  const places = new Map();
   for (const feature of features) {
     const {NM_MUN:city,SIGLA_UF:uf} = feature.properties;
-    const name = aliasCity(city);
-    if (!states.has(name)) states.set(name,new Set());
-    states.get(name).add(normalize(uf));
+    const name = aliasCity(city), state = normalize(uf), key = name+'|'+state;
+    places.set(key,{key,city,uf:state,name,matched:true});
   }
+  const all = [...places.values()], cache = new Map();
   const location = row => {
-    const city = aliasCity(row.city);
-    const matches = states.get(city);
-    const uf = normalize(row.uf) || (matches?.size===1 ? [...matches][0] : '');
-    return {key:city+'|'+uf,uf};
+    const uf = normalize(row.uf), raw = aliasCity(row.city);
+    // Correção conhecida na origem; não aplicar aproximação a nomes semelhantes.
+    const city = uf==='CE' && raw==='QUIRERAMOBIM' ? 'QUIXERAMOBIM' : raw;
+    const address = normalize(row.deliveryAddress || ''), cacheKey = city+'|'+uf+'|'+address;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    const eligible = all.filter(place=>!uf || place.uf===uf);
+    let matches = eligible.filter(place=>place.name===city);
+    // MUNICENT chega cortado em 14 caracteres. Só completar prefixos inequívocos na UF.
+    if (!matches.length && city.length>=14) matches = eligible.filter(place=>place.name.startsWith(city));
+    if (matches.length>1 && address) {
+      const full = matches.filter(place=>address.includes(place.name));
+      if (full.length===1) matches=full;
+      else {
+        // CEPs municipais conferidos: prefeituras de Nazaré e dos Remédios (PI).
+        const cep = address.match(/\bCEP\s*[:.-]?\s*(\d{5})[- .]?(\d{3})\b/);
+        const municipalCep = {64288000:'NOSSA SENHORA DE NAZARE|PI',64140000:'NOSSA SENHORA DOS REMEDIOS|PI'};
+        const target = cep && municipalCep[cep[1]+cep[2]];
+        const byCep = matches.filter(place=>place.key===target);
+        if (byCep.length===1) matches=byCep;
+      }
+    }
+    const place = matches.length===1 ? matches[0] : {key:city+'|'+uf,uf,city:row.city,matched:false};
+    cache.set(cacheKey,place);
+    return place;
   };
   const cities = new Map();
   for (const order of orders) {
     if (!order.city) continue;
     const place = location(order);
-    if (!cities.has(place.key)) cities.set(place.key,{...place,city:order.city,orderCount:0,weightKg:0,knownWeights:0});
+    if (!cities.has(place.key)) cities.set(place.key,{...place,orderCount:0,weightKg:0,knownWeights:0});
     const totals = cities.get(place.key);
     totals.orderCount++;
     if (!order.weightIncomplete && Number.isFinite(order.weight)) {
@@ -5583,7 +5606,7 @@ function cargoPriorityBind(panel, orders, view) {
   let model = cargoPriorityCities(orders,LOG.geo?.features || []);
   const syncCity = previousCity => {
     if (!FEXP.priorityCity || model.ranked.some(city=>city.key===FEXP.priorityCity)) return;
-    const resolved = previousCity && !previousCity.uf ? model.location(previousCity).key : '';
+    const resolved = previousCity ? model.location(previousCity).key : '';
     FEXP.priorityCity = model.ranked.some(city=>city.key===resolved) ? resolved : '';
     FEXP.page = 0;
   };
@@ -5612,7 +5635,7 @@ function cargoPriorityBind(panel, orders, view) {
   };
   const renderCities = () => {
     list.innerHTML = model.ranked.map(city => `<button type="button" data-cargo-city="${esc(city.key)}" aria-pressed="${city.key===FEXP.priorityCity}">
-      <span><strong>${esc(city.city)}${city.uf?' · '+esc(city.uf):''}</strong></span>
+      <span><strong>${esc(city.city)}${city.uf?' · '+esc(city.uf):''}</strong>${city.matched?'':'<small>Localização a conferir</small>'}</span>
       <span><strong>${cargoPriorityWeight(city)}</strong><small>${orderCount(city.orderCount)}</small></span></button>`).join('') || '<p>Nenhuma cidade no recorte.</p>';
     clear.disabled = !FEXP.priorityCity;
   };
@@ -6300,3 +6323,4 @@ async function openLogMontage(id) {
     cargoRouteOpen(id);
   }
 }
+
