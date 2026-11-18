@@ -2940,7 +2940,7 @@ h+=logMapMarkup();return h+transportQueue()+logTable('Acompanhamento das transpo
 
 function logMapMetric(a){const active=logPlanningRows(a);return LOG.metric==='late'?a.filter(r=>r.late||r.overdue).length:LOG.metric==='count'?active.length:LOG.metric==='wait'?logAvg(active,'wait'):LOG.metric==='occurrence'?a.filter(r=>r.occurrence).length:logSum(active,'weight');}
 function logMapMarkup(){const formation=LOG.kind!=='transport',active=logPlanningRows(LOG.tableRows||[]);return `<section class="panel log-map-panel"><div class="log-table-heading"><div><h3>${formation?'Prioridade para formação de carga':'Mapa de transportadoras'}</h3><p>${formation?'Peso aguardando formação por município · somente status em branco. Clique para filtrar os detalhes.':'Aproxime e clique em um município para filtrar toda a visão.'}</p></div><select id="logMapMetric" aria-label="Indicador do mapa">${biOptions({weight:formation?'Peso aguardando formação':'Peso em aberto',count:formation?'Registros aguardando formação':'Registros em aberto',...(formation?{wait:'Espera média'}:{late:'Atrasos'}),occurrence:'Ocorrências'},LOG.metric)}</select><button class="btn" id="logMapBack">Ver Nordeste</button></div><div id="logMapTotal" class="log-map-total" role="status"></div><div class="log-map-scale"><span>Menor peso</span><i></i><span>Maior peso</span></div><div class="log-map-layout"><div id="logMap" class="log-map"><div class="empty">Carregando malha municipal…</div></div><div><h4 id="logMapLegend">${formation?'Cidades prioritárias':'Peso em aberto por município'}</h4><div id="logMapRanking" class="log-map-ranking"></div></div></div><p class="log-map-note" id="logMapNote"></p></section>`;}
-function logMapLabels(map,layer,locs,metric,fmt,detail){
+function logMapLabels(map,layer,locs,metric,fmt,detail,includeEmpty=false){
  const labels=L.layerGroup().addTo(map);
  const draw=()=>{
   if(state.map!==map)return;
@@ -2949,25 +2949,28 @@ function logMapLabels(map,layer,locs,metric,fmt,detail){
   layer.eachLayer(polygon=>{
    const f=polygon.feature, name=f.properties.NM_MUN;
    const rows=locs.get(aliasCity(name)+'|'+f.properties.SIGLA_UF)||[];
-   const value=metric(rows);
-   if(detail?!rows.length:!(value>0))return;
+   const value=metric(rows), hasData=detail?rows.length>0:value>0;
+   if(!hasData&&!includeEmpty)return;
    const center=polygon.getBounds().getCenter();
-   if(map.getBounds().contains(center))candidates.push({center,name,value,rows});
+   if(map.getBounds().contains(center))candidates.push({center,name,value,rows,hasData});
   });
-  candidates.sort((a,b)=>b.value-a.value);
-  const occupied=[], limit=map.getZoom()<7?18:map.getZoom()<9?45:120;
-  const height=detail?48:38;
+  candidates.sort((a,b)=>Number(b.hasData)-Number(a.hasData)||b.value-a.value||a.name.localeCompare(b.name,'pt-BR'));
+  const occupied=[], zoom=map.getZoom(), limit=zoom<7?18:zoom<9?45:120;
+  const placeLimit=zoom<7?30:zoom<9?80:200;
+  let dataCount=0,placeCount=0;
   for(const c of candidates){
-   if(occupied.length>=limit)break;
+   if(c.hasData?dataCount>=limit:placeCount>=placeLimit)continue;
    const p=map.latLngToContainerPoint(c.center);
-   const width=Math.min(170,Math.max(detail?105:82,c.name.length*5.8));
+   const width=c.hasData?Math.min(170,Math.max(detail?105:82,c.name.length*5.8)):Math.min(180,Math.max(58,c.name.length*5.6));
+   const height=c.hasData?(detail?48:38):Math.ceil(c.name.length*5.6/width)*14+4;
    const rect={left:p.x-width/2,right:p.x+width/2,top:p.y-height/2,bottom:p.y+height/2};
    if(occupied.some(r=>!(rect.right+6<r.left||rect.left-6>r.right||rect.bottom+4<r.top||rect.top-4>r.bottom)))continue;
    occupied.push(rect);
-   const value=fmt(c.value,c.rows);
-   const extra=detail?`<span>${esc(detail(c.rows))}</span>`:'';
-   L.marker(c.center,{interactive:false,keyboard:false,icon:L.divIcon({className:'log-map-weight-label',
-    html:`<span>${esc(c.name)}</span><strong>${esc(value)}</strong>${extra}`,
+   if(c.hasData)dataCount++;else placeCount++;
+   const value=c.hasData?fmt(c.value,c.rows):'';
+   const extra=c.hasData&&detail?`<span>${esc(detail(c.rows))}</span>`:'';
+   L.marker(c.center,{interactive:false,keyboard:false,icon:L.divIcon({className:c.hasData?'log-map-weight-label':'log-map-place-label',
+    html:c.hasData?`<span>${esc(c.name)}</span><strong>${esc(value)}</strong>${extra}`:`<span>${esc(c.name)}</span>`,
     iconSize:[width,height],iconAnchor:[width/2,height/2]})}).addTo(labels);
   }
  };
@@ -5544,7 +5547,7 @@ function cargoPriorityWeight(city) {
 function cargoPriorityMarkup() {
   return `<section id="cargoPriority" class="cargo-priority">
     <div class="cargo-section-heading"><div><h3>Prioridade para montagem</h3>
-      <p>Clique em uma cidade no mapa ou na lista para filtrar os pedidos.</p></div></div>
+      <p>Clique nas cidades com pedidos para filtrar. Os demais nomes servem de referência; aproxime o mapa para ver mais cidades.</p></div></div>
     <div class="cargo-priority-layout">
       <div><div id="cargoPriorityMap" class="log-map" aria-label="Mapa de prioridade por cidade"><p>Carregando malha municipal…</p></div>
         <div class="log-map-scale"><span>Menor peso</span><i></i><span>Maior peso</span></div></div>
@@ -5580,7 +5583,10 @@ function cargoPriorityDraw(box, features, cities, pick, view) {
     },
     onEachFeature:(feature, polygon) => {
       const key = keyOf(feature), city = locs.get(key)?.[0];
-      if (!city) return;
+      if (!city) {
+        polygon.bindTooltip('<b>'+esc(feature.properties.NM_MUN)+' · '+esc(feature.properties.SIGLA_UF)+'</b><br>Sem pedidos disponíveis neste recorte.',{sticky:true});
+        return;
+      }
       polygon.bindTooltip('<b>'+esc(city.city)+' · '+esc(city.uf)+'</b><br>'+
         cargoPriorityWeight(city)+'<br>'+orderCount(city.orderCount)+(city.orderCount===1?' disponível':' disponíveis'),{sticky:true});
       polygon.on('click',()=>pick(key));
@@ -5590,7 +5596,7 @@ function cargoPriorityDraw(box, features, cities, pick, view) {
   if (view) map.setView(view.center,view.zoom);
   else if (focus.getBounds().isValid()) map.fitBounds(focus.getBounds(),{padding:[18,18],maxZoom:8});
   else map.setView([-7.5,-40],5);
-  logMapLabels(map,layer,locs,metric,(_,rows)=>cargoPriorityWeight(rows[0]),rows=>orderCount(rows[0].orderCount));
+  logMapLabels(map,layer,locs,metric,(_,rows)=>cargoPriorityWeight(rows[0]),rows=>orderCount(rows[0].orderCount),true);
   requestAnimationFrame(()=>{if(box.isConnected && state.map===map)map.invalidateSize();});
   return () => layer.setStyle(layer.options.style);
 }
