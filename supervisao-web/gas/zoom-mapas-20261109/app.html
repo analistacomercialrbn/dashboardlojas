@@ -10,6 +10,60 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@0d7b4bb1e0acaa3a66c81407489ac620f1fb5cdb/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
+
+/* Resumo compacto e ações agrupadas das cargas. */
+.cargo-queue-card-v3{padding:20px!important}
+.cargo-queue-summary{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap}
+.cargo-queue-identity{display:flex;align-items:center;gap:12px;min-width:0}
+.cargo-queue-title{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.cargo-queue-title h3{margin:0!important;font-size:19px;color:#783e1d}
+.cargo-queue-count{margin:6px 0 0!important;font-size:13px;color:#736356}
+.cargo-queue-select{display:grid;place-items:center;flex:none;padding:5px;cursor:pointer}
+.cargo-queue-select input{width:19px;height:19px;margin:0;accent-color:#a9511e}
+.cargo-queue-primary{display:flex;gap:8px;flex-wrap:wrap}
+.cargo-queue-primary .btn,.cargo-queue-manage .btn{min-height:40px;padding:9px 13px;font-size:13px;line-height:1.35}
+.cargo-queue-primary .btn{display:inline-flex;gap:8px;align-items:center;justify-content:center}
+.cargo-queue-primary svg,.cargo-queue-manage summary>svg{width:18px;height:18px;flex:none}
+.cargo-queue-facts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;margin:18px 0 14px;padding:14px 16px;background:#fcf8f3;border:1px solid #f0e5d9;border-radius:10px}
+.cargo-queue-facts>div{min-width:0}
+.cargo-queue-facts dt{font-size:11px;font-weight:600;color:#8a715f;margin:0 0 5px}
+.cargo-queue-facts dd{font-size:13px;font-weight:650;color:#263544;margin:0;overflow-wrap:anywhere}
+.cargo-queue-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cargo-queue-stamp{font-size:11px;color:#87766a}
+.cargo-queue-route-badge{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px}
+.cargo-queue-route-badge .cargo-route-badge{font-size:11px}
+.cargo-queue-manage{margin-top:14px;border-top:1px solid #eee3d7}
+.cargo-queue-manage>summary{list-style:none;display:flex;align-items:center;gap:9px;padding:13px 0 0;cursor:pointer;color:#7e4826;font-size:13px;font-weight:700}
+.cargo-queue-manage>summary::-webkit-details-marker{display:none}
+.cargo-queue-manage>summary:hover{color:#a9511e}
+.cargo-queue-manage>summary:focus-visible{outline:2px solid #a9511e;outline-offset:4px;border-radius:3px}
+.cargo-queue-manage-hint{font-size:11px;font-weight:400;color:#938171}
+.cargo-queue-chevron{margin-left:auto;font-size:20px;line-height:1;transition:transform .15s}
+.cargo-queue-manage[open] .cargo-queue-chevron{transform:rotate(180deg)}
+.cargo-queue-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:16px 0}
+.cargo-queue-groups section{min-width:0;border:1px solid #ebdfd2;background:#fffdfa;border-radius:9px;padding:14px}
+.cargo-queue-groups h4{font-size:13px;color:#5c3b25;margin:0 0 5px}
+.cargo-queue-groups p{font-size:11px;line-height:1.5;color:#8a7564;margin:0 0 12px}
+.cargo-queue-groups .btn{display:block;width:100%;text-align:left;background:#fff;margin-top:7px}
+.cargo-queue-manage-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid #eee3d7;padding-top:13px;margin-top:12px}
+.cargo-queue-manage-footer>small{font-size:11px;color:#938171;overflow-wrap:anywhere}
+.cargo-queue-reopen{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.cargo-queue-reopen>span{font-size:11px;color:#8a7564}
+.cargo-queue-reopen .btn{color:#944039;border-color:#dbc4bf;background:#fff}
+@media(max-width:1050px){.cargo-queue-facts{grid-template-columns:repeat(3,minmax(0,1fr))}.cargo-queue-summary{align-items:flex-start}.cargo-queue-groups{gap:10px}}
+@media(max-width:650px){
+ .cargo-queue-card-v3{padding:15px!important}
+ .cargo-queue-summary,.cargo-queue-identity{gap:10px}
+ .cargo-queue-title{gap:10px}.cargo-queue-title h3{font-size:17px}
+ .cargo-queue-primary{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+ .cargo-queue-primary .btn{width:100%;font-size:12px}
+ .cargo-queue-facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:12px;margin:14px 0 12px}
+ .cargo-queue-facts>div:last-child:nth-child(odd){grid-column:1/-1}
+ .cargo-queue-manage-hint{display:none}
+ .cargo-queue-groups{grid-template-columns:minmax(0,1fr)}
+ .cargo-queue-reopen{width:100%;justify-content:space-between}
+}
+
 .log-map-place-label{display:flex;align-items:center;justify-content:center;text-align:center;background:transparent;border:0;box-shadow:none;color:#715e50;font:500 11px/14px Arial,sans-serif;white-space:normal;overflow-wrap:anywhere;text-shadow:-1px -1px 0 #fffcf7,1px -1px 0 #fffcf7,-1px 1px 0 #fffcf7,1px 1px 0 #fffcf7,0 0 3px #fffcf7;pointer-events:none}
 
 .log-status-labels{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px;padding:14px 4px 4px}.log-status-labels button{display:grid;grid-template-columns:10px 1fr;gap:5px 9px;align-items:center;text-align:left;border:1px solid #f0dfd0;border-radius:9px;background:#fffaf5;color:#724a2e;padding:10px;min-width:0;cursor:pointer}.log-status-labels i{width:9px;height:9px;border-radius:50%}.log-status-labels span{overflow-wrap:anywhere;font-size:12px}.log-status-labels strong{grid-column:2;font-size:13px}.log-map-weight-label{background:rgba(255,252,247,.95);color:#6f3518;border:1px solid #c98b57;border-radius:6px;box-shadow:0 1px 5px #6f351826;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;line-height:1.2;white-space:nowrap;pointer-events:none}.log-map-weight-label span{max-width:160px;overflow:hidden;text-overflow:ellipsis}.log-map-weight-label strong{font-size:12px;color:#873c10}.log-map-total{padding:10px 0;font-size:15px;font-weight:700;color:#994b1c}.log-map-scale{display:flex;align-items:center;gap:10px;font-size:11px;color:#8c6040;padding-bottom:12px}.log-map-scale i{height:9px;width:160px;border-radius:8px;background:linear-gradient(90deg,#ffebd3,#ae450f)}.log-overview-scope{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:15px}.log-overview-scope label{font-weight:700;color:#874d29}.log-overview-scope select{min-height:38px;padding:8px;border:1px solid #dfbd9e;border-radius:8px;background:#fff;color:#7b4826}.log-overview-scope small{color:#8d7768}.log-identity-note{font-size:12px;line-height:1.6;color:#836d5c;padding:16px}.log-identity-note summary{cursor:pointer;font-weight:700;color:#9a5427}.log-overview-links{padding:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}.log-overview-links h3{width:100%;margin:0 0 6px}.logistics-content .kpi-label{overflow-wrap:anywhere}.logistics-content .log-kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}@media(max-width:600px){.log-status-labels{grid-template-columns:1fr}.log-map-weight-label{font-size:9px}.log-map-weight-label strong{font-size:11px}.log-overview-scope select{width:100%}}
@@ -1722,6 +1776,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@533745e3902db1715b93feee8c56db1b6e24bf6b/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ddf1dce30a7bb142c06deb413907f29cd5b6e984/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
