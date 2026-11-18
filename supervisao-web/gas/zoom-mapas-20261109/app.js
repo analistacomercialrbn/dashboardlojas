@@ -5325,22 +5325,45 @@ function cargoRouteQueue(d, finished) {
       const expanded=FEXP.routeExpanded===m.id;
       const counts=stopCounts.get(m.id);
       const missing=m.route?.stops?cargoRouteMissing(m.route.stops):counts?.total===m.orders?counts.missing:null;
-      return `<article class="panel cargo-queue-card"><header class="cargo-detail-header"><div>${cargoStatus(m)}
-        <h3>${esc(m.name)}</h3><p>${m.orders} pedidos · ${esc(m.driver||'Motorista a definir')} · ${esc(m.vehicle?.plate||m.vehicleId||'Placa a definir')}</p>
-        <small>${cargoDate(m[stamp])} · ${esc(finished?m.finalizedBy:m.routingBy)}</small>
-        ${finished?`<p>Data geral da carga · <strong>${m.deliveryDate?transportDate(m.deliveryDate):'Não informada'}</strong></p>`:''}
-        ${finished&&m.schedule?`<p>Saída: <strong>${transportDate(m.schedule.departure)}</strong> · Previsão de finalização: <strong>${transportDate(m.schedule.expectedEnd)}</strong></p>`:''}
-        ${editDelivery?`<label class="cargo-confirm"><input type="checkbox" data-cargo-delivery-select="${esc(m.id)}">Selecionar ${esc(m.name)}</label>`:''}
-        ${expanded?'':`<div class="cargo-route-state">${cargoRouteBadge(m)}
-          ${missing>0?`<small class="cargo-route-missing-label">${cargoRouteMissingLabel(missing)}</small>`:''}</div>`}</div>
-        <div class="cargo-actions">${expanded?'':`<button type="button" class="btn primary" data-cargo-route="${esc(m.id)}">${finished||!canLog('formation','edit')?'Consultar roteiro':'Roteirizar'}</button>`}
-        ${editDelivery&&m.route?.confirmed&&(!expanded||CARGO_ROUTE.editing!==m.id)?`<button type="button" class="btn" data-cargo-route-edit="${esc(m.id)}">Editar ordem e endereços</button>`:''}
-        ${editDelivery&&m.route?.confirmed?`<button type="button" class="btn" data-cargo-schedule="${esc(m.id)}">${m.schedule?'Editar programação':'Programar carga'}</button>`:''}
-        ${finished?`<button type="button" class="btn" data-cargo-order-dates="${esc(m.id)}">Datas por pedido</button>`:''}
-        ${editDelivery?`<button type="button" class="btn" data-cargo-delivery-edit="${esc(m.id)}">Atualizar data de entrega</button>`:''}
-        ${finished&&m.route?.confirmed?`<button type="button" class="btn" data-cargo-delivery-order="${esc(m.id)}">Emitir Ordem de Entregas</button>`:''}
-        ${canLog('formation','edit')?`<button type="button" class="btn" data-cargo-reopen="${esc(m.id)}">Reabrir montagem</button>`:''}</div></header>
-        ${expanded?cargoRouteMarkup(m):''}</article>`;
+      const editable=canLog('formation','edit'), confirmed=Boolean(m.route?.confirmed);
+      const routeEdit=editDelivery&&confirmed&&(!expanded||CARGO_ROUTE.editing!==m.id);
+      const hasManage=finished||editable;
+      const field=(label,value)=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`;
+      return `<article class="panel cargo-queue-card cargo-queue-card-v3">
+        <header class="cargo-queue-summary">
+          <div class="cargo-queue-identity">
+            ${editDelivery?`<label class="cargo-queue-select"><input type="checkbox" data-cargo-delivery-select="${esc(m.id)}" aria-label="Selecionar ${esc(m.name)} para alteração em lote"></label>`:''}
+            <div><div class="cargo-queue-title"><h3>${esc(m.name)}</h3>${cargoStatus(m)}</div>
+              <p class="cargo-queue-count">${orderCount(m.orders)}${m.weight==null?'':' · '+logN(m.weight/1000,3)+' t'}</p></div>
+          </div>
+          <div class="cargo-queue-primary">
+            ${expanded?'':`<button type="button" class="btn primary" data-cargo-route="${esc(m.id)}">${moduleIcon('M3 6h6l6 12h6M6 3v6M18 15v6')}${finished||!editable?'Consultar roteiro':'Roteirizar carga'}</button>`}
+            ${finished&&confirmed?`<button type="button" class="btn" data-cargo-delivery-order="${esc(m.id)}">${moduleIcon('M6 9V3h12v6M6 17H3V9h18v8h-3M6 14h12v7H6z') }Emitir ordem de entregas</button>`:''}
+          </div>
+        </header>
+        <dl class="cargo-queue-facts">
+          ${field('Motorista',m.driver||'A definir')}
+          ${field('Veículo',m.vehicle?.plate||m.vehicleId||'A definir')}
+          ${finished?field('Saída',m.schedule?.departure?transportDate(m.schedule.departure):'Não programada')+field('Previsão de finalização',m.schedule?.expectedEnd?transportDate(m.schedule.expectedEnd):'Não programada')+field('Entrega geral da carga',m.deliveryDate?transportDate(m.deliveryDate):'Não informada'):''}
+        </dl>
+        <div class="cargo-queue-bottom">
+          <span class="cargo-queue-stamp">${finished?'Finalizada':'Enviada para roteirização'} em ${cargoDate(m[stamp])}</span>
+          ${expanded?'':`<span class="cargo-queue-route-badge">${cargoRouteBadge(m)}${missing>0?`<small class="cargo-route-missing-label">${cargoRouteMissingLabel(missing)}</small>`:''}</span>`}
+        </div>
+        ${hasManage?`<details class="cargo-queue-manage"><summary>${moduleIcon('M4 7h16M4 17h16M9 4v6M15 14v6')}<span>${editable?'Gerenciar carga':'Mais informações'}</span><span class="cargo-queue-manage-hint">${finished?'Roteiro, programação e entregas':'Ajustes da montagem'}</span><span class="cargo-queue-chevron" aria-hidden="true">⌄</span></summary>
+          <div class="cargo-queue-manage-body">
+            <div class="cargo-queue-groups">
+              ${routeEdit?`<section><h4>Roteiro</h4><p>Sequência das paradas e endereços.</p><button type="button" class="btn" data-cargo-route-edit="${esc(m.id)}">Editar ordem e endereços</button></section>`:''}
+              ${editDelivery&&confirmed?`<section><h4>Programação</h4><p>Saída, previsão e agenda do motorista.</p><button type="button" class="btn" data-cargo-schedule="${esc(m.id)}">${m.schedule?'Editar programação':'Programar carga'}</button></section>`:''}
+              ${finished?`<section><h4>Entregas</h4><p>Datas individuais ou uma data geral.</p><button type="button" class="btn" data-cargo-order-dates="${esc(m.id)}">${editable?'Preencher datas por pedido':'Consultar datas por pedido'}</button>${editDelivery?`<button type="button" class="btn" data-cargo-delivery-edit="${esc(m.id)}">Atualizar data geral da carga</button>`:''}</section>`:''}
+            </div>
+            <footer class="cargo-queue-manage-footer"><small>Registrado por ${esc(finished?m.finalizedBy:m.routingBy)}</small>
+              ${editable?`<div class="cargo-queue-reopen"><span>Para alterar os pedidos ou o veículo, volte à montagem.</span><button type="button" class="btn" data-cargo-reopen="${esc(m.id)}">Reabrir montagem</button></div>`:''}
+            </footer>
+          </div>
+        </details>`:''}
+        ${expanded?cargoRouteMarkup(m):''}
+      </article>`;
     }).join('')||'<div class="panel cargo-empty">Nenhuma montagem neste recorte.</div>'}
   </section>`;
 }
