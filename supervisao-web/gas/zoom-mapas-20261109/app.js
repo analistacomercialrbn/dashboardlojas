@@ -3,6 +3,7 @@ const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 
 const PAGE_META = {
   history:['Histórico comercial','Evolução e comparação de indicadores'],
+  teams:['Visão equipes','Ranking por indicador · resultados reais, metas e ritmo de fechamento'],
   overview: ['Visão Geral','Resumo executivo • faturamento, meta, ritmo e pontos de atenção'],
   carteira: ['Carteira','Saúde da carteira • novos, inativos, recuperação e oportunidades'],
   produtos: ['Mix e Produtos','Produtos • mix, concentração, desempenho e venda cruzada'],
@@ -581,6 +582,7 @@ function queryPage(){
   updateHeader();
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
+  if(state.page==='teams'){queryTeams(requestId);return;}
   state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
@@ -651,6 +653,128 @@ function renderPage(page,payload){
   if(page!=='history'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
   biRender(page,payload);
 }
+
+const TEAM_INDICATORS={
+  revenue:{label:'Faturamento',unit:'faturados',explanation:'Ordem pela projeção de atingimento da meta. O realizado inclui somente vendas faturadas.'},
+  clients:{label:'Positivações',unit:'clientes principais',explanation:'Clientes principais com compra faturada no mês, dentro do recorte de cada vendedor.'},
+  mix:{label:'Mix de produtos',unit:'produtos por cliente',explanation:'Média de produtos distintos comprados por cliente principal no mês.'},
+  margin:{label:'Margem bruta',unit:'margem sobre faturamento',explanation:'Lucro bruto total ÷ faturamento. Se faltar lucro em alguma venda, a margem fica indisponível.'},
+  ticket:{label:'Ticket médio',unit:'por cliente principal',explanation:'Faturamento do mês ÷ clientes principais com compra. Soma as compras dos cadastros vinculados dentro do RCA.'}
+};
+const TEAMS={indicator:'revenue',search:'',payload:null,key:'',loadedAt:0,paused:false};
+
+function teamsValue(value,indicator){
+  if(value==null||!Number.isFinite(Number(value)))return '—';
+  if(indicator==='revenue'||indicator==='ticket')return money(value);
+  if(indicator==='margin')return pct(value);
+  return indicator==='clients'?integer(value):dec(value);
+}
+
+function teamsRanking(rows,indicator){
+  const score=row=>indicator==='revenue'?row.projectedAttainment:row[indicator];
+  const list=rows.map(row=>({...row,score:score(row)})).sort((a,b)=>{
+    if(a.score==null&&b.score!=null)return 1;
+    if(a.score!=null&&b.score==null)return -1;
+    return (b.score??0)-(a.score??0)||b.revenue-a.revenue||a.name.localeCompare(b.name,'pt-BR');
+  });
+  const valid=list.filter(row=>row.score!=null);
+  let lastScore=null,rank=0;
+  return list.map((row,index)=>{
+    if(row.score!=null&&row.score!==lastScore){rank=index+1;lastScore=row.score;}
+    const goal=row.goals?.[indicator];
+    const ratio=indicator==='revenue'?row.projectedAttainment:goal&&row[indicator]!=null?row[indicator]/goal*100:null;
+    let tone='muted',status=indicator==='revenue'?'Sem meta cadastrada':'Sem faturamento';
+    if(row.score!=null){
+      if(ratio!=null){tone=ratio>=100?'green':ratio>=90?'yellow':'red';status=tone==='green'?'Meta alcançada':tone==='yellow'?'Perto da meta':'Abaixo da meta';
+        if(indicator==='revenue')status=tone==='green'?'Projeção ≥ 100%':tone==='yellow'?'Projeção de 90% a 99,9%':'Projeção < 90%';
+      }else{
+        const position=valid.length>1?(rank-1)/(valid.length-1):0;
+        tone=position<1/3?'green':position<2/3?'yellow':'red';
+        status=tone==='green'?'Faixa superior':tone==='yellow'?'Faixa intermediária':'Faixa inferior';
+        if(indicator==='clients'&&row.clients===0){tone='red';status='Sem positivações';}
+      }
+    }else if(indicator==='revenue'&&row.goals?.revenue)status='Projeção indisponível';
+    if(indicator==='margin'&&row.margin==null&&row.marginMissingLines>0)status='Lucro incompleto';
+    return {...row,rank:row.score==null?null:rank,tone,status,ratio};
+  });
+}
+
+function teamsTabs(payload){
+  return `<nav class="teams-indicator-tabs" aria-label="Indicador do ranking">${Object.entries(TEAM_INDICATORS).filter(([key])=>key!=='margin'||payload?.canMargin!==false).map(([key,config])=>`<button type="button" data-teams-indicator="${key}" aria-pressed="${TEAMS.indicator===key}">${esc(config.label)}</button>`).join('')}</nav>`;
+}
+
+async function queryTeams(requestId){
+  const current=()=>state.page==='teams'&&state.requestId===requestId&&(!state.module||state.module==='commercial');
+  if(!/^20\d{2}$/.test(String(state.filters.year))||!/^([1-9]|1[0-2])$/.test(String(state.filters.month))){
+    setStatus('',false);
+    $('#content').className='teams-view';
+    $('#content').innerHTML=teamsTabs(TEAMS.payload)+'<section class="panel teams-empty"><h2>Escolha um mês para comparar as equipes</h2><p>Selecione o ano e o mês nos filtros acima. A projeção considera os dias úteis do mês escolhido.</p></section>';
+    bindTeamsTabs();return;
+  }
+  const key=JSON.stringify([state.user?.login,state.user?.accessVersion,state.filters,state.serverUpdatedAt]);
+  if(TEAMS.payload&&TEAMS.key===key&&Date.now()-TEAMS.loadedAt<180000){setStatus('',false);renderTeams(TEAMS.payload);return;}
+  $('#content').className='teams-view';
+  $('#content').innerHTML=teamsTabs(TEAMS.payload)+'<section class="panel teams-empty" aria-live="polite"><h2>Conferindo os resultados da equipe…</h2><p>Faturamento, clientes principais, produtos e lucro da base comercial.</p></section>';
+  bindTeamsTabs();
+  try{
+    const payload=await api('/api/teamsView',{body:JSON.stringify({filters:state.filters})});
+    if(!current())return;
+    TEAMS.payload=payload;TEAMS.key=key;TEAMS.loadedAt=Date.now();
+    setStatus('',false);renderTeams(payload);
+  }catch(error){
+    if(!current())return;
+    setStatus('',false);
+    $('#content').innerHTML=teamsTabs(TEAMS.payload)+`<section class="panel teams-empty"><h2>Não foi possível carregar o ranking</h2><p>${esc(error.message)}</p><button class="btn primary" id="teamsRetry">Tentar novamente</button></section>`;
+    bindTeamsTabs();$('#teamsRetry').onclick=()=>queryPage();
+  }
+}
+
+function bindTeamsTabs(){
+  $$('[data-teams-indicator]').forEach(button=>button.onclick=()=>{
+    TEAMS.indicator=button.dataset.teamsIndicator;TEAMS.search='';
+    if(TEAMS.payload&&TEAMS.key===JSON.stringify([state.user?.login,state.user?.accessVersion,state.filters,state.serverUpdatedAt]))renderTeams(TEAMS.payload);
+    else queryPage();
+  });
+}
+
+function renderTeams(payload){
+  if(TEAMS.indicator==='margin'&&!payload.canMargin)TEAMS.indicator='revenue';
+  const indicator=TEAMS.indicator,config=TEAM_INDICATORS[indicator],revenue=indicator==='revenue',calendar=payload.calendar;
+  const ranked=teamsRanking(payload.rows,indicator),eligible=ranked.filter(row=>row.score!=null);
+  const leader=eligible[0],totalGoal=payload.rows.reduce((sum,row)=>sum+(row.goals?.revenue||0),0);
+  const withGoals=ranked.filter(row=>row.goals?.[indicator]>0).length;
+  const cutoff=calendar.cutoff?calendar.cutoff.split('-').reverse().join('/'):'Mês futuro';
+  const title=revenue?'Quem está no ritmo da meta?':'Quem se destaca em '+config.label.toLocaleLowerCase('pt-BR')+'?';
+  $('#content').className='teams-view'+(TEAMS.paused?' teams-motion-paused':'');
+  $('#content').innerHTML=`${teamsTabs(payload)}
+    <section class="teams-hero"><div><span class="teams-eyebrow">REBANHO · VISÃO EQUIPES</span><h2>${esc(title)}</h2><p>${esc(config.explanation)}</p></div><div class="teams-period"><span>${esc(calendar.month.slice(5)+'/'+calendar.month.slice(0,4))}</span><strong>${calendar.closed?'Mês encerrado':calendar.future?'Mês futuro':integer(calendar.remaining)+' dias úteis restantes'}</strong><small>Corte: ${esc(cutoff)}</small></div></section>
+    <div class="teams-summary">
+      ${kpi('Vendedores no recorte',integer(ranked.length),integer(ranked.filter(row=>row.revenue>0).length)+' com faturamento')}
+      ${kpi(revenue?'Faturado no recorte':config.label+' no recorte',teamsValue(payload.summary[indicator],indicator),revenue?(totalGoal?pct(payload.summary.revenue/totalGoal*100)+' da meta cadastrada':'Sem meta de faturamento'):config.unit)}
+      ${kpi('Liderança do ranking',leader?esc(leader.name):'—',leader?(revenue?pct(leader.projectedAttainment)+' projetado da meta':teamsValue(leader[indicator],indicator)):revenue?'Cadastre metas para comparar o atingimento':'Sem resultado disponível')}
+      ${kpi(revenue?'Dias úteis decorridos':'Faturado no recorte',revenue?integer(calendar.elapsed)+' / '+integer(calendar.total):money(payload.summary.revenue,true),revenue?'Segunda a sexta, excluindo feriados':'Somente vendas faturadas')}
+    </div>
+    <section class="panel teams-ranking-panel"><header class="teams-ranking-heading"><div><h3>Ranking de ${esc(config.label.toLocaleLowerCase('pt-BR'))}</h3><p>${revenue?'Maior projeção de atingimento primeiro. Vendedores sem meta aparecem ao final.':'Maior resultado real primeiro. Empates recebem a mesma posição.'}</p></div><label class="teams-search">Buscar vendedor ou equipe<input id="teamsSearch" type="search" placeholder="Nome, código ou supervisor" value="${esc(TEAMS.search)}"></label></header>
+      <div class="teams-legend"><span><i class="teams-dot green"></i>${revenue?'Projeção ≥ 100%':'Faixa superior'}</span><span><i class="teams-dot yellow"></i>${revenue?'90% a 99,9%':'Faixa intermediária'}</span><span><i class="teams-dot red"></i>${revenue?'Abaixo de 90%':'Faixa inferior'}</span><button type="button" id="teamsPause" aria-pressed="${TEAMS.paused}">${TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante'}</button></div>
+      ${!revenue?`<p class="teams-rule-note">${withGoals?'Vendedores com meta cadastrada: verde ≥100%, amarelo de 90% a 99,9%, vermelho abaixo de 90%. Para os demais, a cor segue a posição relativa.':'As cores comparam as posições no ranking: terço superior, intermediário e inferior. Não representam atingimento de meta.'}</p>`:''}
+      <div id="teamsRankingRows"></div>
+      <footer class="teams-ranking-footer"><span id="teamsVisibleCount"></span><span>Leitura: ${esc(new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(payload.updatedAt)))}</span></footer>
+    </section>
+    <details class="teams-method panel"><summary>Como os indicadores e a projeção são calculados</summary><p><strong>Faturamento:</strong> apenas FECHADO, pela data de faturamento. Projeção = faturado ÷ dias úteis decorridos × dias úteis do mês. Todos usam a mesma data de corte da base. Em meses encerrados, a projeção é igual ao realizado.</p><p><strong>Positivações:</strong> clientes principais com venda positiva no mês. <strong>Mix:</strong> produtos distintos por cliente principal. <strong>Ticket:</strong> todas as compras faturadas ÷ clientes principais com compra. Os vínculos são consolidados depois de aplicar os filtros e dentro de cada vendedor.</p><p><strong>Margem bruta:</strong> soma de Vl Lucro ÷ soma do faturamento; não é uma média simples de percentuais. A ausência de lucro em uma venda impede o cálculo completo daquele vendedor.</p><p><strong>Calendário:</strong> segunda a sexta, feriados nacionais e datas adicionais cadastradas na aba FERIADOS da base auxiliar. Pontos facultativos e feriados locais dependem do cadastro da empresa.</p>${payload.goalScopeLimited?'<p><strong>Meta e território:</strong> as metas mensais são do vendedor e não têm rateio por estado, região ou cidade. O realizado acompanha os filtros selecionados.</p>':''}<p>Metas dos demais indicadores podem ser lidas da aba METAS_INDICADORES da mesma base auxiliar: MES, COD_RCA, INDICADOR e META. Os valores de teste da homologação não são usados aqui.</p></details>`;
+  const draw=()=>{
+    const needle=normalize(TEAMS.search),visible=ranked.filter(row=>normalize(row.name+' '+row.code+' '+row.supervisor).includes(needle));
+    const max=Math.max(1,...eligible.map(row=>Math.max(0,row.score)));
+    $('#teamsRankingRows').innerHTML=`<div class="teams-grid-head"><span>Posição</span><span>Vendedor / equipe</span><span>${revenue?'Atingimento / faturado':'Realizado'}</span><span>Meta mensal</span><span>${revenue?'Projeção de atingimento':'Faturamento'}</span><span>Sinalização</span></div>`+visible.map(row=>{
+      const goal=row.goals?.[indicator],bar=row.score==null?0:Math.max(0,Math.min(100,revenue?row.score:row.score/max*100));
+      return `<article class="teams-rank-row teams-tone-${row.tone}"><div class="teams-rank-place">${row.rank?integer(row.rank)+'º':'—'}</div><div class="teams-seller"><strong>${esc(row.name)}</strong><small>RCA ${esc(row.code)} · ${esc(row.supervisor)}</small>${!row.active?'<small class="teams-inactive">Cadastro inativo</small>':''}<div class="teams-score-track" aria-hidden="true"><i style="width:${bar}%"></i></div></div><div class="teams-rank-number"><span class="teams-mobile-label">${revenue?'Atingimento':'Realizado'}</span><strong>${revenue?pct(row.attainment):teamsValue(row[indicator],indicator)}</strong><small>${revenue?money(row.revenue)+' faturados':config.unit}</small></div><div class="teams-rank-goal"><span class="teams-mobile-label">Meta mensal</span><strong>${teamsValue(goal,indicator)}</strong><small>${goal?revenue?'Faturamento':pct(row.ratio)+' atingido':'Sem meta cadastrada'}</small></div><div class="teams-rank-projection"><span class="teams-mobile-label">${revenue?'Projeção':'Faturamento'}</span><strong>${revenue?pct(row.projectedAttainment):money(row.revenue)}</strong><small>${revenue?(row.projected==null?'Projeção indisponível':money(row.projected)+' projetados'):integer(row.clients)+' clientes principais'}</small></div><div class="teams-rank-signal"><i class="teams-dot ${row.tone}" aria-hidden="true"></i><span>${esc(row.status)}</span></div></article>`;
+    }).join('')+(visible.length?'':'<div class="teams-empty">Nenhum vendedor encontrado neste recorte.</div>');
+    $('#teamsVisibleCount').textContent=integer(visible.length)+' de '+integer(ranked.length)+' vendedores';
+  };
+  draw();bindTeamsTabs();
+  $('#teamsSearch').oninput=event=>{TEAMS.search=event.target.value;draw();};
+  $('#teamsPause').onclick=()=>{TEAMS.paused=!TEAMS.paused;$('#content').classList.toggle('teams-motion-paused',TEAMS.paused);const b=$('#teamsPause');b.setAttribute('aria-pressed',String(TEAMS.paused));b.textContent=TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante';};
+}
+
 
 function renderOverview(p){
   const k=p.kpis||{};
