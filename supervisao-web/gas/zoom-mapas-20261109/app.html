@@ -804,6 +804,81 @@
 }
 @media(max-width:520px){.teams-distribution header{flex-direction:column;gap:2px}.teams-v2 .teams-legend{gap:10px 14px}.teams-v2 .teams-legend button{margin-left:0}}
 </style>
+<style id="commercial-clean-style">
+/* Painel Comercial — camada "clean" (só aparência; mesma lógica e mesmos números). */
+body[data-module=commercial]{--cl-ink:#1f3354;--cl-soft:#6b7b91;--cl-line:#e2e8f0;--cl-bg:#f4f6fa;--cl-navy:#223d75}
+/* Cabeçalho da página: mais baixo, sem o rótulo repetido */
+body[data-module=commercial] .main{padding-top:18px!important}
+body[data-module=commercial] .topbar{padding-top:0!important;padding-bottom:14px!important;margin-top:0!important;margin-bottom:0!important;align-items:center}
+body[data-module=commercial] .topbar .eyebrow{display:none}
+body[data-module=commercial] #pageTitle{font-size:24px!important;line-height:1.2;margin:0 0 4px!important;letter-spacing:-.01em}
+body[data-module=commercial] #pageSubtitle{font-size:12.5px!important;margin:0!important;color:var(--cl-soft)}
+body[data-module=commercial] #lastBaseUpdate{display:inline-block!important;margin-top:3px!important;font-size:10.5px!important;color:#8593a7!important}
+body[data-module=commercial] .topbar-right{gap:8px}
+body[data-module=commercial] .period-chip{font-size:11px;padding:7px 11px;border-radius:8px}
+body[data-module=commercial] .refresh-btn{font-size:12px;min-height:34px;padding:7px 12px;border-radius:9px}
+/* Filtros: uma linha só, campos menores */
+body[data-module=commercial] .filterbar{padding:10px 14px!important;border-radius:12px!important;box-shadow:none!important;border:1px solid var(--cl-line)!important;margin-bottom:16px!important;background:#fff}
+body[data-module=commercial] .filterbar-top{gap:10px!important;min-height:0!important;padding:0!important;align-items:flex-end}
+body[data-module=commercial] .filter-intro{display:none!important}
+body[data-module=commercial] .filterbar-main{gap:8px!important;align-items:flex-end;width:100%}
+body[data-module=commercial] .filter-group{gap:3px!important;min-width:0}
+body[data-module=commercial] .filter-group label{font-size:10.5px!important;font-weight:600;color:#7a889b!important;letter-spacing:.01em;margin:0!important}
+body[data-module=commercial] .filter-group select,body[data-module=commercial] .multi-select-trigger{min-height:34px!important;height:34px!important;padding-top:5px!important;padding-bottom:5px!important;font-size:13px!important;border-radius:8px!important;border-color:#d8e0ea!important;box-shadow:none!important;background-color:#fff}
+body[data-module=commercial] .filter-group.period{width:124px!important;flex:none!important}
+body[data-module=commercial] .filter-group.period select{width:100%!important}
+body[data-module=commercial] .filter-refine{margin-left:4px!important;min-height:34px!important;height:34px;padding:6px 12px!important;font-size:12px!important;border-radius:8px!important;background:#fff!important;border:1px solid #d8e0ea!important;color:var(--cl-navy)!important;box-shadow:none!important}
+body[data-module=commercial] .filter-refine[aria-expanded=true]{background:#eef3fa!important;border-color:#b9c9e0!important}
+body[data-module=commercial] .filter-clear{min-height:34px;font-size:12px!important;padding:6px 8px!important}
+body[data-module=commercial] .filter-count{font-size:10px}
+body[data-module=commercial] .filter-advanced{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px!important;padding:12px 0 2px!important;margin-top:10px!important;border-top:1px solid #edf1f6!important;background:transparent!important}
+body[data-module=commercial] .filter-advanced.hidden{display:none!important}
+body[data-module=commercial] .filter-connector,body[data-module=commercial] .filter-advanced-hint{display:none!important}
+body[data-module=commercial] .filter-advanced .filter-group{width:auto!important;flex:none!important}
+/* Faixa de destaque das páginas: mais baixa, frase menor */
+body[data-module=commercial] .page-summary-hero{padding:20px 24px!important;border-radius:14px!important;margin-bottom:14px!important;min-height:0!important;box-shadow:none!important;gap:24px!important}
+body[data-module=commercial] .page-summary-hero h2{font-size:19px!important;line-height:1.3!important;margin:6px 0 4px!important;max-width:520px;letter-spacing:0!important}
+body[data-module=commercial] .page-summary-hero p{font-size:12px!important;margin:0!important;opacity:.85}
+body[data-module=commercial] .page-summary-hero .history-eyebrow{font-size:9.5px!important;letter-spacing:.14em!important}
+body[data-module=commercial] .page-summary-facts{gap:28px!important}
+body[data-module=commercial] .page-summary-facts strong{font-size:26px!important;line-height:1.15!important}
+body[data-module=commercial] .page-summary-facts span{font-size:11px!important}
+body[data-module=commercial] .page-summary-facts small{font-size:10.5px!important}
+/* Visão geral: faixa principal mais compacta */
+body[data-module=commercial] .overview-summary-hero{padding:22px 24px!important;border-radius:14px!important;box-shadow:none!important;margin-bottom:14px!important}
+body[data-module=commercial] .overview-summary-title{font-size:18px!important;margin:6px 0 10px!important}
+body[data-module=commercial] .overview-summary-hero .overview-revenue>strong,body[data-module=commercial] .overview-summary-hero .overview-revenue .kpi-value{font-size:40px!important;line-height:1.1!important}
+/* Comercial de hoje: data em tamanho normal */
+body[data-module=commercial] #dailyDateChoice{width:170px!important;flex:none!important;min-height:36px!important;height:36px;font-size:13px}
+body[data-module=commercial] .daily-date-controls{justify-content:flex-start!important}
+body[data-module=commercial] .daily-date-controls button{min-height:36px!important}
+/* Cartões de números */
+body[data-module=commercial] #content .kpi-card{padding:14px 16px!important;border-radius:12px!important;box-shadow:none!important;border:1px solid var(--cl-line)!important;min-height:0!important}
+body[data-module=commercial] #content .kpi-label{font-size:10px!important;letter-spacing:.06em!important;margin-bottom:4px!important}
+body[data-module=commercial] #content .kpi-value{font-size:24px!important;line-height:1.2!important}
+body[data-module=commercial] #content .kpi-note{font-size:11px!important;margin-top:3px!important}
+body[data-module=commercial] #content .kpi-grid{gap:12px!important;margin-bottom:14px!important}
+/* Painéis: brancos, borda fina, sem sombra pesada */
+body[data-module=commercial] #content .panel{border-radius:14px!important;box-shadow:none!important;border:1px solid var(--cl-line)!important}
+body[data-module=commercial] #content .panel h3{font-size:16px!important}
+body[data-module=commercial] #content .section-heading h2{font-size:18px!important}
+body[data-module=commercial] #content .section-heading p{font-size:12px!important}
+@media(max-width:999px){
+ body[data-module=commercial] .filter-advanced{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body[data-module=commercial] .page-summary-facts strong{font-size:22px!important}
+}
+@media(max-width:600px){
+ body[data-module=commercial] .topbar{align-items:flex-start;padding-top:14px!important}
+ body[data-module=commercial] #pageTitle{font-size:21px!important}
+ body[data-module=commercial] .filterbar-main{display:grid!important;grid-template-columns:1fr 1fr;gap:8px!important}
+ body[data-module=commercial] .filter-group.period{width:auto!important}
+ body[data-module=commercial] .filter-group.period select{width:100%!important;max-width:none!important}
+ body[data-module=commercial] .filter-refine{margin-left:0!important;width:100%;justify-content:center}
+ body[data-module=commercial] .filter-advanced{grid-template-columns:1fr}
+ body[data-module=commercial] .page-summary-hero{padding:16px!important}
+ body[data-module=commercial] .page-summary-hero h2{font-size:17px!important}
+}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">

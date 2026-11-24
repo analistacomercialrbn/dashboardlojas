@@ -2569,7 +2569,8 @@ function applyPageLook(page,p={}){
   if(page==='coverage'){root.querySelector('.coverage-heading>div:first-child')?.remove();const stats=root.querySelector('#coverageStats');if(stats){stats.firstElementChild?.remove();stats.firstElementChild?.remove();}}
  }
  const featureSelectors={overview:'.overview-analysis>.panel:first-child',carteira:'.carteira-movement-panel',produtos:'.equal-col>.panel:first-child',cidades:'.city-layout>.panel:first-child',metas:'.two-col>.panel:first-child',pedidos:'.order-status-panel',coverage:'.coverage-map-panel,.coverage-side',users:':scope>.panel:first-of-type'};
- root.querySelectorAll(featureSelectors[page]||'.__none').forEach(panel=>panel.classList.add('feature-panel'));
+ // Painéis escuros desativados no Painel Comercial (visual clean); a lista fica para referência.
+ if(state.module!=='commercial')root.querySelectorAll(featureSelectors[page]||'.__none').forEach(panel=>panel.classList.add('feature-panel'));
  root.querySelectorAll('.panel,.table-wrap').forEach(panel=>panel.classList.add('presentation-panel'));
  for(const c of state.charts){
   if(!c.canvas?.closest('.feature-panel')||c.$panelLookApplied)continue;c.$panelLookApplied=true;
