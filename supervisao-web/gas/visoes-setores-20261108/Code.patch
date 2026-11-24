@@ -1,0 +1,66 @@
+--- Código.gs
++++ Código.gs
+@@ -280,7 +280,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/9a63c9805bba086748a7d91afa7fc8ab041623f4/supervisao-web/gas/sac-importacao-20261108/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/4117c63fd45142988367352736e00933154a6a85/supervisao-web/gas/visoes-setores-20261108/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -1287,11 +1287,13 @@
+ function logisticsApi_(user,payload){
+  if(!logisticsAllowed_(user))throw new Error('Este módulo está disponível para os perfis de gestão.');
+  const p=payload||{},kind=p.kind||'operations',props=PropertiesService.getScriptProperties(),access=platformAccess_(user);
+- const special=['formationExperimental','formationDirect','formationSummary','agenda','schedule','geo','transport'];
++ // A visão da Formação consulta apenas os campos necessários aos indicadores.
++ if(kind==='formationOverview'&&!access.formationOnly)throw new Error('Visão geral fora do seu perfil.');
++ const special=['formationExperimental','formationDirect','formationSummary','formationOverview','agenda','schedule','geo','transport'];
+  if((access.formationOnly||access.transportOnly)&&!special.includes(kind))throw new Error('Área logística fora do seu perfil.');
+  if(access.formationOnly&&kind==='transport')throw new Error('Seu perfil não tem acesso ao SAC.');
+  if(kind==='transport')requireLogPermission_(user,'sac');
+- if(['operations','formations'].includes(kind))requireLogPermission_(user,'formation');
++ if(['operations','formations','formationOverview'].includes(kind))requireLogPermission_(user,'formation');
+  if(kind==='schedule'||kind==='agenda')requireLogPermission_(user,'agenda');
+  if(kind==='geo'&&(access.formationOnly||access.transportOnly))requireLogPermission_(user,'formation');
+  const ids={operations:props.getProperty('LOG_OPERATIONS_ID')||LOGISTICS_SOURCES.operations,indicators:props.getProperty('LOG_INDICATORS_ID')||LOGISTICS_SOURCES.indicators};
+@@ -1310,7 +1312,7 @@
+  if(kind==='geo'){const response=UrlFetchApp.fetch(LOGISTICS_SOURCES.geoUrl,{muteHttpExceptions:true});if(response.getResponseCode()!==200)throw new Error('Não foi possível carregar a malha municipal.');const bytes=Utilities.base64Decode(response.getContentText().trim());return {ok:true,geo:JSON.parse(Utilities.ungzip(Utilities.newBlob(bytes,'application/gzip')).getDataAsString('UTF-8'))};}
+  if(kind==='sources'&&user.perfil!=='ADMIN')throw new Error('Somente o administrador acessa as fontes.');
+  if(kind==='sources')return {ok:true,ids,reference:LOGISTICS_SOURCES.reference,readOnly:true};
+- if(!['operations','formations','transport','schedule'].includes(kind))throw new Error('Fonte logística inválida.');
++ if(!['operations','formations','formationOverview','transport','schedule'].includes(kind))throw new Error('Fonte logística inválida.');
+  // Consulta somente planilhas, usando as permissões que o módulo comercial já possui.
+  return centralLogisticsRead_(user,p,kind,kind==='transport'?ids.indicators:ids.operations);
+ }
+@@ -1352,6 +1354,9 @@
+  const a=platformAccess_(user);if(!a.areas.includes('logistics'))return false;
+  if(kind==='transport'&&!a.permissions.sac.view)return false;
+  if(kind==='schedule')return a.permissions.agenda.view;
++ if(kind==='formationOverview'){
++  return a.formationOnly&&a.permissions.formation.view;
++ }
+  if(kind==='formationDirect'){
+   if(!a.permissions.formation.view)return false;
+  }else if((a.formationOnly||a.transportOnly)&&kind!=='transport')return false;
+@@ -3214,7 +3219,7 @@
+ }
+ 
+ function centralLogisticsRead_(user, p, kind, id) {
+-  const sourceKind=kind==='formations'?'operations':kind;
++  const sourceKind=['formations','formationOverview'].includes(kind)?'operations':kind;
+   const timing=centralTiming_('logistica.'+sourceKind);
+   let status='erro';
+   try {
+@@ -3265,6 +3270,10 @@
+     if(p.check===true&&p.version===version)return {ok:true,unchanged:true,meta};
+     let rows=snapshot.rows.filter(row=>logisticsRowAllowed_(user,row,kind));
+     if(kind==='formations')rows=rows.map(row=>({...row,problem:row.category,description:row.follow}));
++    if(kind==='formationOverview')rows=rows.map(row=>{
++      const {date,uf,city,region,seller,status,weight,wait,awaitingFormation,inRoute,delivered,cargoId}=row;
++      return {date,uf,city,region,seller,status,weight,wait,awaitingFormation,inRoute,delivered,cargoId,loaded:!!row.loaded};
++    });
+     let from='',to='';
+     for(const row of rows)if(row.date){if(!from||row.date<from)from=row.date;if(row.date>to)to=row.date;}
+     timing.mark('recorte');

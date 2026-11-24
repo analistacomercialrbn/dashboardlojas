@@ -1,0 +1,312 @@
+--- Code.gs
++++ Code.gs
+@@ -280,7 +280,7 @@
+   sessionTtlSeconds: 21600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/5adaaaa280b6be86d03c12c571e17a640dd27044/supervisao-web/gas/operacao-logistica-20261108/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/9a63c9805bba086748a7d91afa7fc8ab041623f4/supervisao-web/gas/sac-importacao-20261108/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -1300,6 +1300,7 @@
+  if(kind==='agenda')return agendaApi_(user,p,ids.operations);
+  if(kind==='transport'&&['batchRead','batchSave'].includes(p.action))return transportBatch_(user,p,ids.indicators);
+  if(kind==='transport'&&['editRead','editSave'].includes(p.action))return transportEdit_(user,p,ids.indicators);
++ if(kind==='transport'&&['importOptions','importPreview','importCommit'].includes(p.action))return sacImportApi_(user,p,ids.indicators);
+  if(p.action==='configure'){
+   if(user.perfil!=='ADMIN')throw new Error('Somente o administrador pode configurar fontes.');
+   const a=String(p.operationsId||ids.operations).trim(),b=String(p.indicatorsId||ids.indicators).trim();if(!/^[\w-]{20,}$/.test(a)||!/^[-\w]{20,}$/.test(b))throw new Error('Informe o ID de uma planilha Google.');
+@@ -2922,6 +2923,292 @@
+ // ── 22. Consulta e gravação de transportadoras ──
+ // Busca dados logísticos e valida as mudanças antes e depois de gravar as notas.
+ 
++// ── Importação de relatórios das transportadoras ──
++// A prévia concilia o arquivo com a base. A confirmação grava somente os campos da transportadora.
++const SAC_IMPORT_CARRIERS = ['TRANSRÁPIDO','F&P'];
++const SAC_IMPORT_FIELDS = {
++  'CLIENTE':['text','DESTINATARIO'], 'CNPJ/CPF':['text','CNPJ CPF'],
++  'CIDADE':['text','CIDADE',2], 'UF':['text','UF',2],
++  'EMISSAO':['date','EMISSAO NF S'], 'DATA COLETA':['date','DATA COLETA','COLETA'],
++  'PREVISAO TRANSPORTADORA':['date','PREV ENTREGA','PRAZO DE ENTREGA'],
++  'DATA ENTREGA':['date','DATA ENTREGA'], 'STATUS TRANSPORTADORA':['text','ULTIMO STATUS'],
++  'PESO':['number','PESO'], 'VOLUMES':['number','VOL'], 'VALOR MERCADORIA':['number','VALOR TRANSP'],
++  'FRETE TOTAL':['number','FRETE TOTAL'], 'PEDIDO':['text','PEDIDO',2], 'CT-E':['text','CT E'],
++  'SERVICO':['text','SERVICO'], 'RECEBEDOR':['text','RECEBEDOR'], 'DOCUMENTO':['text','DOCUMENTO'],
++  'DATA STATUS':['date','DATA STATUS'], 'HORA STATUS':['text','HORA STATUS']
++};
++const SAC_IMPORT_TOTALS = ['PESO','VOLUMES','VALOR MERCADORIA','FRETE TOTAL','PEDIDO'];
++const SAC_IMPORT_TRACKING = ['DATA ENTREGA','STATUS TRANSPORTADORA','DATA STATUS','HORA STATUS','RECEBEDOR','DOCUMENTO'];
++
++function sacImportCarrier_(value) {
++  return SAC_IMPORT_CARRIERS.find(carrier=>logNorm_(carrier)===logNorm_(value)) || '';
++}
++
++function sacImportHeader_(value) {
++  return logNorm_(value).replace(/[^A-Z0-9]+/g,' ').trim();
++}
++
++function sacImportNotes_(value) {
++  const raw=logText_(value);
++  if(!/^\d+(?:\s*-\s*\d+)?(?:\s*[,;]\s*\d+(?:\s*-\s*\d+)?)*$/.test(raw))return [];
++  return [...new Set(raw.split(/[,;]/).map(note=>note.split('-')
++    .map(part=>part.trim().replace(/^0+(?=\d)/,'')).join('-')))].sort();
++}
++
++function sacImportPermissions_(user,carrier='') {
++  const access=platformAccess_(user), scope=access.logisticsScope;
++  if(user.perfil!=='SAC'||!access.permissions.sac.edit||scope.sellers.length||scope.regions.length) {
++    throw new Error('Importação disponível para o SAC com permissão de edição e acesso à transportadora.');
++  }
++  const allowed=SAC_IMPORT_CARRIERS.filter(name=>!scope.carriers.length||scope.carriers.some(value=>sacImportCarrier_(value)===name));
++  if(carrier&&!allowed.includes(carrier))throw new Error('Transportadora fora do seu perfil de acesso.');
++  return allowed;
++}
++
++function sacImportReadReport_(p,tz) {
++  const grid=p.rows;
++  if(!Array.isArray(grid)||grid.length<2||grid.length>1001||
++     grid.some(row=>!Array.isArray(row)||row.length>60||row.some(value=>typeof value!=='string'||value.length>500))||
++     JSON.stringify(grid).length>650000)throw new Error('Use um relatório de até 1.000 linhas e 650 KB de dados.');
++  const headers=grid[0].map(sacImportHeader_);
++  if(!['NF S','DESTINATARIO','EMISSAO NF S','ULTIMO STATUS'].every(name=>headers.filter(h=>h===name).length===1)) {
++    throw new Error('Cabeçalho não reconhecido. Selecione o relatório de remessas original da transportadora.');
++  }
++  const locate=(key,alternative)=>{
++    if(typeof alternative==='number'){
++      const matches=headers.flatMap((header,i)=>header===key?[i]:[]);
++      return [matches[alternative-1],matches[0]];
++    }
++    return [headers.indexOf(key),headers.indexOf(alternative)];
++  };
++  const columns=Object.entries(SAC_IMPORT_FIELDS).map(([name,[type,key,alternative]])=>[name,type,locate(key,alternative)]);
++  const nfColumn=headers.indexOf('NF S');
++  const report=[];
++  let ignored=0;
++  for(const row of grid.slice(1)){
++    const invoice=logText_(row[nfColumn]), notes=sacImportNotes_(invoice);
++    if(!notes.length){ignored++;continue;}
++    const values={};
++    for(const [name,type,indices] of columns){
++      const raw=indices.map(i=>logText_(row[i])).find(Boolean);
++      if(!raw||/^[-—]+$/.test(raw))continue;
++      const dates=type==='date'?raw.split(/\s*[,;]\s*/).map(value=>logDate_(value,tz)).filter(Boolean).sort():[];
++      const value=type==='date'?(dates[0]||''):type==='number'?logNumber_(raw):raw;
++      if(value!==''&&value!=null)values[name]=value;
++    }
++    report.push({invoice,notes,values});
++  }
++  if(!report.length)throw new Error('Nenhuma NF válida foi encontrada no arquivo.');
++  return {report,ignored};
++}
++
++function sacImportPlan_(rows,columns,carrier,input,tz,today) {
++  const exact=new Map(), byNote=new Map(), edits=new Map(), additions=[], seen=new Set();
++  const summary={inserted:0,updated:0,unchanged:0,ignored:input.ignored,conflicts:0,grouped:0};
++  const examples=[];
++  const at=(row,name)=>row[columns[name]];
++  const index=(map,key,item)=>{
++    if(!map.has(key))map.set(key,[]);
++    map.get(key).push(item);
++  };
++  for(let i=0;i<rows.length;i++){
++    const row=rows[i];
++    if(sacImportCarrier_(at(row,'TRANSPORTADORA'))!==carrier)continue;
++    const notes=sacImportNotes_(at(row,'NF'));
++    if(!notes.length)continue;
++    const item={i,row,notes,cte:logText_(at(row,'CT-E'))};
++    index(exact,notes.join(','),item);
++    for(const note of notes)index(byNote,note,item);
++  }
++  const matches=(items,cte)=>{
++    const same=cte?items.filter(item=>item.cte===cte):[];
++    if(same.length===1)return same[0];
++    if(items.length!==1||cte&&items[0].cte&&items[0].cte!==cte)return null;
++    return items[0];
++  };
++  const record=(status,entry)=>{
++    summary[status]++;
++    if(status==='conflicts'&&examples.length<12)examples.push(entry.invoice);
++  };
++  for(const entry of input.report){
++    if(entry.notes.some(note=>seen.has(note))){record('conflicts',entry);continue;}
++    entry.notes.forEach(note=>seen.add(note));
++    const cte=entry.values['CT-E']||'';
++    const exactItems=exact.get(entry.notes.join(','))||[];
++    const overlaps=new Set(entry.notes.flatMap(note=>byNote.get(note)||[]));
++    let targets=[];
++    if(exactItems.length){
++      const target=matches(exactItems,cte);
++      if(target&&[...overlaps].every(item=>item.notes.length===target.notes.length))targets=[target];
++    }else if(entry.notes.length>1&&[...overlaps].every(item=>item.notes.length===1)){
++      targets=entry.notes.map(note=>matches(byNote.get(note)||[],cte)).filter(Boolean);
++      if(targets.length!==entry.notes.length)targets=[];
++      if(targets.length)summary.grouped++;
++    }
++    if(!targets.length&&overlaps.size){record('conflicts',entry);continue;}
++    if(!targets.length){
++      const values={...entry.values,NF:entry.invoice,TRANSPORTADORA:carrier};
++      if(values['DATA ENTREGA']>today)delete values['DATA ENTREGA'];
++      if(!values.EMISSAO){record('ignored',entry);continue;}
++      values.CHAVE=carrier+'|'+entry.invoice+(cte?'|'+cte:'');
++      additions.push(values);
++      record('inserted',entry);
++      continue;
++    }
++
++    let changed=false;
++    for(const target of targets){
++      const existing=target.row, next={};
++      const existingDelivery=logDate_(at(existing,'DATA ENTREGA'),tz);
++      const existingStatusDate=logDate_(at(existing,'DATA STATUS'),tz);
++      const incomingStatusDate=entry.values['DATA STATUS'];
++      const older=existingStatusDate&&(!incomingStatusDate||incomingStatusDate<existingStatusDate||
++        incomingStatusDate===existingStatusDate&&
++          /^\d\d:\d\d/.test(entry.values['HORA STATUS']||'')&&/^\d\d:\d\d/.test(logText_(at(existing,'HORA STATUS')))&&
++          entry.values['HORA STATUS']<logText_(at(existing,'HORA STATUS')));
++      const preserveTracking=older || existingDelivery&&!entry.values['DATA ENTREGA'];
++      for(const [name,value] of Object.entries(entry.values)){
++        if(targets.length>1&&SAC_IMPORT_TOTALS.includes(name))continue;
++        if(name==='DATA ENTREGA'&&(existingDelivery||value>today))continue;
++        if(preserveTracking&&SAC_IMPORT_TRACKING.includes(name))continue;
++        if(value!==sacImportComparable_(name,at(existing,name),tz))next[name]=value;
++      }
++      if(Object.keys(next).length){edits.set(target.i+2,next);changed=true;}
++    }
++    record(changed?'updated':'unchanged',entry);
++  }
++  return {summary,examples,edits,additions};
++}
++
++function sacImportLayout_(sheet) {
++  const header=sheet.getRange(1,1,1,sheet.getLastColumn()).getDisplayValues()[0].map(logNorm_);
++  const names=['CHAVE','NF','TRANSPORTADORA','PRAZO INTERNO REBANHO','STATUS SLA','DIAS ATRASO','DATA ATUALIZACAO',...Object.keys(SAC_IMPORT_FIELDS)];
++  const columns=Object.fromEntries(names.map(name=>{
++    const index=header.indexOf(name);
++    if(index<0||header.lastIndexOf(name)!==index)throw new Error('Coluna ausente ou duplicada no acompanhamento: '+name+'.');
++    return [name,index];
++  }));
++  if(columns.CHAVE!==0||columns.NF!==1||columns.TRANSPORTADORA!==2)throw new Error('A estrutura de identificação do acompanhamento mudou.');
++  return {header,columns};
++}
++
++function sacImportCell_(name,value,tz) {
++  if(SAC_IMPORT_FIELDS[name]?.[0]==='date')return Utilities.parseDate(value,tz,'yyyy-MM-dd');
++  if(typeof value==='string'&&/^[=+@'-]/.test(value))return "'"+value;
++  return value;
++}
++
++function sacImportComparable_(name,value,tz) {
++  const type=SAC_IMPORT_FIELDS[name]?.[0];
++  if(type==='date')return logDate_(value,tz);
++  if(type==='number')return logNumber_(value);
++  return logText_(value);
++}
++
++function sacImportFormulas_(n,columns) {
++  const cell=name=>transportColumnLetter_(columns[name]+1)+n;
++  const nf=cell('NF'), coleta=cell('DATA COLETA'), prazo=cell('PRAZO INTERNO REBANHO'), entrega=cell('DATA ENTREGA');
++  return {
++    'PRAZO INTERNO REBANHO':`=IF(${coleta}="";"";WORKDAY.INTL(${coleta};2;1;LISTAS!$E$2:$E$50))`,
++    'STATUS SLA':`=IF(${nf}="";"";IF(${prazo}="";"Sem prazo";IF(${entrega}="";IF(TODAY()<=${prazo};"Em andamento - no prazo";"Em andamento - atrasado");IF(${entrega}<=${prazo};"No Prazo";"Fora do Prazo"))))`,
++    'DIAS ATRASO':`=IF(${nf}="";"";IF(${prazo}="";"";IF(${entrega}="";MAX(0;TODAY()-${prazo});MAX(0;${entrega}-${prazo}))))`
++  };
++}
++
++function sacImportWrite_(sheet, layout, plan, last, now, tz) {
++  const {columns,header}=layout, additions=plan.additions;
++  if(additions.length){
++    if(last+additions.length>sheet.getMaxRows())sheet.insertRowsAfter(sheet.getMaxRows(),last+additions.length-sheet.getMaxRows());
++    const rows=additions.map((fields,i)=>{
++      const line=Array(header.length).fill('');
++      for(const [name,value] of Object.entries(fields))line[columns[name]]=sacImportCell_(name,value,tz);
++      for(const [name,value] of Object.entries(sacImportFormulas_(last+i+1,columns)))line[columns[name]]=value;
++      line[columns['DATA ATUALIZACAO']]=now;
++      return line;
++    });
++    sheet.getRange(last+1,1,rows.length,header.length).setValues(rows);
++    sheet.getRange(last+1,columns['PRAZO INTERNO REBANHO']+1,rows.length,1).setNumberFormat('dd/MM/yyyy');
++  }
++  // Grava as colunas externas em trechos contíguos, sem reescrever as colunas manuais.
++  const sortedEdits=[...plan.edits].sort((a,b)=>a[0]-b[0]);
++  for(const name of [...Object.keys(SAC_IMPORT_FIELDS),'DATA ATUALIZACAO']){
++    const column=columns[name]+1;
++    let start=0, values=[];
++    for(const [row,fields] of sortedEdits){
++      if(name!=='DATA ATUALIZACAO'&&!(name in fields))continue;
++      if(values.length&&row!==start+values.length){
++        sheet.getRange(start,column,values.length,1).setValues(values);
++        values=[];
++      }
++      if(!values.length)start=row;
++      values.push([name==='DATA ATUALIZACAO'?now:sacImportCell_(name,fields[name],tz)]);
++    }
++    if(values.length)sheet.getRange(start,column,values.length,1).setValues(values);
++  }
++  SpreadsheetApp.flush();
++  const expected=new Map(plan.edits);
++  additions.forEach((fields,i)=>expected.set(last+i+1,fields));
++  for(const {first,last:end} of centralRowBlocks_([...expected.keys()])){
++    const values=sheet.getRange(first,1,end-first+1,header.length).getValues();
++    values.forEach((row,i)=>{
++      const fields=expected.get(first+i);
++      if(fields&&Object.entries(fields).some(([name,value])=>sacImportComparable_(name,row[columns[name]],tz)!==value)){
++        throw new Error('A conferência da gravação encontrou divergências.');
++      }
++    });
++  }
++}
++
++function sacImportApi_(user,p,id) {
++  const allowed=sacImportPermissions_(user);
++  if(p.action==='importOptions')return {ok:true,carriers:allowed};
++  const carrier=sacImportCarrier_(p.carrier);
++  if(!carrier||!allowed.includes(carrier))throw new Error('Escolha uma transportadora autorizada.');
++  const apply=p.action==='importCommit';
++  const cache=CacheService.getScriptCache();
++  const token=String(p.previewToken||'');
++  const previewKey=apply&&/^[a-f0-9-]{36}$/.test(token)?'SAC_IMPORT_'+token:'';
++  const expected=previewKey?cache.get(previewKey):null;
++  if(apply&&!expected)throw new Error('A prévia expirou. Analise o arquivo novamente.');
++  const lock=LockService.getScriptLock();
++  if(!lock.tryLock(3000))throw new Error('Outra gravação está em andamento. Tente novamente em instantes.');
++  let attempted=false;
++  try{
++    const ss=SpreadsheetApp.openById(id), sheet=ss.getSheetByName('ACOMPANHAMENTO'), tz=ss.getSpreadsheetTimeZone();
++    if(!sheet)throw new Error('Aba ACOMPANHAMENTO não encontrada.');
++    const layout=sacImportLayout_(sheet), last=sheet.getLastRow();
++    const input=sacImportReadReport_(p,tz);
++    const rows=last>1?sheet.getRange(2,1,last-1,layout.header.length).getValues():[];
++    const today=Utilities.formatDate(new Date(),tz,'yyyy-MM-dd');
++    const plan=sacImportPlan_(rows,layout.columns,carrier,input,tz,today);
++    const digest=digestHex_(JSON.stringify([id,user.login,carrier,layout.header,last,input,[...plan.edits],plan.additions,plan.summary]));
++    if(!apply){
++      const fresh=Utilities.getUuid();
++      cache.put('SAC_IMPORT_'+fresh,digest,600);
++      return {ok:true,carrier,summary:plan.summary,examples:plan.examples,previewToken:fresh};
++    }
++    if(digest!==expected)throw new Error('O arquivo ou o acompanhamento mudou. Gere uma nova prévia antes de confirmar.');
++    cache.remove(previewKey);
++    if(plan.additions.length||plan.edits.size){
++      attempted=true;
++      sacImportWrite_(sheet,layout,plan,last,new Date(),tz);
++      console.info(JSON.stringify({operation:'sac.import',user:user.login,carrier,summary:plan.summary}));
++    }
++    return {ok:true,summary:plan.summary};
++  }catch(error){
++    if(attempted){
++      console.warn('Importação do SAC precisa de conferência.');
++      throw new Error('A gravação precisa ser conferida. Gere outra prévia para verificar o que já entrou antes de repetir.');
++    }
++    throw error;
++  }finally{
++    try{
++      if(attempted)PropertiesService.getScriptProperties().setProperty(centralTransportVersionKey_(id),Utilities.getUuid());
++    }catch(error){console.warn('Não foi possível invalidar o cache de transportadoras.');}
++    finally{lock.releaseLock();}
++  }
++}
++
+ function centralTransportVersionKey_(id) {
+   return 'LOG_TRANSPORT_CHANGE_'+digestHex_(id).slice(0,24);
+ }

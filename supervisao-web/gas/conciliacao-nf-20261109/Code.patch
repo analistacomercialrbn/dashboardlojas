@@ -1,0 +1,87 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -2329,10 +2329,74 @@
+  return products.reduce((total,item)=>total+item.quantity,0);
+ }
+ 
+-function formDirectView_(st,catalog,user){
++// Usa o acompanhamento do SAC apenas para decidir a disponibilidade na Formação.
++function formTransportInvoiceIndex_(rows, header, tz) {
++ const columns=new Map(header.map((value,i)=>[logNorm_(value),i]));
++ for(const name of ['NF','TRANSPORTADORA','CLIENTE','CIDADE','EMISSAO','PEDIDO']){
++  if(!columns.has(name))throw new Error('Cabeçalho de notas de transporte ausente.');
++ }
++ const index=new Map();
++ for(const row of rows){
++  const get=name=>row[columns.get(name)];
++  const date=logDate_(get('EMISSAO'),tz);
++  if(!date||!logText_(get('TRANSPORTADORA'))||/CANCELAD|ESTORNAD/.test(logNorm_(get('STATUS TRANSPORTADORA'))))continue;
++  const order=logText_(get('PEDIDO'));
++  const orderNumbers=/^\d+(?:\s*[,;+/]\s*\d+)*$/.test(order)
++   ? order.split(/\s*[,;+/]\s*/).map(number=>number.replace(/^0+(?=\d)/,'')) : [];
++  const location=logCity_(get('CIDADE'));
++  const identity={date,order,orderNumbers,client:logNorm_(get('CLIENTE')),city:location.city,uf:logNorm_(get('UF'))||location.uf};
++  for(const note of sacImportNotes_(get('NF'))){
++   const [number,series='']=note.split('-');
++   if(number==='0')continue;
++   if(!index.has(number))index.set(number,[]);
++   index.get(number).push({...identity,series});
++  }
++ }
++ return index;
++}
++
++function formTransportInvoiceSnapshot_(force) {
++ try {
++  const props=PropertiesService.getScriptProperties(),id=props.getProperty('LOG_INDICATORS_ID')||LOGISTICS_SOURCES.indicators;
++  const cache=CacheService.getScriptCache(),change=props.getProperty(centralTransportVersionKey_(id))||'';
++  const key='FORM_TRANSPORT_NF_V1_'+digestHex_(id+'|'+change).slice(0,28);
++  const cached=force?null:centralCacheRead_(cache,key);
++  if(cached)return new Map(cached);
++  const ss=SpreadsheetApp.openById(id),sheet=ss.getSheetByName('ACOMPANHAMENTO');
++  const values=sheet.getRange(1,1,Math.max(1,sheet.getLastRow()),Math.min(20,sheet.getLastColumn())).getDisplayValues();
++  const index=formTransportInvoiceIndex_(values.slice(1),values[0],ss.getSpreadsheetTimeZone());
++  centralCacheWrite_(cache,key,JSON.stringify([...index]),180);
++  return index;
++ }catch(error){
++  console.warn('Conciliação de notas da Formação indisponível.');
++  return new Map();
++ }
++}
++
++function formDirectAlreadyInTransport_(order,index) {
++ const orderNumber=String(order.order).replace(/^0+(?=\d)/,'');
++ const client=logNorm_(order.client),city=logCity_(order.city).city,uf=logNorm_(order.uf);
++ return !!order.products?.length&&order.products.every(item=>{
++  const notes=sacImportNotes_(item.invoice);
++  return notes.length>0&&notes.every(note=>{
++   const [number,series='']=note.split('-');
++   const matches=(index.get(number)||[]).filter(row=>!series||!row.series||series===row.series);
++   if(matches.some(row=>row.orderNumbers.includes(orderNumber)&&(!order.date||row.date>=order.date)))return true;
++   if(!item.billingDate||!client||!city)return false;
++   const candidates=matches.filter(row=>!row.order&&row.date===item.billingDate&&
++    row.client===client&&row.city===city&&(!row.uf||!uf||row.uf===uf));
++   return candidates.length>0&&new Set(candidates.map(row=>row.series).filter(Boolean)).size<=1;
++  });
++ });
++}
++
++function formDirectView_(st,catalog,user,forceTransport=false){
+  const saved=formDirectSnapshot_(st),orders=[],byKey={},canonical={};
++ const transportCandidates=Object.values(catalog).some(o=>!st.assignments[o.key]&&o.invoices?.some(nf=>sacImportNotes_(nf).length));
++ const transport=transportCandidates?formTransportInvoiceSnapshot_(forceTransport):null;
+  const reserved=new Set(Object.keys(st.assignments).map(key=>{const {client,order}=formExpParseKey_(key);return client+'|'+order;}));for(const o of Object.values(catalog)){const k=o.clientCode+'|'+o.order;canonical[k]=(canonical[k]||0)+1;}
+  for(const key of new Set([...Object.keys(catalog),...Object.keys(st.assignments)])){const fresh=catalog[key],o=fresh||saved[key];if(!o||!formDirectAllowed_(user,o))continue;const a=st.assignments[key],duplicate=canonical[o.clientCode+'|'+o.order]>1,aliasReserved=!a&&reserved.has(o.clientCode+'|'+o.order),issue=!fresh?'Pedido não está mais em aberto na base comercial':duplicate?'Pedido repetido em mais de um ano; conferir origem':aliasReserved?'Pedido vinculado a uma montagem em outro ano':'';
++  if(!a&&transport?.size&&formDirectAlreadyInTransport_(o,transport))continue;
+   const volumeOrder=a&&st.montages[a.montageId].status===FORM_FINAL?saved[key]||o:o;
+   const volumes=formDirectVolumes_(volumeOrder);
+   const row={sourceKey:key,orderKey:key,client:o.client,city:o.city,cityLabel:o.city,uf:o.uf,date:o.date,region:'',seller:String(o.rca||''),product:o.products.map(p=>p.description).join(' / '),status:o.statuses.join(' / '),weight:null,volumes,availableWeight:null,mountedWeight:null,awaitingFormation:!!fresh&&!duplicate&&!aliasReserved&&!a,delivered:false,linked:true,montageId:a?a.montageId:''};
+@@ -2484,7 +2548,7 @@
+    timing.mark('origem');
+    const st=formExpState_(ss);
+    timing.mark('historico');
+-   const view=formDirectView_(st,catalog,user);
++   const view=formDirectView_(st,catalog,user,p.force===true);
+    timing.mark('resposta');
+    status='ok';
+    if(p.check===true&&p.viewVersion===view.viewVersion&&p.revision===view.revision){

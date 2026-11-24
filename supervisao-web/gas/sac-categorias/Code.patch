@@ -1,0 +1,146 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -287,7 +287,7 @@
+   passwordChangeSessionSeconds: 600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/188f6cbb6ea47b0e67761ac129fe5287e0422e26/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/6c7951a074338eba64cd8a82808a7cef43115e7a/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -1843,6 +1843,7 @@
+  if(kind==='formationSummary')return formOverviewSummary_(user);
+  if(kind==='agenda')return agendaApi_(user,p,ids.operations);
+  if(kind==='transport'&&['batchRead','batchSave'].includes(p.action))return transportBatch_(user,p,ids.indicators);
++ if(kind==='transport'&&p.action==='categoryAdd')return transportCategoryAdd_(user,p,ids.indicators);
+  if(kind==='transport'&&['editRead','editSave'].includes(p.action))return transportEdit_(user,p,ids.indicators);
+  if(kind==='transport'&&['importOptions','importPreview','importCommit'].includes(p.action))return sacImportApi_(user,p,ids.indicators);
+  if(p.action==='configure'){
+@@ -4105,6 +4106,34 @@
+   }
+ }
+ 
++function transportCategoryKey_(id) {
++  return 'SAC_CATEGORIES_'+digestHex_(id).slice(0,24);
++}
++
++function transportCategories_(props, key) {
++  return JSON.parse(props.getProperty(key)||'[]');
++}
++
++function transportCategoryAdd_(user,p,id) {
++  if(!platformAccess_(user).editTransport)throw new Error('Somente o SAC autorizado pode cadastrar categorias.');
++  const input=typeof p.category==='string'?p.category.trim():'';
++  if(!input||input.length>80||/^[=+@'-]|[\x00-\x1f\x7f]/.test(input)||!logProblem_(input)){
++    throw new Error('Informe um nome de categoria válido, com até 80 caracteres.');
++  }
++  const name=input.replace(/\s+/g,' '), props=PropertiesService.getScriptProperties(), key=transportCategoryKey_(id);
++  const lock=LockService.getScriptLock();
++  if(!lock.tryLock(3000))throw new Error('Outra gravação está em andamento. Tente novamente em instantes.');
++  try{
++    const options=transportCategories_(props,key);
++    const existing=options.find(option=>logNorm_(option)===logNorm_(name));
++    if(existing)return {ok:true,category:existing};
++    const data=JSON.stringify([...options,name]);
++    if(Utilities.newBlob(data).getBytes().length>8000)throw new Error('A lista de categorias cadastradas atingiu o limite.');
++    props.setProperty(key,data);
++    return {ok:true,category:name};
++  }finally{lock.releaseLock();}
++}
++
+ function transportEditLayout_(sh) {
+   const headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0], names=headers.map(logNorm_);
+   if(['CHAVE','NF','TRANSPORTADORA','CLIENTE','CNPJ/CPF','CIDADE','UF'].some((h,i)=>names[i]!==h)){
+@@ -4113,7 +4142,7 @@
+   const fields=deliveryFields_().map(([name,label])=>{
+     const column=names.indexOf(logNorm_(label));
+     if(column<0||names.lastIndexOf(logNorm_(label))!==column)throw new Error('Coluna ausente ou duplicada: '+label+'.');
+-    return {name,label,col:column,type:name==='deliveredDate'?'date':'text'};
++    return {name,label:name==='follow'?'Follow-up':name==='category'?'Categoria de ocorrência':label,col:column,type:name==='deliveredDate'?'date':'text'};
+   });
+   return {headers,fields,tz:sh.getParent().getSpreadsheetTimeZone()};
+ }
+@@ -4137,7 +4166,7 @@
+   return new Map([...indices].map(([key,row])=>[row,key]));
+ }
+ 
+-function transportEditRows_(sh, user, keys, layout, positions) {
++function transportEditRows_(sh, user, keys, layout, positions, categories=[]) {
+   const byRow=positions||transportEditPositions_(sh,keys);
+   const {headers,fields,tz}=layout, lists=new Map(), items=new Map();
+   for(const {first,last} of centralRowBlocks_([...byRow.keys()])){
+@@ -4169,6 +4198,12 @@
+       const signature=rowFields.map(f=>[f.col,f.criteria,f.args?.map(v=>v&&typeof v.getA1Notation==='function'?
+         v.getSheet().getSheetId()+':'+v.getA1Notation():v)??null,f.options]);
+       const version=digestHex_(JSON.stringify([key,display[i].slice(0,7),raw[i],formulas[i],signature]));
++      // O cadastro compartilhado não invalida formulários de notas já abertos.
++      const category=rowFields.find(f=>f.name==='category');
++      if(category){
++        category.nativeOptions=category.options;
++        category.options=[...new Set([...(category.options||[]),...categories])];
++      }
+       items.set(key,{key,n,version,fields:rowFields,record,tz});
+     }
+   }
+@@ -4178,18 +4213,18 @@
+ function transportEditRead_(items, batch) {
+   if(!batch){
+     const x=items[0],{invoice,client,carrier}=x.record;
+-    return {ok:true,key:x.key,version:x.version,fields:x.fields.map(deliveryPublic_),invoice,client,carrier,record:x.record};
++    return {ok:true,key:x.key,version:x.version,fields:x.fields.filter(f=>f.name!=='manualOccurrence').map(deliveryPublic_),invoice,client,carrier,record:x.record};
+   }
+   return {ok:true,items:items.map(x=>({key:x.key,version:x.version,invoice:x.record.invoice,client:x.record.client})),
+     fields:items[0].fields.map((field,i)=>{
+       const values=items.map(x=>x.fields[i]), sets=values.filter(f=>f.options!==null).map(f=>new Set(f.options));
+       return {...deliveryPublic_(field),value:'',readOnly:values.some(f=>f.readOnly),filled:values.filter(f=>f.value).length,
+         options:sets.length?[...sets[0]].filter(v=>sets.every(set=>set.has(v))):null};
+-    })};
++    }).filter(f=>f.name!=='manualOccurrence')};
+ }
+ 
+ function transportEditChanges_(p, batch) {
+-  const input=batch?p.changes:p.values, fields=deliveryFields_().map(f=>f[0]);
++  const input=batch?p.changes:p.values, fields=deliveryFields_().map(f=>f[0]).filter(name=>name!=='manualOccurrence');
+   if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!fields.includes(key))||
+      batch&&!Object.keys(input).length)throw new Error('Campos de gravação inválidos.');
+   if(batch&&(!p.versions||typeof p.versions!=='object'||Array.isArray(p.versions)))throw new Error('Reabra o lote para conferir os valores atuais.');
+@@ -4241,8 +4276,26 @@
+       groups.get(field.col).push({n:item.n,field});
+     }
+   }
+-  for(const [index, rows] of groups){
+-    const col=index+1, letter=transportColumnLetter_(col), initial=rows[0].field;
++  for(const [index, entries] of groups){
++    let rows=entries;
++    const col=index+1, letter=transportColumnLetter_(col);
++    if(rows[0].field.name==='category'){
++      // Amplia apenas a validação das células que receberão uma categoria cadastrada no app.
++      rows=rows.filter(({n,field})=>{
++        const {next,rule,nativeOptions,args}=field;
++        if(!next||!rule||nativeOptions?.includes(next))return true;
++        try{
++          const validation=rule.copy().requireValueInList([...nativeOptions,next],args[1]!==false).build();
++          sh.getRange(n,col).setDataValidation(validation);
++          return true;
++        }catch(error){
++          console.warn('Uma validação de categoria do SAC precisa de conferência.');
++          return false;
++        }
++      });
++    }
++    if(!rows.length)continue;
++    const initial=rows[0].field;
+     try{
+       if(initial.mode==='replace'){
+         sh.getRangeList(rows.map(x=>letter+x.n)).setValue(initial.write);
+@@ -4302,7 +4355,8 @@
+     }
+     const sh=SpreadsheetApp.openById(id).getSheetByName('ACOMPANHAMENTO');
+     if(!sh)throw new Error('Acompanhamento sem notas.');
+-    const layout=transportEditLayout_(sh), items=transportEditRows_(sh,user,keys,layout);
++    const categories=transportCategories_(PropertiesService.getScriptProperties(),transportCategoryKey_(id));
++    const layout=transportEditLayout_(sh), items=transportEditRows_(sh,user,keys,layout,undefined,categories);
+     timing.mark('notasSelecionadas');
+     if(read){
+       status='ok';

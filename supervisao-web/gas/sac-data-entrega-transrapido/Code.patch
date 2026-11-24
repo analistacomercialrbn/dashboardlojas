@@ -1,0 +1,18 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -3798,7 +3798,14 @@
+     summary[status]++;
+     if(status==='conflicts'&&examples.length<12)examples.push(entry.invoice);
+   };
+-  for(const entry of input.report){
++  for(const rawEntry of input.report){
++    let entry=rawEntry;
++    const fields=entry.values, statusDate=fields['DATA STATUS'];
++    if(carrier==='TRANSRÁPIDO'&&!fields['DATA ENTREGA']&&statusDate&&statusDate<=today&&
++       statusDate>=(fields.EMISSAO||'')&&statusDate>=(fields['DATA COLETA']||'')&&
++       /^(?:ENTREGUE|ENTREGA REALIZADA(?: NORMALMENTE)?)(?: VIA APLICATIVO MOVEL)?$/.test(sacImportHeader_(fields['STATUS TRANSPORTADORA']))){
++      entry={...entry,values:{...fields,'DATA ENTREGA':statusDate}};
++    }
+     if(entry.notes.some(note=>seen.has(note))){record('conflicts',entry);continue;}
+     entry.notes.forEach(note=>seen.add(note));
+     const cte=entry.values['CT-E']||'';

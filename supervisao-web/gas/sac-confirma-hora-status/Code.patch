@@ -1,0 +1,60 @@
+--- a/Code.gs
++++ b/Code.gs
+@@ -3837,16 +3837,16 @@
+       const existingDelivery=logDate_(at(existing,'DATA ENTREGA'),tz);
+       const existingStatusDate=logDate_(at(existing,'DATA STATUS'),tz);
+       const incomingStatusDate=entry.values['DATA STATUS'];
++      const existingStatusTime=sacImportStatusTime_(at(existing,'HORA STATUS'),tz);
++      const incomingStatusTime=sacImportStatusTime_(entry.values['HORA STATUS'],tz);
+       const older=existingStatusDate&&(!incomingStatusDate||incomingStatusDate<existingStatusDate||
+-        incomingStatusDate===existingStatusDate&&
+-          /^\d\d:\d\d/.test(entry.values['HORA STATUS']||'')&&/^\d\d:\d\d/.test(logText_(at(existing,'HORA STATUS')))&&
+-          entry.values['HORA STATUS']<logText_(at(existing,'HORA STATUS')));
++        incomingStatusDate===existingStatusDate&&existingStatusTime&&incomingStatusTime&&incomingStatusTime<existingStatusTime);
+       const preserveTracking=older || existingDelivery&&!entry.values['DATA ENTREGA'];
+       for(const [name,value] of Object.entries(entry.values)){
+         if(targets.length>1&&SAC_IMPORT_TOTALS.includes(name))continue;
+         if(name==='DATA ENTREGA'&&(existingDelivery||value>today))continue;
+         if(preserveTracking&&SAC_IMPORT_TRACKING.includes(name))continue;
+-        if(value!==sacImportComparable_(name,at(existing,name),tz))next[name]=value;
++        if(sacImportComparable_(name,value,tz)!==sacImportComparable_(name,at(existing,name),tz))next[name]=value;
+       }
+       if(Object.keys(next).length){edits.set(target.i+2,next);changed=true;}
+     }
+@@ -3873,10 +3873,23 @@
+   return value;
+ }
+ 
++function sacImportStatusTime_(value,tz) {
++  if(value instanceof Date)return isNaN(value)?'':Utilities.formatDate(value,tz,'HH:mm:ss');
++  if(typeof value==='number'&&value>=0&&value<1){
++    // O Sheets também pode retornar uma hora como fração de um dia.
++    const seconds=Math.round(value*86400)%86400;
++    return [Math.floor(seconds/3600),Math.floor(seconds/60)%60,seconds%60]
++      .map(part=>String(part).padStart(2,'0')).join(':');
++  }
++  const time=logText_(value).match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
++  return time?time[1].padStart(2,'0')+':'+time[2]+':'+(time[3]||'00'):'';
++}
++
+ function sacImportComparable_(name,value,tz) {
+   const type=SAC_IMPORT_FIELDS[name]?.[0];
+   if(type==='date')return logDate_(value,tz);
+   if(type==='number')return logNumber_(value);
++  if(name==='HORA STATUS')return sacImportStatusTime_(value,tz)||logText_(value);
+   return logText_(value);
+ }
+ 
+@@ -3927,7 +3940,11 @@
+     const values=sheet.getRange(first,1,end-first+1,header.length).getValues();
+     values.forEach((row,i)=>{
+       const fields=expected.get(first+i);
+-      if(fields&&Object.entries(fields).some(([name,value])=>sacImportComparable_(name,row[columns[name]],tz)!==value)){
++      if(!fields)return;
++      const mismatches=Object.entries(fields).filter(([name,value])=>
++        sacImportComparable_(name,row[columns[name]],tz)!==sacImportComparable_(name,value,tz));
++      if(mismatches.length){
++        console.warn(JSON.stringify({operation:'sac.import.verify',row:first+i,fields:mismatches.map(([name])=>name)}));
+         throw new Error('A conferência da gravação encontrou divergências.');
+       }
+     });

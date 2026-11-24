@@ -1,0 +1,88 @@
+--- Code.gs
++++ Code.gs
+@@ -287,7 +287,7 @@
+   passwordChangeSessionSeconds: 600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/53c59f375faffbaa5a792f77991e542ca5cfb28b/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/f55c8803ef3b068d0850a07d2266104140c51a17/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -367,6 +367,8 @@
+     if (!user) throw new Error('Sua sessão expirou. Entre novamente.');
+     if(action==='logistics')return logisticsApi_(user,payload);
+     if(action==='users')return manageUsers_(user,payload);
++    if (action === 'activity') return recordDashboardActivity_(user, payload.module);
++    if (action === 'userActivity') return dashboardActivityOverview_(user);
+     requireArea_(user,'commercial');
+     if(action==='biLayout')return biLayoutApi_(user,payload);
+     if(action==='biDiagnostics')return biDiagnostics_(user);
+@@ -428,6 +430,11 @@
+     }
+     const user = publicUser_(login,record);
+     cache.put('DASH_SESSION_' + token, JSON.stringify(user), AUTH.sessionTtlSeconds);
++    try {
++      PropertiesService.getScriptProperties().setProperty(dashboardActivityKey_(login) + '_LOGIN', String(Date.now()));
++    } catch (err) {
++      console.warn('Não foi possível registrar a data do último login.');
++    }
+     timing.mark('sessao');
+     status = 'ok';
+     return { ok: true, token: token, user: user };
+@@ -436,6 +443,55 @@
+   }
+ }
+ 
++const DASH_ACTIVITY_WINDOW_MS = 5 * 60 * 1000;
++
++function dashboardActivityKey_(login) {
++  return 'DASH_ACTIVITY_' + digestHex_(login).slice(0, 32);
++}
++
++function recordDashboardActivity_(user, module) {
++  const allowed = module === 'hub' ||
++    (module === 'administration' && user.perfil === 'ADMIN') ||
++    (['commercial', 'logistics'].includes(module) && platformAccess_(user).areas.includes(module));
++  if (!allowed) return {ok:true};
++  const cache = CacheService.getScriptCache();
++  const key = dashboardActivityKey_(user.login);
++  const current = JSON.parse(cache.get(key) || 'null');
++  const now = Date.now();
++  if (current?.version === user.accessVersion && current.module === module && now - current.at < 45000) return {ok:true};
++  cache.put(key, JSON.stringify({at:now, module, version:user.accessVersion}), AUTH.sessionTtlSeconds);
++  return {ok:true};
++}
++
++function dashboardActivityOverview_(actor) {
++  if (actor.perfil !== 'ADMIN') throw new Error('Apenas administradores podem consultar a atividade.');
++  const users = Object.entries(loadUsers_()).map(([login, record]) => ({
++    key:dashboardActivityKey_(login),
++    user:publicUser_(login, record)
++  }));
++  const cache = CacheService.getScriptCache();
++  const activity = {};
++  for (let offset = 0; offset < users.length; offset += 100) {
++    Object.assign(activity, cache.getAll(users.slice(offset, offset + 100).map(entry => entry.key)));
++  }
++  const props = PropertiesService.getScriptProperties().getProperties();
++  const now = Date.now();
++  const rows = users.map(({key,user}) => {
++    const presence = JSON.parse(activity[key] || 'null');
++    const lastActivity = presence?.at || null;
++    const recent = Boolean(user.ativo && lastActivity && presence.version === user.accessVersion &&
++      now - lastActivity < DASH_ACTIVITY_WINDOW_MS);
++    return {
++      login:user.login, name:user.nome, role:user.perfil, enabled:user.ativo, recent,
++      module:presence?.module || '', lastActivity, lastLogin:Number(props[key + '_LOGIN']) || null
++    };
++  });
++  rows.sort((a,b) => Number(b.recent) - Number(a.recent) ||
++    Math.max(b.lastActivity || 0, b.lastLogin || 0) - Math.max(a.lastActivity || 0, a.lastLogin || 0) ||
++    a.name.localeCompare(b.name, 'pt-BR'));
++  return {ok:true, rows, updatedAt:now};
++}
++
+ function dashboardSessionRecord_(token, prefix) {
+   token = String(token || '');
+   if (!/^[a-f0-9]{64}$/i.test(token)) return null;

@@ -1,0 +1,79 @@
+--- Code.gs anterior
++++ Code.gs parâmetros da premiação
+@@ -287,7 +287,7 @@
+   passwordChangeSessionSeconds: 600,
+   pbkdf2Iterations: 200000
+ };
+-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/e8de04b214805086a2f5a9c8db8528f9c0e0e90d/supervisao-web/gas/zoom-mapas-20261109/app.html';
++const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/53c59f375faffbaa5a792f77991e542ca5cfb28b/supervisao-web/gas/zoom-mapas-20261109/app.html';
+ 
+ function doGet() {
+   const timing=centralTiming_('central.interface');
+@@ -1826,24 +1826,47 @@
+  });
+ }
+ 
+-function driverPayrollRules_(user){
+-  requireLogPermission_(user,'formation');
+-  if(!['ADMIN','DIRETOR','GERENTE'].includes(user.perfil))throw new Error('O fechamento mensal está disponível para a gestão.');
+-  const saved=PropertiesService.getScriptProperties().getProperty('LOG_DRIVER_BONUS_RULES');
+-  if(!saved)throw new Error('As regras de premiação dos motoristas precisam ser configuradas.');
+-  const rules=JSON.parse(saved),routes={};
+-  if(!rules||typeof rules.perOrder!=='number'||!Number.isFinite(rules.perOrder)||rules.perOrder<0||
+-     !rules.routes||typeof rules.routes!=='object'||Array.isArray(rules.routes)){
+-    throw new Error('Confira as regras de premiação cadastradas.');
++// Parâmetros privados da premiação. Leituras não abrem a planilha operacional.
++function driverPayrollAccess_(user,edit=false){
++  requireLogPermission_(user,'formation',edit?'edit':'view');
++  if(!['ADMIN','DIRETOR','GERENTE'].includes(user.perfil))throw new Error('A premiação dos motoristas está disponível para a gestão.');
++}
++function driverPayrollValidate_(rules){
++  const routes=Object.create(null);
++  if(!rules||typeof rules.perOrder!=='number'||!Number.isFinite(rules.perOrder)||rules.perOrder<0||rules.perOrder>1000000||
++     !rules.routes||typeof rules.routes!=='object'||Array.isArray(rules.routes)||Object.keys(rules.routes).length>40){
++    throw new Error('Informe até 40 rotas e valores válidos, iguais ou maiores que zero.');
+   }
+   for(const [name,value] of Object.entries(rules.routes)){
+     const key=logNorm_(name);
+-    if(!key||Object.prototype.hasOwnProperty.call(routes,key)||typeof value!=='number'||!Number.isFinite(value)||value<0){
+-      throw new Error('Confira o valor e a classificação de cada rota da premiação.');
++    if(!key||key.length>80||['__PROTO__','PROTOTYPE','CONSTRUCTOR'].includes(key)||Object.prototype.hasOwnProperty.call(routes,key)||typeof value!=='number'||!Number.isFinite(value)||value<0||value>1000000){
++      throw new Error('Confira os nomes e valores das rotas. Não repita classificações.');
+     }
+     routes[key]=value;
+   }
+-  return {ok:true,routes,perOrder:rules.perOrder};
++  return {routes,perOrder:rules.perOrder};
++}
++function driverPayrollRules_(user){
++  driverPayrollAccess_(user);
++  const saved=PropertiesService.getScriptProperties().getProperty('LOG_DRIVER_BONUS_RULES');
++  if(!saved)return {ok:true,routes:{},perOrder:0,revision:'',configured:false};
++  const parsed=JSON.parse(saved),rules=driverPayrollValidate_(parsed);
++  return {ok:true,...rules,revision:digestHex_(saved),configured:true,updatedAt:parsed.updatedAt||'',updatedBy:parsed.updatedBy||''};
++}
++function driverPayrollSave_(user,p){
++  driverPayrollAccess_(user,true);
++  const rules=driverPayrollValidate_(p.rules),props=PropertiesService.getScriptProperties();
++  const lock=LockService.getScriptLock();
++  if(!lock.tryLock(3000))throw new Error('Outra configuração está sendo salva. Tente novamente em instantes.');
++  try{
++    const previous=props.getProperty('LOG_DRIVER_BONUS_RULES')||'';
++    if(String(p.revision||'')!==(previous?digestHex_(previous):''))throw new Error('Os parâmetros mudaram. Atualize e confira os valores antes de salvar.');
++    const updatedAt=new Date().toISOString(),saved=JSON.stringify({...rules,updatedAt,updatedBy:user.login});
++    const audit={at:updatedAt,by:user.login,before:previous?JSON.parse(previous):null,after:JSON.parse(saved)};
++    props.setProperties({'LOG_DRIVER_BONUS_RULES':saved,['LOG_DRIVER_BONUS_AUDIT_'+Utilities.getUuid()]:JSON.stringify(audit)},false);
++    if(props.getProperty('LOG_DRIVER_BONUS_RULES')!==saved)throw new Error('Não foi possível confirmar a gravação. Atualize os parâmetros antes de tentar novamente.');
++    return {ok:true,...rules,revision:digestHex_(saved),configured:true,updatedAt,updatedBy:user.login};
++  }finally{lock.releaseLock();}
+ }
+ 
+ function logisticsApi_(user,payload){
+@@ -1860,6 +1883,7 @@
+  if(kind==='geo'&&(access.formationOnly||access.transportOnly))requireLogPermission_(user,'formation');
+  const ids={operations:props.getProperty('LOG_OPERATIONS_ID')||LOGISTICS_SOURCES.operations,indicators:props.getProperty('LOG_INDICATORS_ID')||LOGISTICS_SOURCES.indicators};
+  if(kind==='operations'&&p.action==='driverPayrollRules')return driverPayrollRules_(user);
++ if(kind==='operations'&&p.action==='driverPayrollSave')return driverPayrollSave_(user,p);
+  if(kind==='formationExperimental'||kind==='formationDirect')return formationDirectApi_(user,p);
+  if(kind==='formationSummary')return formOverviewSummary_(user);
+  if(kind==='agenda')return agendaApi_(user,p,ids.operations);
