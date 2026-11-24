@@ -1,0 +1,128 @@
+# Botão "Enviar para o Apps Script" (projeto Central Rebanho).
+#
+# Só roda quando alguém aperta o botão em Actions (nunca sozinho a cada mudança)
+# e só a partir da versão principal (main).
+#
+# Duas opções:
+#   - comparar: baixa o que está hoje no Apps Script e mostra, arquivo por arquivo,
+#               o que está igual, o que está diferente e o que só existe de um lado.
+#               NÃO muda nada no Apps Script.
+#   - enviar:   atualiza no Apps Script SOMENTE os arquivos que já existem lá e que
+#               estão diferentes da pasta supervisao-web/gas. Arquivos que só existem
+#               no Apps Script ficam como estão; arquivos que só existem no GitHub
+#               não são enviados. Exige digitar ENVIAR.
+#
+# Nunca publica versão nova nem muda a versão em uso (implantação).
+# A chave do Google fica no cofre do GitHub (segredo CLASPRC_JSON), nunca no código.
+# Este repositório é público: o resumo mostra só nomes de arquivos, nunca o conteúdo.
+name: Enviar para o Apps Script
+
+on:
+  workflow_dispatch:
+    inputs:
+      acao:
+        description: 'O que fazer'
+        type: choice
+        options:
+          - comparar
+          - enviar
+        default: comparar
+      confirmacao:
+        description: 'Para enviar, digite ENVIAR (o dono autorizou)'
+        required: false
+
+concurrency:
+  group: enviar-apps-script
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  apps-script:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      SCRIPT_ID: 1y9F53nTRrusnY8RrWN650k3VJt9vV7-Sz6breMdysfXGrdQHiEmKAX3r
+      PASTA_GITHUB: supervisao-web/gas
+      ACAO: ${{ inputs.acao }}
+      CONFIRMACAO: ${{ inputs.confirmacao }}
+    steps:
+      - name: Conferir confirmação
+        run: |
+          if [ "$ACAO" = "enviar" ] && [ "$CONFIRMACAO" != "ENVIAR" ]; then
+            echo "Para enviar é preciso digitar ENVIAR. Nada foi enviado."; exit 1
+          fi
+          echo "Ação escolhida: $ACAO"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar a ferramenta do Google (clasp)
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Colocar a chave do cofre
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then echo "Falta o segredo CLASPRC_JSON neste repositório."; exit 1; fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+
+      - name: Baixar o que está hoje no Apps Script
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/atual"
+          printf '{"scriptId":"%s","rootDir":".","fileExtension":"gs"}' "$SCRIPT_ID" > "$RUNNER_TEMP/atual/.clasp.json"
+          (cd "$RUNNER_TEMP/atual" && clasp pull > /dev/null)
+          (cd "$RUNNER_TEMP/atual" && find . -type f ! -name .clasp.json | sed 's|^\./||' | sort) > "$RUNNER_TEMP/lista-atual.txt"
+          echo "Arquivos encontrados no Apps Script: $(wc -l < "$RUNNER_TEMP/lista-atual.txt")"
+
+      - name: Comparar com o GitHub
+        run: |
+          set -euo pipefail
+          igual() { diff -q --strip-trailing-cr <(sed -e '$a\' "$1") <(sed -e '$a\' "$2") > /dev/null; }
+          : > "$RUNNER_TEMP/para-atualizar.txt"
+          {
+            echo "## Comparação: Apps Script × GitHub (\`$PASTA_GITHUB\`)"
+            echo
+            echo "| Arquivo | Situação |"
+            echo "|---|---|"
+            while IFS= read -r f; do
+              if [ ! -f "$PASTA_GITHUB/$f" ]; then
+                echo "| $f | Só no Apps Script — fica como está |"
+              elif igual "$RUNNER_TEMP/atual/$f" "$PASTA_GITHUB/$f"; then
+                echo "| $f | Igual |"
+              else
+                echo "| $f | **Diferente — será atualizado ao enviar** |"
+                echo "$f" >> "$RUNNER_TEMP/para-atualizar.txt"
+              fi
+            done < "$RUNNER_TEMP/lista-atual.txt"
+            (cd "$PASTA_GITHUB" && ls -1 *.gs *.html 2>/dev/null || true) | sort | while IFS= read -r f; do
+              if ! grep -qxF "$f" "$RUNNER_TEMP/lista-atual.txt"; then
+                echo "| $f | Só no GitHub — não é enviado |"
+              fi
+            done
+            echo
+            echo "Arquivos que seriam atualizados: $(wc -l < "$RUNNER_TEMP/para-atualizar.txt")"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Enviar
+        if: inputs.acao == 'enviar'
+        run: |
+          set -euo pipefail
+          if [ ! -s "$RUNNER_TEMP/para-atualizar.txt" ]; then
+            echo "Nada diferente. Nenhum envio feito." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          cp -a "$RUNNER_TEMP/atual" "$RUNNER_TEMP/envio"
+          while IFS= read -r f; do
+            cp "$PASTA_GITHUB/$f" "$RUNNER_TEMP/envio/$f"
+          done < "$RUNNER_TEMP/para-atualizar.txt"
+          (cd "$RUNNER_TEMP/envio" && clasp push --force)
+          echo "Envio concluído. Nenhuma versão foi publicada." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Apagar a chave
+        if: always()
+        run: rm -f ~/.clasprc.json
