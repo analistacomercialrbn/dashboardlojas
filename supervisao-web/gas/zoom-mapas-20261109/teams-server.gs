@@ -24,14 +24,15 @@ function teamsCalendar_(month,lastBilled,today,extra=[]) {
   const cutoff=future?'':month<current?end:(lastBilled&&lastBilled<=today?lastBilled:today);
   const holidays=teamsNationalHolidays_(year);
   extra.forEach(day=>holidays.add(day));
-  let total=0,elapsed=0;
+  let total=0,elapsed=0,elapsedToday=0;
   for(let at=Date.parse(start+'T12:00:00Z');at<=Date.parse(end+'T12:00:00Z');at+=86400000){
     const day=new Date(at),iso=day.toISOString().slice(0,10);
     if(day.getUTCDay()===0||day.getUTCDay()===6||holidays.has(iso))continue;
     total++;
     if(cutoff&&iso<=cutoff)elapsed++;
+    if(iso<=today)elapsedToday++;
   }
-  return {month,start,end,cutoff,lastBilled:lastBilled||'',total,elapsed,remaining:total-elapsed,
+  return {month,start,end,cutoff,lastBilled:lastBilled||'',total,elapsed,remaining:total-elapsed,remainingToday:total-elapsedToday,
     factor:future||!elapsed?null:month<current?1:total/elapsed,
     closed:month<current,future,holidays:[...holidays].filter(day=>day.startsWith(month)).sort()};
 }
@@ -150,7 +151,7 @@ function teamsView_(user,payload) {
     (!supervisors.length||supervisors.includes(String(catalog.get(String(code))?.supervisor||'')));
   const canMargin=['ADMIN','DIRETOR','GERENTE'].includes(user.perfil);
   const version=SCRIPT_PROPS.getProperty('SNAPSHOT_UPDATED_AT')||'';
-  const key='TEAMS_VIEW_V1_'+digestHex_(JSON.stringify([month,today,version,f,user.login,user.perfil,user.accessVersion,user.supervisor,user.cod_rca,aux.goals,reference])).slice(0,40);
+  const key='TEAMS_VIEW_V2_'+digestHex_(JSON.stringify([month,today,version,f,user.login,user.perfil,user.accessVersion,user.supervisor,user.cod_rca,aux.goals,reference])).slice(0,40);
   const cache=CacheService.getScriptCache(),saved=centralCacheRead_(cache,key);
   if(saved)return saved;
   const buckets=new Map(),overall=teamsBucket_();
