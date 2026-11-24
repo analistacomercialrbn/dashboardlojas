@@ -763,7 +763,9 @@ function teamsModel(payload,indicator=TEAMS.indicator,search=TEAMS.search){
 
 function teamsSupervisors(payload){
   const selected=normalizeMulti(state.filters.supervisor),options=payload.supervisorOptions||[];
-  return `<section class="panel teams-scope-panel"><div class="teams-scope-heading"><div><h3>Monte o ranking por supervisão</h3><p>Escolha uma ou mais supervisões. As posições e cores serão recalculadas dentro da seleção.</p></div><span class="teams-active-badge">Somente RCAs ativos</span></div><fieldset class="teams-supervisor-options"><legend class="sr-only">Supervisões do ranking</legend>${options.map((option,i)=>`<label><input type="checkbox" data-teams-supervisor="${esc(option.name)}" ${!selected.length||selected.includes(option.name)?'checked':''}><span>${esc(option.name)}</span><small>${integer(option.count)}</small></label>`).join('')}</fieldset><div class="teams-scope-actions"><button type="button" class="btn secondary small" id="teamsSelectAll">Marcar todas</button><button type="button" class="btn secondary small" id="teamsClearSupervisors">Limpar seleção</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="btn primary small" id="teamsApplySupervisors">Aplicar supervisões</button></div></section>`;
+  const marked=selected.length?options.filter(option=>selected.includes(option.name)).length:options.length;
+  const summary=!selected.length||marked===options.length?'Todas as '+integer(options.length)+' supervisões':integer(marked)+' de '+integer(options.length)+' supervisões';
+  return `<details class="panel teams-scope-panel"${TEAMS.scopeOpen?' open':''}><summary class="teams-scope-summary"><span class="teams-scope-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16l-6 8v6l-4-2v-4Z"/></svg></span><span><strong>Filtrar por supervisão</strong><small>${esc(summary)} · posições e cores recalculadas dentro da seleção</small></span><span class="teams-scope-chevron" aria-hidden="true"></span></summary><fieldset class="teams-supervisor-options"><legend class="sr-only">Supervisões do ranking</legend>${options.map(option=>`<label><input type="checkbox" data-teams-supervisor="${esc(option.name)}" ${!selected.length||selected.includes(option.name)?'checked':''}><span>${esc(option.name)}</span><small>${integer(option.count)}</small></label>`).join('')}</fieldset><div class="teams-scope-actions"><button type="button" class="btn secondary small" id="teamsSelectAll">Marcar todas</button><button type="button" class="btn secondary small" id="teamsClearSupervisors">Limpar seleção</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="btn primary small" id="teamsApplySupervisors">Aplicar supervisões</button></div></details>`;
 }
 
 function teamsScopeText(model){
@@ -777,36 +779,83 @@ function teamsScopeText(model){
   return parts.join(' · ');
 }
 
+function teamsToneLabels(revenue){
+  return revenue?{green:'Projeção ≥ 100%',yellow:'Projeção de 90% a 99,9%',red:'Projeção abaixo de 90%',muted:'Sem meta ou sem resultado'}
+    :{green:'Faixa superior',yellow:'Faixa intermediária',red:'Faixa inferior',muted:'Sem resultado'};
+}
+
+function teamsDistribution(model){
+  const labels=teamsToneLabels(model.revenue),total=Math.max(1,model.ranked.length);
+  const counts={green:0,yellow:0,red:0,muted:0};model.ranked.forEach(row=>{counts[row.tone in counts?row.tone:'muted']++;});
+  const tones=['green','yellow','red','muted'].filter(tone=>counts[tone]);
+  return `<section class="panel teams-distribution" aria-label="Distribuição dos vendedores por sinalização"><header><h3>${model.revenue?'Como a equipe está em relação à meta':'Como a equipe se distribui'}</h3><p>${integer(model.ranked.length)} RCAs ativos no recorte</p></header><div class="teams-distribution-bar" role="img" aria-label="${esc(tones.map(tone=>labels[tone]+': '+counts[tone]).join('; '))}">${tones.map(tone=>`<i class="tone-${tone}" style="flex:${counts[tone]}"></i>`).join('')}</div><div class="teams-distribution-legend">${['green','yellow','red','muted'].map(tone=>`<span class="${counts[tone]?'':'is-empty'}"><i class="teams-dot ${tone}" aria-hidden="true"></i><strong>${integer(counts[tone])}</strong>${esc(labels[tone])}<small>${pct(counts[tone]/total*100)}</small></span>`).join('')}</div></section>`;
+}
+
+function teamsMainValue(row,model){
+  return model.revenue?pct(row.projectedAttainment):teamsValue(row[model.indicator],model.indicator);
+}
+
+function teamsPodium(model){
+  if(model.eligible.length<3)return '';
+  const medals=['1º','2º','3º'],top=model.eligible.slice(0,3);
+  return `<section class="teams-podium" aria-label="Três primeiros do ranking">${top.map((row,i)=>`<article class="teams-podium-card place-${i+1} teams-tone-${row.tone}"><span class="teams-medal" aria-hidden="true">${medals[i]}</span><div><small>${i===0?'Liderança do ranking':integer(row.rank)+'º lugar'}</small><strong>${esc(row.name)}</strong><span>RCA ${esc(row.code)} · ${esc(row.supervisor)}</span></div><div class="teams-podium-value"><strong>${teamsMainValue(row,model)}</strong><small>${model.revenue?'projetado da meta':esc(model.config.unit)}</small></div></article>`).join('')}</section>`;
+}
+
+function teamsScale(model){
+  const {revenue,indicator,eligible,ranked}=model;
+  if(revenue)return Math.min(150,Math.max(110,...eligible.map(row=>Number(row.score)||0)));
+  return Math.max(1,...eligible.map(row=>Math.max(0,Number(row.score)||0)),...ranked.map(row=>Number(row.goals?.[indicator])||0))*1.08;
+}
+
+function teamsBar(row,model,scale){
+  const width=value=>value==null||!Number.isFinite(Number(value))?0:Math.max(0,Math.min(100,Number(value)/scale*100));
+  const goal=model.revenue?(row.goals?.revenue?100:null):row.goals?.[model.indicator];
+  const actual=model.revenue?row.attainment:row[model.indicator];
+  const ghost=model.revenue?`<i class="teams-bar-projection" style="width:${width(row.projectedAttainment)}%"></i>`:'';
+  const marker=goal?`<span class="teams-bar-goal" style="left:${width(goal)}%"><b>Meta</b></span>`:'';
+  return `<div class="teams-bar" aria-hidden="true"><div class="teams-bar-track">${ghost}<i class="teams-bar-actual" style="width:${width(actual)}%"></i>${marker}</div></div>`;
+}
+
+function teamsRow(row,model,scale){
+  const {revenue,indicator,config}=model,goal=row.goals?.[indicator];
+  const main=revenue?`<strong>${pct(row.projectedAttainment)}</strong><small>${row.projectedAttainment==null?(row.goals?.revenue?'Projeção indisponível':'Sem meta cadastrada'):'projeção da meta'}</small>`
+    :`<strong>${teamsValue(row[indicator],indicator)}</strong><small>${esc(config.unit)}</small>`;
+  const detail=revenue?(row.goals?.revenue?`<span>Faturado <b>${pct(row.attainment)}</b> da meta</span>`:'<span>Sem meta cadastrada</span>')
+    :`<span>${goal?'Meta <b>'+teamsValue(goal,indicator)+'</b> · '+pct(row.ratio)+' atingido':'Sem meta cadastrada'}</span>`;
+  return `<article class="teams-line teams-tone-${row.tone}"><div class="teams-line-place">${row.rank?integer(row.rank)+'º':'—'}</div><div class="teams-line-who"><strong>${esc(row.name)}</strong><small>RCA ${esc(row.code)} · ${esc(row.supervisor)}</small></div><div class="teams-line-bar">${teamsBar(row,model,scale)}${detail}</div><div class="teams-line-value">${main}</div><div class="teams-line-status"><span class="teams-pill tone-${row.tone}"><i class="teams-dot ${row.tone}" aria-hidden="true"></i>${esc(row.status)}</span></div></article>`;
+}
+
 function renderTeams(payload){
   if(TEAMS.indicator==='margin'&&!payload.canMargin)TEAMS.indicator='revenue';
   let model=teamsModel(payload);TEAMS.model=model;
-  const {indicator,config,revenue,ranked,eligible,cards}=model,calendar=payload.calendar;
-  const withGoals=ranked.filter(row=>row.goals?.[indicator]>0).length;
+  const {indicator,config,revenue,ranked,cards}=model,calendar=payload.calendar;
+  const withGoals=ranked.filter(row=>row.goals?.[indicator]>0).length,labels=teamsToneLabels(revenue);
   const cutoff=calendar.cutoff?calendar.cutoff.split('-').reverse().join('/'):'Mês futuro';
   const title=revenue?'Quem está no ritmo da meta?':'Quem se destaca em '+config.label.toLocaleLowerCase('pt-BR')+'?';
-  $('#content').className='teams-view'+(TEAMS.paused?' teams-motion-paused':'');
-  $('#content').innerHTML=`${teamsTabs(payload)}${teamsSupervisors(payload)}
+  const scale=teamsScale(model);
+  $('#content').className='teams-view teams-v2'+(TEAMS.paused?' teams-motion-paused':'');
+  $('#content').innerHTML=`${teamsTabs(payload)}
     <section class="teams-hero"><div><span class="teams-eyebrow">REBANHO · VISÃO EQUIPES · ${esc(teamsGroupLabel(model.group).toLocaleUpperCase('pt-BR'))}</span><h2>${esc(title)}</h2><p>${esc(config.explanation)}</p></div><div class="teams-period"><span>${esc(calendar.month.slice(5)+'/'+calendar.month.slice(0,4))}</span><strong>${calendar.closed?'Mês encerrado':calendar.future?'Mês futuro':integer(calendar.remainingToday??calendar.remaining)+' dias úteis até o fim do mês'}</strong><small>Corte dos dados: ${esc(cutoff)}</small>${calendar.remainingToday!=null&&calendar.remaining>calendar.remainingToday?'<small>Projeção: '+integer(calendar.remaining)+' dias úteis após o corte</small>':''}</div></section>
     <div class="teams-summary ${revenue?'':'teams-summary-compact'}">${cards.map(card=>kpi(card.label,esc(card.value),esc(card.note))).join('')}</div>
-    <section class="panel teams-ranking-panel ${revenue?'teams-revenue-ranking':''}"><header class="teams-ranking-heading"><div><h3>Ranking de ${esc(config.label.toLocaleLowerCase('pt-BR'))}</h3><p>${revenue?'Maior projeção de atingimento primeiro. Apenas porcentagens. RCAs sem meta aparecem ao final.':'Maior resultado real primeiro. Empates recebem a mesma posição.'}</p></div><div class="teams-ranking-tools"><label class="teams-search">Buscar vendedor ou equipe<input id="teamsSearch" type="search" placeholder="Nome, código ou supervisor" value="${esc(TEAMS.search)}"></label><button type="button" class="btn primary small" id="teamsDownload" ${!model.visible.length?'disabled':''}>Baixar imagem</button></div></header>
+    ${teamsDistribution(model)}
+    ${teamsSupervisors(payload)}
+    ${teamsPodium(model)}
+    <section class="panel teams-ranking-panel"><header class="teams-ranking-heading"><div><h3>Ranking de ${esc(config.label.toLocaleLowerCase('pt-BR'))}</h3><p>${revenue?'Maior projeção de atingimento primeiro. Apenas porcentagens. RCAs sem meta aparecem ao final.':'Maior resultado real primeiro. Empates recebem a mesma posição.'}</p></div><div class="teams-ranking-tools"><label class="teams-search"><span class="sr-only">Buscar vendedor ou equipe</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="teamsSearch" type="search" placeholder="Buscar nome, código ou supervisor" value="${esc(TEAMS.search)}"></label><button type="button" class="btn primary small" id="teamsDownload" ${!model.visible.length?'disabled':''}>Baixar imagem</button></div></header>
       <p class="teams-current-scope">${esc(teamsScopeText(model))}</p>
-      <div class="teams-legend"><span><i class="teams-dot green"></i>${revenue?'Projeção ≥ 100%':'Faixa superior'}</span><span><i class="teams-dot yellow"></i>${revenue?'90% a 99,9%':'Faixa intermediária'}</span><span><i class="teams-dot red"></i>${revenue?'Abaixo de 90%':'Faixa inferior'}</span><button type="button" id="teamsPause" aria-pressed="${TEAMS.paused}">${TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante'}</button></div>
+      <div class="teams-legend">${revenue?'<span><i class="teams-key-actual"></i>Faturado</span><span><i class="teams-key-projection"></i>Projeção até o fim do mês</span><span><i class="teams-key-goal"></i>Meta (100%)</span>':`<span><i class="teams-key-actual"></i>Resultado</span>${withGoals?'<span><i class="teams-key-goal"></i>Meta mensal</span>':''}`}<button type="button" id="teamsPause" aria-pressed="${TEAMS.paused}">${TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante'}</button></div>
       ${!revenue?`<p class="teams-rule-note">${withGoals?'Vendedores com meta cadastrada: verde ≥100%, amarelo de 90% a 99,9%, vermelho abaixo de 90%. Para os demais, a cor segue a posição relativa.':'As cores comparam as posições no ranking: terço superior, intermediário e inferior. Não representam atingimento de meta.'}</p>`:''}
       <div id="teamsRankingRows"></div><p id="teamsExportStatus" class="teams-export-status" role="status"></p>
       <footer class="teams-ranking-footer"><span id="teamsVisibleCount"></span><span>Leitura: ${esc(new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(payload.updatedAt)))}</span></footer>
     </section>
-    <details class="teams-method panel"><summary>Como os indicadores e a projeção são calculados</summary><p><strong>Equipes:</strong> Saúde reúne os especialistas identificados na coluna Saúde Animal da matriz de cobertura que não atendem Nutrição, Aves ou Suínos. Os demais ficam no outro grupo. Só entram RCAs com cadastro ativo na base auxiliar, inclusive os sem venda. Supervisão, indicador e filtros são combinados antes do ranking.</p><p><strong>Faturamento:</strong> apenas FECHADO, pela data de faturamento. Projeção = faturado ÷ dias úteis decorridos × dias úteis do mês. Todos usam a mesma data de corte da base. Em meses encerrados, a projeção é igual ao realizado. O resumo de atingimento considera apenas RCAs com meta.</p><p><strong>Positivações:</strong> clientes principais com venda positiva no mês. <strong>Mix:</strong> produtos distintos por cliente principal. <strong>Ticket:</strong> todas as compras faturadas ÷ clientes principais com compra. Os vínculos são consolidados depois de aplicar os filtros e dentro de cada vendedor.</p><p><strong>Margem bruta:</strong> soma de Vl Lucro ÷ soma do faturamento; não é uma média simples de percentuais. A ausência de lucro em uma venda impede o cálculo completo daquele vendedor.</p><p><strong>Calendário:</strong> segunda a sexta, feriados nacionais e datas adicionais cadastradas em FERIADOS na base auxiliar.</p>${payload.goalScopeLimited?'<p><strong>Meta e território:</strong> as metas mensais são do vendedor e não têm rateio por estado, região ou cidade. O realizado acompanha os filtros selecionados.</p>':''}<p><strong>Imagem:</strong> inclui todos os vendedores visíveis no ranking, na mesma ordem, com equipe, supervisões, filtros, período e data de corte. O nome contém o indicador e a data do download. A busca restringe a imagem e preserva as posições do ranking completo.</p></details>`;
+    <details class="teams-method panel"><summary>Como os indicadores e a projeção são calculados</summary><p><strong>Equipes:</strong> Saúde reúne os especialistas identificados na coluna Saúde Animal da matriz de cobertura que não atendem Nutrição, Aves ou Suínos. Os demais ficam no outro grupo. Só entram RCAs com cadastro ativo na base auxiliar, inclusive os sem venda. Supervisão, indicador e filtros são combinados antes do ranking.</p><p><strong>Faturamento:</strong> apenas FECHADO, pela data de faturamento. Projeção = faturado ÷ dias úteis decorridos × dias úteis do mês. Todos usam a mesma data de corte da base. Em meses encerrados, a projeção é igual ao realizado. O resumo de atingimento considera apenas RCAs com meta.</p><p><strong>Positivações:</strong> clientes principais com venda positiva no mês. <strong>Mix:</strong> produtos distintos por cliente principal. <strong>Ticket:</strong> todas as compras faturadas ÷ clientes principais com compra. Os vínculos são consolidados depois de aplicar os filtros e dentro de cada vendedor.</p><p><strong>Margem bruta:</strong> soma de Vl Lucro ÷ soma do faturamento; não é uma média simples de percentuais. A ausência de lucro em uma venda impede o cálculo completo daquele vendedor.</p><p><strong>Barras:</strong> ${revenue?'a parte escura é o faturado; a parte clara, a projeção até o fim do mês; o traço marca a meta (100%).':'o comprimento compara o resultado de cada vendedor com o maior do recorte; o traço marca a meta, quando houver.'} <strong>Cores:</strong> ${esc(Object.values(labels).slice(0,3).join(' · '))}.</p><p><strong>Calendário:</strong> segunda a sexta, feriados nacionais e datas adicionais cadastradas em FERIADOS na base auxiliar.</p>${payload.goalScopeLimited?'<p><strong>Meta e território:</strong> as metas mensais são do vendedor e não têm rateio por estado, região ou cidade. O realizado acompanha os filtros selecionados.</p>':''}<p><strong>Imagem:</strong> inclui todos os vendedores visíveis no ranking, na mesma ordem, com equipe, supervisões, filtros, período e data de corte. O nome contém o indicador e a data do download. A busca restringe a imagem e preserva as posições do ranking completo.</p></details>`;
   const draw=()=>{
     model=teamsModel(payload);TEAMS.model=model;
-    const max=Math.max(1,...eligible.map(row=>Math.max(0,row.score)));
-    $('#teamsRankingRows').innerHTML=`<div class="teams-grid-head"><span>Posição</span><span>Vendedor / equipe</span><span>${revenue?'Atingimento':'Realizado'}</span><span>${revenue?'Projeção de atingimento':'Meta mensal'}</span><span>Sinalização</span></div>`+model.visible.map(row=>{
-      const goal=row.goals?.[indicator],bar=row.score==null?0:Math.max(0,Math.min(100,revenue?row.score:row.score/max*100));
-      return `<article class="teams-rank-row teams-tone-${row.tone}"><div class="teams-rank-place">${row.rank?integer(row.rank)+'º':'—'}</div><div class="teams-seller"><strong>${esc(row.name)}</strong><small>RCA ${esc(row.code)} · ${esc(row.supervisor)}</small><div class="teams-score-track" aria-hidden="true"><i style="width:${bar}%"></i></div></div><div class="teams-rank-number"><span class="teams-mobile-label">${revenue?'Atingimento':'Realizado'}</span><strong>${revenue?pct(row.attainment):teamsValue(row[indicator],indicator)}</strong><small>${revenue?'Somente faturados':config.unit}</small></div>${!revenue?`<div class="teams-rank-goal"><span class="teams-mobile-label">Meta mensal</span><strong>${teamsValue(goal,indicator)}</strong><small>${goal?pct(row.ratio)+' atingido':'Sem meta cadastrada'}</small></div>`:''}${revenue?`<div class="teams-rank-projection"><span class="teams-mobile-label">Projeção</span><strong>${pct(row.projectedAttainment)}</strong><small>${row.projectedAttainment==null?'Projeção indisponível':'Da meta mensal'}</small></div>`:''}<div class="teams-rank-signal"><i class="teams-dot ${row.tone}" aria-hidden="true"></i><span>${esc(row.status)}</span></div></article>`;
-    }).join('')+(model.visible.length?'':'<div class="teams-empty">Nenhum RCA ativo encontrado neste recorte. Confira a equipe, as supervisões e os filtros.</div>');
+    $('#teamsRankingRows').innerHTML=`<div class="teams-line-head" aria-hidden="true"><span>Pos.</span><span>Vendedor / supervisão</span><span>${revenue?'Faturado e projeção × meta':'Resultado'+(withGoals?' × meta':'')}</span><span>${revenue?'Projeção':'Realizado'}</span><span>Sinalização</span></div>`+model.visible.map(row=>teamsRow(row,model,scale)).join('')+(model.visible.length?'':'<div class="teams-empty">Nenhum RCA ativo encontrado neste recorte. Confira a equipe, as supervisões e os filtros.</div>');
     $('#teamsVisibleCount').textContent=integer(model.visible.length)+' de '+integer(ranked.length)+' RCAs ativos';
     $('#teamsDownload').disabled=!model.visible.length;
   };
   draw();bindTeamsTabs();bindTeamsSupervisors();
+  const scope=$('.teams-scope-panel');if(scope)scope.ontoggle=()=>{TEAMS.scopeOpen=scope.open;};
   $('#teamsSearch').oninput=event=>{TEAMS.search=event.target.value;draw();};
   $('#teamsDownload').onclick=()=>downloadTeamsImage(TEAMS.model);
   $('#teamsPause').onclick=()=>{TEAMS.paused=!TEAMS.paused;$('#content').classList.toggle('teams-motion-paused',TEAMS.paused);const b=$('#teamsPause');b.setAttribute('aria-pressed',String(TEAMS.paused));b.textContent=TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante';};
