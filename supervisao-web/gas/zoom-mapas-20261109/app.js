@@ -755,7 +755,7 @@ function teamsModel(payload,indicator=TEAMS.indicator,search=TEAMS.search){
   const cards=[
     {label:'RCAs ativos no recorte',value:integer(ranked.length),note:integer(ranked.filter(row=>row.revenue>0).length)+' com faturamento'},
     {label:revenue?'Atingimento da meta':config.label+' no recorte',value:revenue?pct(attainment):teamsValue(payload.summary[indicator],indicator),note:revenue?'Somente faturados · RCAs com meta':config.unit},
-    {label:revenue?'Projeção de atingimento':'Faturado no recorte',value:revenue?pct(projection):money(payload.summary.revenue,true),note:revenue?'Ritmo por dias úteis · RCAs com meta':'Somente vendas faturadas'},
+    ...(revenue?[{label:'Projeção de atingimento',value:pct(projection),note:'Ritmo por dias úteis · RCAs com meta'}]:[]),
     {label:'Liderança do ranking',value:leader?leader.name:'—',note:leader?(revenue?pct(leader.projectedAttainment)+' projetado da meta':teamsValue(leader[indicator],indicator)):'Sem resultado disponível'}
   ];
   return {payload,indicator,revenue,config,ranked,eligible,visible,leader,cards,group:payload.teamGroup||TEAMS.group,search,filters:JSON.parse(JSON.stringify(state.filters))};
@@ -787,7 +787,7 @@ function renderTeams(payload){
   $('#content').className='teams-view'+(TEAMS.paused?' teams-motion-paused':'');
   $('#content').innerHTML=`${teamsTabs(payload)}${teamsSupervisors(payload)}
     <section class="teams-hero"><div><span class="teams-eyebrow">REBANHO · VISÃO EQUIPES · ${esc(teamsGroupLabel(model.group).toLocaleUpperCase('pt-BR'))}</span><h2>${esc(title)}</h2><p>${esc(config.explanation)}</p></div><div class="teams-period"><span>${esc(calendar.month.slice(5)+'/'+calendar.month.slice(0,4))}</span><strong>${calendar.closed?'Mês encerrado':calendar.future?'Mês futuro':integer(calendar.remainingToday??calendar.remaining)+' dias úteis até o fim do mês'}</strong><small>Corte dos dados: ${esc(cutoff)}</small>${calendar.remainingToday!=null&&calendar.remaining>calendar.remainingToday?'<small>Projeção: '+integer(calendar.remaining)+' dias úteis após o corte</small>':''}</div></section>
-    <div class="teams-summary">${cards.map(card=>kpi(card.label,esc(card.value),esc(card.note))).join('')}</div>
+    <div class="teams-summary ${revenue?'':'teams-summary-compact'}">${cards.map(card=>kpi(card.label,esc(card.value),esc(card.note))).join('')}</div>
     <section class="panel teams-ranking-panel ${revenue?'teams-revenue-ranking':''}"><header class="teams-ranking-heading"><div><h3>Ranking de ${esc(config.label.toLocaleLowerCase('pt-BR'))}</h3><p>${revenue?'Maior projeção de atingimento primeiro. Apenas porcentagens. RCAs sem meta aparecem ao final.':'Maior resultado real primeiro. Empates recebem a mesma posição.'}</p></div><div class="teams-ranking-tools"><label class="teams-search">Buscar vendedor ou equipe<input id="teamsSearch" type="search" placeholder="Nome, código ou supervisor" value="${esc(TEAMS.search)}"></label><button type="button" class="btn primary small" id="teamsDownload" ${!model.visible.length?'disabled':''}>Baixar imagem</button></div></header>
       <p class="teams-current-scope">${esc(teamsScopeText(model))}</p>
       <div class="teams-legend"><span><i class="teams-dot green"></i>${revenue?'Projeção ≥ 100%':'Faixa superior'}</span><span><i class="teams-dot yellow"></i>${revenue?'90% a 99,9%':'Faixa intermediária'}</span><span><i class="teams-dot red"></i>${revenue?'Abaixo de 90%':'Faixa inferior'}</span><button type="button" id="teamsPause" aria-pressed="${TEAMS.paused}">${TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante'}</button></div>
@@ -799,9 +799,9 @@ function renderTeams(payload){
   const draw=()=>{
     model=teamsModel(payload);TEAMS.model=model;
     const max=Math.max(1,...eligible.map(row=>Math.max(0,row.score)));
-    $('#teamsRankingRows').innerHTML=`<div class="teams-grid-head"><span>Posição</span><span>Vendedor / equipe</span><span>${revenue?'Atingimento':'Realizado'}</span>${!revenue?'<span>Meta mensal</span>':''}<span>${revenue?'Projeção de atingimento':'Faturamento'}</span><span>Sinalização</span></div>`+model.visible.map(row=>{
+    $('#teamsRankingRows').innerHTML=`<div class="teams-grid-head"><span>Posição</span><span>Vendedor / equipe</span><span>${revenue?'Atingimento':'Realizado'}</span><span>${revenue?'Projeção de atingimento':'Meta mensal'}</span><span>Sinalização</span></div>`+model.visible.map(row=>{
       const goal=row.goals?.[indicator],bar=row.score==null?0:Math.max(0,Math.min(100,revenue?row.score:row.score/max*100));
-      return `<article class="teams-rank-row teams-tone-${row.tone}"><div class="teams-rank-place">${row.rank?integer(row.rank)+'º':'—'}</div><div class="teams-seller"><strong>${esc(row.name)}</strong><small>RCA ${esc(row.code)} · ${esc(row.supervisor)}</small><div class="teams-score-track" aria-hidden="true"><i style="width:${bar}%"></i></div></div><div class="teams-rank-number"><span class="teams-mobile-label">${revenue?'Atingimento':'Realizado'}</span><strong>${revenue?pct(row.attainment):teamsValue(row[indicator],indicator)}</strong><small>${revenue?'Somente faturados':config.unit}</small></div>${!revenue?`<div class="teams-rank-goal"><span class="teams-mobile-label">Meta mensal</span><strong>${teamsValue(goal,indicator)}</strong><small>${goal?pct(row.ratio)+' atingido':'Sem meta cadastrada'}</small></div>`:''}<div class="teams-rank-projection"><span class="teams-mobile-label">${revenue?'Projeção':'Faturamento'}</span><strong>${revenue?pct(row.projectedAttainment):money(row.revenue)}</strong><small>${revenue?(row.projectedAttainment==null?'Projeção indisponível':'Da meta mensal'):integer(row.clients)+' clientes principais'}</small></div><div class="teams-rank-signal"><i class="teams-dot ${row.tone}" aria-hidden="true"></i><span>${esc(row.status)}</span></div></article>`;
+      return `<article class="teams-rank-row teams-tone-${row.tone}"><div class="teams-rank-place">${row.rank?integer(row.rank)+'º':'—'}</div><div class="teams-seller"><strong>${esc(row.name)}</strong><small>RCA ${esc(row.code)} · ${esc(row.supervisor)}</small><div class="teams-score-track" aria-hidden="true"><i style="width:${bar}%"></i></div></div><div class="teams-rank-number"><span class="teams-mobile-label">${revenue?'Atingimento':'Realizado'}</span><strong>${revenue?pct(row.attainment):teamsValue(row[indicator],indicator)}</strong><small>${revenue?'Somente faturados':config.unit}</small></div>${!revenue?`<div class="teams-rank-goal"><span class="teams-mobile-label">Meta mensal</span><strong>${teamsValue(goal,indicator)}</strong><small>${goal?pct(row.ratio)+' atingido':'Sem meta cadastrada'}</small></div>`:''}${revenue?`<div class="teams-rank-projection"><span class="teams-mobile-label">Projeção</span><strong>${pct(row.projectedAttainment)}</strong><small>${row.projectedAttainment==null?'Projeção indisponível':'Da meta mensal'}</small></div>`:''}<div class="teams-rank-signal"><i class="teams-dot ${row.tone}" aria-hidden="true"></i><span>${esc(row.status)}</span></div></article>`;
     }).join('')+(model.visible.length?'':'<div class="teams-empty">Nenhum RCA ativo encontrado neste recorte. Confira a equipe, as supervisões e os filtros.</div>');
     $('#teamsVisibleCount').textContent=integer(model.visible.length)+' de '+integer(ranked.length)+' RCAs ativos';
     $('#teamsDownload').disabled=!model.visible.length;
@@ -875,21 +875,21 @@ async function teamsImageCanvas(model,date=new Date()){
   text(payload.calendar.closed?'Mês encerrado':integer(payload.calendar.remainingToday??payload.calendar.remaining)+' dias úteis restantes',1190,244,17,'#cbdef7');
   scope.forEach((line,i)=>text(line,60,307+i*26,18,'#657995'));
   const cardY=329+(scope.length-1)*26;
-  cards.forEach((card,i)=>{const x=40+i*385;rect(x,cardY,365,116,'#ffffff');text(card.label.toLocaleUpperCase('pt-BR'),x+20,cardY+29,14,'#74859e',600);wrap(card.value,x+20,cardY+64,325,i===3?21:29,'#223d75',700);if(i!==3||lines(card.value,325,21).length<2)text(card.note,x+20,cardY+98,14,'#7b8ca4');});
-  const columns=revenue?[68,150,730,975,1250]:[68,150,620,830,1040,1270];
-  const headers=revenue?['POS.','VENDEDOR / SUPERVISÃO','ATINGIMENTO','PROJEÇÃO','SINALIZAÇÃO']:['POS.','VENDEDOR / SUPERVISÃO','REALIZADO','META MENSAL','FATURAMENTO','SINALIZAÇÃO'];
+  const cardWidth=(1520-(cards.length-1)*20)/cards.length;
+  cards.forEach((card,i)=>{const x=40+i*(cardWidth+20),leader=i===cards.length-1;rect(x,cardY,cardWidth,116,'#ffffff');text(card.label.toLocaleUpperCase('pt-BR'),x+20,cardY+29,14,'#74859e',600);wrap(card.value,x+20,cardY+64,cardWidth-40,leader?21:29,'#223d75',700);if(!leader||lines(card.value,cardWidth-40,21).length<2)text(card.note,x+20,cardY+98,14,'#7b8ca4');});
+  const columns=[68,150,730,975,1250];
+  const headers=revenue?['POS.','VENDEDOR / SUPERVISÃO','ATINGIMENTO','PROJEÇÃO','SINALIZAÇÃO']:['POS.','VENDEDOR / SUPERVISÃO','REALIZADO','META MENSAL','SINALIZAÇÃO'];
   headers.forEach((label,i)=>text(label,columns[i],headerH+33,15,'#73849b',700));
   visible.forEach((row,i)=>{
     const y=headerH+58+i*rowH;rect(40,y,1520,92,'#ffffff',10);rect(40,y,5,92,{green:'#23a570',yellow:'#d6a51f',red:'#cd5b58'}[row.tone]||'#a7b1bf',2);
     text(row.rank?row.rank+'º':'—',columns[0],y+40,24,'#617a9c',700);
-    wrap(row.name,150,y+31,revenue?510:430,21,'#263e63',700);text('RCA '+row.code+' · '+row.supervisor,150,y+75,15,'#7e8ea3');
+    wrap(row.name,150,y+31,510,21,'#263e63',700);text('RCA '+row.code+' · '+row.supervisor,150,y+75,15,'#7e8ea3');
     text(revenue?pct(row.attainment):teamsValue(row[indicator],indicator),columns[2],y+42,25,'#2a4a7b',700);
     text(revenue?'Somente faturados':config.unit,columns[2],y+70,13,'#7e8ea3');
     if(revenue){
       text(pct(row.projectedAttainment),columns[3],y+42,25,'#234d89',700);text('Da meta mensal',columns[3],y+70,13,'#7e8ea3');
     }else{
       text(teamsValue(row.goals?.[indicator],indicator),columns[3],y+42,21,'#71819b');text(row.goals?.[indicator]?pct(row.ratio)+' atingido':'Sem meta cadastrada',columns[3],y+70,13,'#7e8ea3');
-      text(money(row.revenue),columns[4],y+42,20,'#31507d',700);text(integer(row.clients)+' clientes principais',columns[4],y+70,13,'#7e8ea3');
     }
     const statusX=columns.at(-1);dot(statusX,y+38,row.tone);wrap(row.status,statusX+20,y+34,1540-statusX-20,17,'#6e8098');
   });
