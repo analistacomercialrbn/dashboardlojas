@@ -643,7 +643,7 @@ function sectionHeading(title,sub=''){return `<div class="section-heading"><div>
 function renderPage(page,payload){
   mountCoverageFilters(page==='cidades'&&state.cityView==='coverage');
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
-  if(page==='history')renderMacroHistory(payload);
+  if(page==='history')Promise.resolve(renderMacroHistory(payload)).then(()=>{if(state.page==='history')renderPageExtras('history',payload);});
   else if(page==='overview')renderOverview(payload);
   else if(page==='carteira')renderCarteira(payload);
   else if(page==='produtos')renderProdutos(payload);
@@ -652,6 +652,7 @@ function renderPage(page,payload){
   else if(page==='pedidos')renderOrders(payload);
   if(page!=='history'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
   biRender(page,payload);
+  if(page!=='history')renderPageExtras(page,payload);
   if(page==='overview')loadCompanySummary();
 }
 
@@ -981,7 +982,7 @@ function companyHost(){
   let host=$('#companySummary');
   if(!host){
     host=document.createElement('section');host.id='companySummary';host.className='company-summary';
-    const hero=$('#content .overview-summary-hero');if(hero)hero.after(host);else $('#content').prepend(host);
+    const hero=$('#overviewCompare')||$('#content .overview-summary-hero');if(hero)hero.after(host);else $('#content').prepend(host);
   }
   return host;
 }
@@ -992,6 +993,14 @@ function companyGroupStats(rows){
   const ranked=teamsRanking(rows,'revenue'),tones={green:0,yellow:0,red:0,muted:0};
   ranked.forEach(r=>{tones[r.tone in tones?r.tone:'muted']++;});
   return {count:rows.length,withGoal:withGoal.length,attainment:goal?actual/goal*100:null,projection:goal&&projected?projected/goal*100:(goal?0:null),tones};
+}
+function companyPace(total,calendar){
+  // Quanto da meta precisa entrar por dia útil para chegar a 100%, comparado com o ritmo atual.
+  const elapsed=Number(calendar.elapsed),remaining=Number(calendar.remaining);
+  if(calendar.closed||calendar.future||!(remaining>0)||!(elapsed>0)||total.attainment==null)return null;
+  if(total.attainment>=100)return ['Ritmo necessário','Meta batida','faturado já passou de 100%'];
+  const needed=(100-total.attainment)/remaining,current=total.attainment/elapsed;
+  return ['Ritmo necessário',pct(needed)+' / dia','da meta por dia útil · ritmo atual '+pct(current)+' / dia'];
 }
 function companyRcaCount(n){return integer(n)+(n===1?' RCA ativo':' RCAs ativos');}
 function companyTone(value){return value==null?'muted':value>=100?'green':value>=90?'yellow':'red';}
@@ -1032,7 +1041,8 @@ function renderCompanySummary(payload){
     ['Mix por cliente',summary.mix!=null?dec(summary.mix):'—','produtos distintos por cliente'],
     ['Ticket médio',summary.ticket!=null?money(summary.ticket,true):'—','faturamento ÷ clientes com compra'],
     ...(showMargin?[['Margem bruta',summary.margin!=null?pct(summary.margin):'—','lucro bruto ÷ faturamento']]:[]),
-    ['RCAs no ritmo',integer(total.tones.green)+' de '+integer(total.count),'projeção ≥ 100% da meta']
+    ['RCAs no ritmo',integer(total.tones.green)+' de '+integer(total.count),'projeção ≥ 100% da meta'],
+    ...(companyPace(total,calendar)?[companyPace(total,calendar)]:[])
   ];
   const head=`<tr><th data-sort-ready="1" scope="col">${'%LABEL%'}</th><th data-sort-ready="1" scope="col">Faturado e projeção × meta</th><th data-sort-ready="1" scope="col" class="num">Faturado</th><th data-sort-ready="1" scope="col" class="num">Projeção</th><th data-sort-ready="1" scope="col" class="num">Positivações</th><th data-sort-ready="1" scope="col" class="num">Mix</th><th data-sort-ready="1" scope="col" class="num">Ticket</th>${showMargin?'<th data-sort-ready="1" scope="col" class="num">Margem</th>':''}<th data-sort-ready="1" scope="col">RCAs</th></tr>`;
   host.innerHTML=`<div class="company-toolbar"><div><h2>Resumo da empresa</h2><p>Indicadores da Visão equipes somados para a empresa, por equipe e por supervisão. Sem dados de vendedor — pronto para enviar aos supervisores.</p></div><div class="company-actions">${m.canMargin?`<label class="company-margin-toggle"><input type="checkbox" id="companyShowMargin" ${COMPANY.showMargin?'checked':''}> Mostrar margem</label>`:''}<button type="button" class="btn secondary small" id="companyCopy">Copiar imagem</button><button type="button" class="btn primary small" id="companyDownload">Baixar imagem</button></div></div>
@@ -1099,6 +1109,117 @@ async function companyExport(mode){
   finally{card.classList.remove('is-exporting');buttons.forEach(b=>b&&(b.disabled=false));}
 }
 
+// ===== Indicadores adicionais por tela (payload.extras, calculado no processamento das bases) =====
+function exGrowthChip(value,suffix=''){
+  if(value==null||!Number.isFinite(Number(value)))return '<span class="ex-chip">sem base</span>';
+  const v=Number(value),tone=v>0.05?'up':v<-0.05?'down':'flat';
+  return `<span class="ex-chip ${tone}">${v>0?'▲':v<0?'▼':'■'} ${Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}%${suffix}</span>`;
+}
+function exSection(id,title,sub,body,extraClass=''){return `<section class="panel ex-panel ${extraClass}" id="${id}"><div class="ex-head"><h3>${esc(title)}</h3>${sub?`<p>${esc(sub)}</p>`:''}</div>${body}</section>`;}
+function exTable(cols,rows,empty='Nada para mostrar neste recorte.'){
+  if(!rows.length)return `<p class="ex-empty">${esc(empty)}</p>`;
+  return `<div class="ex-table-wrap"><table class="ex-table"><thead><tr>${cols.map(c=>`<th data-sort-ready="1" class="${c.num?'num':''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map((c,i)=>`<td class="${c.num?'num':''}">${r[i]}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function exShareBar(value,tone=''){const w=Math.max(0,Math.min(100,Number(value)||0));return `<span class="ex-share ${tone}"><i style="width:${w}%"></i></span>`;}
+function exCards(items){return `<div class="ex-cards">${items.map(([label,value,note,tone])=>`<div class="ex-card ${tone||''}"><span>${esc(label)}</span><strong>${value}</strong><small>${note}</small></div>`).join('')}</div>`;}
+function exInsert(html,anchor,where='afterend'){
+  const root=$('#content');if(!root)return;
+  const target=anchor?root.querySelector(anchor):null;
+  if(target)target.insertAdjacentHTML(where,html);else root.insertAdjacentHTML('beforeend',html);
+}
+function exDate(iso){return iso?String(iso).slice(0,10).split('-').reverse().join('/'):'—';}
+
+function renderPageExtras(page,payload){
+  const ex=payload?.extras;if(!ex||ex.error){if(ex?.error)console.warn('Indicadores adicionais indisponíveis:',ex.error);return;}
+  try{
+    if(page==='overview')exOverviewUi(ex);
+    else if(page==='pedidos')exOrdersUi(ex);
+    else if(page==='carteira')exPortfolioUi(ex);
+    else if(page==='produtos')exProductsUi(ex);
+    else if(page==='cidades'&&state.cityView!=='coverage')exCitiesUi(ex);
+    else if(page==='metas')exGoalsUi(ex);
+    else if(page==='history')exHistoryUi(ex);
+  }catch(error){console.warn('Falha ao desenhar indicadores adicionais',error);}
+}
+
+function exOverviewUi(ex){
+  const c=ex.comparisons;if(!c)return;
+  const partial=c.partial?` (até o dia ${c.limitDay})`:'';
+  const items=[
+    ['Faturamento no período',money(c.current,true),c.partial?'até o dia '+c.limitDay+' · vendas faturadas':'vendas faturadas'],
+    ['Mesmo período em '+c.lastYearLabel,money(c.lastYear,true),exGrowthChip(c.lastYearGrowth,' vs ano anterior')],
+    ...(c.previous!=null?[['Mês anterior · '+c.previousLabel+partial,money(c.previous,true),exGrowthChip(c.previousGrowth,' vs mês anterior')]]:[])
+  ];
+  exInsert(`<section class="ex-compare" id="overviewCompare" aria-label="Comparativo do período"><div class="ex-compare-title"><strong>Comparativo</strong><small>Mesmo recorte de filtros${c.partial?'; períodos em andamento comparados até o mesmo dia':''}</small></div>${exCards(items)}</section>`,'.overview-summary-hero');
+}
+
+function exOrdersUi(ex){
+  const aging=ex.aging||[],maxV=Math.max(1,...aging.map(a=>a.value));
+  const old=aging.filter(a=>a.min>=16).reduce((s,a)=>s+a.value,0),oldCount=aging.filter(a=>a.min>=16).reduce((s,a)=>s+a.count,0);
+  const agingHtml=`<div class="ex-aging">${aging.map(a=>`<div class="ex-aging-row ${a.min>=16?'is-old':''}"><span>${esc(a.label)}</span><div class="ex-aging-bar"><i style="width:${a.value/maxV*100}%"></i>${a.blocked?`<b style="width:${a.blocked/maxV*100}%" title="Bloqueado"></b>`:''}</div><strong>${money(a.value,true)}</strong><small>${integer(a.count)} pedidos</small></div>`).join('')}<p class="ex-note"><i class="ex-key-blocked"></i> parte bloqueada · ${oldCount?`<b>${integer(oldCount)} pedidos (${money(old,true)}) parados há mais de 15 dias</b>`:'nenhum pedido parado há mais de 15 dias'}</p></div>`;
+  const conv=ex.conversion;
+  const convHtml=conv?exCards([['Pedidos recebidos no período',integer(conv.orders),money(conv.entered,true)+' em pedidos'],['Já faturados',integer(conv.billedOrders),money(conv.billed,true)+' faturados'],['Conversão em faturamento',pct(conv.rate),'do valor pedido já virou nota',conv.rate>=80?'good':conv.rate>=50?'':'bad']]):'<p class="ex-empty">A conversão aparece quando há entradas diárias de pedidos no período (disponíveis nos dois meses mais recentes).</p>';
+  const sups=exTable([{label:'Supervisão'},{label:'Pedidos',num:true},{label:'Em aberto',num:true},{label:'Liberado',num:true},{label:'Pendente',num:true},{label:'Bloqueado',num:true},{label:'% bloqueado',num:true}],
+    (ex.bySupervisor||[]).map(s=>[`<strong>${esc(s.name)}</strong>`,integer(s.orders),money(s.value,true),money(s.released,true),money(s.pending,true),money(s.blocked,true),`${exShareBar(s.value?s.blocked/s.value*100:0,'bad')} ${pct(s.value?s.blocked/s.value*100:0)}`]));
+  exInsert(`<div class="ex-grid-2">${exSection('ordersAging','Idade dos pedidos em aberto','Há quantos dias cada pedido foi lançado. Quanto mais antigo, maior o risco de não faturar.',agingHtml)}${exSection('ordersConversion','Pedido × faturamento','Pedidos lançados no período que já viraram faturamento.',convHtml)}</div>${exSection('ordersBySupervisor','Pedidos em aberto por supervisão','Valor parado em carteira por situação.',sups)}`,'.order-status-panel');
+}
+
+function exPortfolioUi(ex){
+  const cards=exCards([
+    ['Clientes em risco',integer(ex.risk.length),'60 a 89 dias sem comprar · '+money(ex.riskRevenue,true)+' nos últimos 12 meses','warn'],
+    ['Recuperados no período',integer(ex.recovered),'estavam 90+ dias sem comprar e voltaram · '+money(ex.recoveredRevenue,true),'good'],
+    ...(ex.concentration?[['Concentração',pct(ex.concentration.top20pct),'do faturamento vem de '+integer(ex.concentration.top20count)+' clientes (20% maiores) · top 10: '+pct(ex.concentration.top10)]]:[])
+  ]);
+  const cols=[{label:'Cliente'},{label:'RCA'},{label:'Última compra'},{label:'Dias',num:true},{label:'Fat. 12 meses',num:true}];
+  const row=r=>[`<strong>${esc(r.name)}</strong>`,esc(r.rcaName),exDate(r.last),integer(r.days),money(r.revenue12)];
+  const first=exTable(cols,ex.risk.slice(0,10).map(row),'Nenhum cliente entre 60 e 89 dias sem comprar.');
+  const rest=ex.risk.length>10?`<details class="ex-more"><summary>Ver os outros ${integer(ex.risk.length-10)} clientes em risco</summary>${exTable(cols,ex.risk.slice(10,200).map(row))}</details>`:'';
+  exInsert(cards,'#content > .kpi-grid');
+  const anchor=[...$$('#content .section-heading')].find(h=>/Clientes inativos para ação/.test(h.textContent));
+  const html=exSection('portfolioRisk','Clientes em risco — agir antes de virarem inativos','Entre 60 e 89 dias sem comprar na data de '+exDate(ex.reference)+'. Ordenados pelo faturamento dos últimos 12 meses.',first+rest);
+  if(anchor)anchor.insertAdjacentHTML('beforebegin',html);else exInsert(html,null);
+}
+
+function exProductsUi(ex){
+  const a=ex.abc,total=(a.A.revenue+a.B.revenue+a.C.revenue)||1;
+  const abc=`${exCards([['Classe A',integer(a.A.count)+' produtos',pct(a.A.revenue/total*100)+' do faturamento (até 80%)','good'],['Classe B',integer(a.B.count)+' produtos',pct(a.B.revenue/total*100)+' do faturamento (80% a 95%)'],['Classe C',integer(a.C.count)+' produtos',pct(a.C.revenue/total*100)+' do faturamento (últimos 5%)','warn']])}<div class="ex-stack" role="img" aria-label="Curva ABC"><i class="good" style="flex:${a.A.count}">A</i><i style="flex:${a.B.count}">B</i><i class="warn" style="flex:${a.C.count}">C</i></div><p class="ex-note">Largura da barra = quantidade de produtos em cada classe. ${integer(a.A.count)} de ${integer(ex.totalProducts)} produtos fazem 80% do faturamento.</p>`;
+  const mv=ex.movers,moverRows=list=>list.map(d=>[`<strong>${esc(d.name)}</strong>`,money(d.previous,true),money(d.current,true),`${d.change>0?'+':''}${money(d.change,true)}`,exGrowthChip(d.growth)]);
+  const moverCols=[{label:'Produto'},{label:mv?.label||'Anterior',num:true},{label:'Atual',num:true},{label:'Diferença',num:true},{label:'Variação',num:true}];
+  const movers=mv?`<div class="ex-grid-2">${exSection('prodUp','Produtos que mais cresceram','Comparado com '+mv.label+(state.filters.month!=='Todos'?' (mesmo dia, se o mês estiver em andamento)':'')+'.',exTable(moverCols,moverRows(mv.up)))}${exSection('prodDown','Produtos que mais caíram','Comparado com '+mv.label+'.',exTable(moverCols,moverRows(mv.down)))}</div>`:'';
+  const pen=exTable([{label:'Produto'},{label:'Classe'},{label:'Clientes',num:true},{label:'% dos clientes compradores',num:true}],ex.penetration.map(p=>[`<strong>${esc(p.name)}</strong>`,`<span class="ex-abc ${p.abc}">${p.abc}</span>`,integer(p.clients),`${exShareBar(p.share)} ${pct(p.share)}`]));
+  const cross=exTable([{label:'Par de produtos'},{label:'Clientes que compram os dois',num:true},{label:'De quem compra o 1º, quantos levam o 2º',num:true},{label:'De quem compra o 2º, quantos levam o 1º',num:true}],ex.cross.map(c=>[`<strong>${esc(c.a)}</strong> <span class="ex-plus">+</span> <strong>${esc(c.b)}</strong>`,integer(c.clients),`${exShareBar(c.ofA)} ${pct(c.ofA)}`,`${exShareBar(c.ofB)} ${pct(c.ofB)}`]),'Poucos clientes compraram dois produtos juntos neste recorte.');
+  exInsert(`${exSection('prodAbc','Curva ABC','Quantos produtos concentram o faturamento do recorte.',abc)}${movers}${exSection('prodPenetration','Presença nos clientes','Produtos comprados pelo maior número de clientes.',pen)}${exSection('prodCross','Venda cruzada','Pares de produtos comprados pelos mesmos clientes no período. Use para oferecer o par a quem só compra um deles.',cross)}`,null);
+}
+
+function exCitiesUi(ex){
+  const g=ex.growth,cols=[{label:'Cidade'},{label:'Ano anterior',num:true},{label:'Atual',num:true},{label:'Diferença',num:true},{label:'Variação',num:true}];
+  const rows=list=>list.map(d=>[`<strong>${esc(d.city)}</strong> <small>${esc(d.uf)}</small>`,money(d.previous,true),money(d.current,true),`${d.change>0?'+':''}${money(d.change,true)}`,exGrowthChip(d.growth)]);
+  const growth=g?`<div class="ex-grid-2">${exSection('cityUp','Cidades que mais cresceram','Comparado com o '+g.label+'.',exTable(cols,rows(g.up)))}${exSection('cityDown','Cidades que mais caíram','Comparado com o '+g.label+'.',exTable(cols,rows(g.down)))}</div>`:'';
+  const stopped=exSection('cityStopped','Cidades que pararam de comprar','Compraram nos 12 meses anteriores e não têm venda nos últimos 90 dias.',exTable([{label:'Cidade'},{label:'Última venda'},{label:'Dias sem venda',num:true},{label:'Faturamento antes de parar',num:true}],ex.stopped.map(c=>[`<strong>${esc(c.city)}</strong> <small>${esc(c.uf)}</small>`,exDate(c.last),integer(c.days),money(c.revenue,true)]),'Nenhuma cidade parou de comprar neste recorte.'));
+  const palette=['#223d75','#4f7fc0','#23a570','#d6a51f','#cd5b58','#8a6bbf','#7c8a9d'];
+  const mix=`<div class="ex-legend">${ex.departments.map((d,i)=>`<span><i style="background:${palette[i%palette.length]}"></i>${esc(d)}</span>`).join('')}</div><div class="ex-mix">${ex.mix.map(c=>`<div class="ex-mix-row"><span><strong>${esc(c.city)}</strong> <small>${esc(c.uf)} · ${money(c.revenue,true)}</small></span><div class="ex-mix-bar">${c.shares.map((v,i)=>v>0?`<i style="flex:${v};background:${palette[i%palette.length]}" title="${esc(ex.departments[i])}: ${pct(v)}"></i>`:'').join('')}</div></div>`).join('')}</div>`;
+  exInsert(`${growth}<div class="ex-grid-2">${stopped}${exSection('cityMix','Departamentos em cada cidade','Participação de cada departamento no faturamento das 12 maiores cidades.',mix)}</div>`,null);
+}
+
+function exGoalsUi(ex){
+  // Troca o cartão pouco útil "Supervisões com meta" pelos números do ano.
+  // Os cartões "Atingimento" e "Supervisões com meta" dão lugar ao bloco do ano (mesmo atingimento, mais o que falta).
+  $$('#content .kpi-card').forEach(card=>{if(/Supervisões com meta|^Atingimento$/i.test((card.querySelector('.kpi-label')?.textContent||'').trim()))card.remove();});
+  $$('#content > .kpi-grid').forEach(grid=>{if(!grid.children.length)grid.remove();});
+  const upto=MONTH_NAMES[Math.max(0,ex.upTo-1)]||'';
+  const cards=exCards([['Meta até '+upto,money(ex.totalMetaToDate,true),'soma das metas de janeiro a '+upto],['Faturado até '+upto,money(ex.totalRevenue,true),'vendas faturadas no ano'],['Atingido no ano',pct(ex.attainmentToDate),'faturado ÷ meta até '+upto,ex.attainmentToDate>=100?'good':ex.attainmentToDate>=90?'':'bad'],['Falta para a meta do ano',money(ex.missingYear,true),'meta anual '+money(ex.totalMetaYear,true)]]);
+  const cols=[{label:'Nome'},{label:'Meta até '+upto,num:true},{label:'Faturado',num:true},{label:'Atingido',num:true},{label:'Meta do ano',num:true},{label:'Falta no ano',num:true}];
+  const row=r=>[`<strong>${esc(r.name)}</strong>`,r.metaToDate?money(r.metaToDate,true):'<small>sem meta</small>',money(r.revenue,true),r.attainment==null?'—':`${exShareBar(r.attainment,r.attainment>=100?'good':r.attainment>=90?'':'bad')} ${pct(r.attainment)}`,r.metaYear?money(r.metaYear,true):'—',r.metaYear?money(r.missingYear,true):'—'];
+  exInsert(`<section class="ex-compare" id="goalsYear"><div class="ex-compare-title"><strong>Ano de ${ex.year}</strong><small>Meta acumulada até ${upto} e quanto falta para fechar o ano</small></div>${cards}</section>`,'#content > .page-summary-hero');
+  exInsert(`${exSection('goalsBySupervisor','Atingimento no ano por supervisão','Faturado de janeiro a '+upto+' contra a meta do mesmo período.',exTable(cols,ex.supervisors.map(row)))}${exSection('goalsByDepartment','Meta por departamento','Departamentos sem meta cadastrada aparecem só com o faturado.',exTable(cols,ex.departments.map(row)))}`,null);
+}
+
+function exHistoryUi(ex){
+  const y=ex.ytd;if(!y)return;
+  const html=`<section class="ex-compare" id="historyYtd"><div class="ex-compare-title"><strong>Acumulado do ano</strong><small>Janeiro até ${exDate(y.until)} × mesmo período de ${y.year-1} · sem filtros</small></div>${exCards([[String(y.year)+' até agora',money(y.current,true),'vendas faturadas'],['Mesmo período de '+(y.year-1),money(y.previous,true),exGrowthChip(y.growth,' no acumulado')]])}</section>`;
+  const root=$('#content');if(root)root.insertAdjacentHTML('afterbegin',html);
+}
+
 function renderOverview(p){
   const k=p.kpis||{};
   const daily=p.daily||{},dailyDate=daily.date?daily.date.split('-').reverse().join('/'):'Sem movimento no período';
@@ -1158,7 +1279,7 @@ function renderOverview(p){
       </div>
     </div>
     <div class="overview-analysis">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Ritmo de faturamento</div><div class="panel-sub">Eixo iniciado em R$ 1 milhão para destacar a variação entre os meses.</div></div><span class="panel-chip">${esc(state.filters.year||'Ano')}</span></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Ritmo de faturamento</div><div class="panel-sub">Linha cheia: ano selecionado · tracejado cinza: ano anterior · pontilhado azul: projeção do mês em andamento.</div></div><span class="panel-chip">${esc(state.filters.year||'Ano')}</span></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
       <div class="panel"><div class="panel-head"><div><div class="panel-title">Leituras para acompanhar</div><div class="panel-sub">Sinais identificados nesta seleção.</div></div></div><div class="overview-insights">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Recorte estável',value:'—',text:'Nenhum alerta forte identificado.'}]).slice(0,4).map(insight).join('')}</div></div>
     </div>
     <div class="section-heading"><div><h2>Quem movimenta o resultado</h2><p>Distribuição do faturamento por RCA e departamento.</p></div></div>
@@ -1170,7 +1291,11 @@ function renderOverview(p){
   Array.from(document.querySelectorAll('[data-daily-mode]')).forEach(button=>button.addEventListener('click',()=>{state.dailyMode=button.dataset.dailyMode;queryPage();}));
   $('#dailyDateChoice').addEventListener('change',event=>{if(!event.target.value)return;state.dailyMode='custom';state.dailyDate=event.target.value;queryPage();});
   const monthly=p.monthly||[];
-  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{label:'Faturamento',data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.09)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}]},{scales:{x:{grid:{display:false},border:{display:false}},y:{min:1000000,beginAtZero:false,grid:{color:'#E8EDF6'},border:{display:false},ticks:{callback:v=>money(v,true)}}}});
+  const ovEx=p.extras||{},prevByMonth=new Map((ovEx.monthlyPrev||[]).map(x=>[x.month,x.revenue])),proj=ovEx.projection;
+  const ovSets=[{label:'Faturamento '+(state.filters.year&&state.filters.year!=='Todos'?state.filters.year:''),data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.07)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}];
+  if(prevByMonth.size)ovSets.push({label:'Ano anterior',data:monthly.map(x=>prevByMonth.get(x.month)??null),borderColor:'#9AA8BC',backgroundColor:'transparent',borderDash:[5,4],fill:false,tension:.32,pointRadius:2,borderWidth:1.8});
+  if(proj){const i=monthly.findIndex(x=>x.month===proj.month);if(i>0)ovSets.push({label:'Projeção do mês (seg–sex)',data:monthly.map((x,j)=>j===i?proj.projected:j===i-1?x.revenue:null),borderColor:'#4F7FC0',backgroundColor:'transparent',borderDash:[3,4],fill:false,pointRadius:ctx=>ctx.dataIndex===i?5:0,pointStyle:'circle',pointBackgroundColor:'#fff',borderWidth:2,spanGaps:false});}
+  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:ovSets},{plugins:{legend:{display:ovSets.length>1,position:'top',align:'end',labels:{boxWidth:18,boxHeight:2,usePointStyle:false,font:{size:11}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>ctx.dataset.label+': '+money(ctx.raw,true)}}},scales:{x:{grid:{display:false},border:{display:false}},y:{beginAtZero:true,grid:{color:'#E8EDF6'},border:{display:false},ticks:{callback:v=>money(v,true)}}}});
   const top=(p.rca||[]).slice(0,10);
   const selectedRcas=new Set(normalizeMulti(state.filters.rca));
   const rcaChart=chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[
@@ -1322,11 +1447,18 @@ function renderCarteira(p){
       legend:{display:true,position:'top',align:'start',onClick:(e,item)=>{if(item.datasetIndex>=2)pickInactive(undefined,item.datasetIndex===2?'short':'long');},labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},
       tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:true,callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}
     },
+    indexAxis:'y',
+    layout:{padding:{right:56}},
     scales:{
-      x:{stacked:true,grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},
-      y:{stacked:true,beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>integer(v)}}
+      y:{stacked:true,grid:{display:false},border:{display:false},ticks:{color:'#4D556B',font:{size:11,weight:'600'}}},
+      x:{stacked:true,beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>integer(v)}}
     }
-  });
+  },[{id:'movementTotals',afterDatasetsDraw(c){
+    // Número ao lado de cada barra (inclusive quando é zero), para leitura sem passar o mouse.
+    const ctx=c.ctx,totals=[k.clients,k.newClients,(k.short||0)+(k.long||0)],y=c.scales.y,x=c.scales.x;
+    ctx.save();ctx.font='700 12px Inter,system-ui,sans-serif';ctx.fillStyle='#1f3354';ctx.textBaseline='middle';ctx.textAlign='left';
+    totals.forEach((v,i)=>ctx.fillText(integer(v||0),x.getPixelForValue(v||0)+8,y.getPixelForValue(i)));ctx.restore();
+  }}]);
 
   const rows=(p.byRca||[]).slice(0,18).reverse();
   const inactiveChart=chart($('#inactiveChart'),'bar',{labels:rows.map(x=>x.name),datasets:[
@@ -1395,7 +1527,7 @@ function renderCidadesSales(p){
   $$('.city-row').forEach(row=>row.addEventListener('click',()=>{state.selectedCity=row.dataset.city;queryPage()}));
   $('#allCitiesBtn').addEventListener('click',()=>{state.selectedCity='Todos';queryPage()});
   const monthly=p.monthly||[];
-  chart($('#cityMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1E2655',backgroundColor:'rgba(30,38,85,.08)',fill:true,tension:.32,pointRadius:4,borderWidth:2.5}]});
+  chart($('#cityMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1E2655',backgroundColor:'rgba(30,38,85,.08)',fill:true,tension:.32,pointRadius:4,borderWidth:2.5}]},{scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},y:{beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>money(v,true)}}}});
   const pmax=p.products?.[0]?.revenue||1;
   $('#cityProducts').innerHTML=(p.products||[]).slice(0,10).map(x=>`<div class="metric-line"><div><div class="name">${esc(x.name)}</div><div class="progress"><i style="width:${x.revenue/pmax*100}%"></i></div></div><div class="value">${money(x.revenue,true)}</div></div>`).join('');
   $('#cityClients').innerHTML=(p.clients||[]).slice(0,20).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td class="align-right">${money(x.revenue)}</td><td class="align-right">${integer(x.products)}</td></tr>`).join('');

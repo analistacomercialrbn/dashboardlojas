@@ -936,6 +936,59 @@ body[data-module=commercial] #content .section-heading p{font-size:12px!importan
 @media(max-width:900px){.company-goal{grid-template-columns:1fr;gap:14px}.company-toolbar{flex-direction:column;align-items:stretch}.company-actions{justify-content:flex-start}.company-head{flex-direction:column}.company-period{text-align:left}}
 @media(max-width:520px){.company-card{padding:16px}.company-goal-numbers .is-main strong{font-size:32px}.company-goal-numbers strong{font-size:24px}.company-goal-legend .muted{margin-left:0}}
 </style>
+<style id="page-extras-style">
+/* Indicadores adicionais (comparativos, riscos, ABC, venda cruzada…) */
+#content .ex-panel{padding:20px 22px!important;margin-bottom:16px}
+.ex-head{margin-bottom:12px}.ex-head h3{margin:0;font-size:15px!important;color:#1f3354}.ex-head p{margin:3px 0 0;font-size:12px;color:#6b7b91;line-height:1.45}
+.ex-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:0}
+.ex-grid-2>.ex-panel{margin-bottom:16px}
+.ex-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
+.ex-panel .ex-cards{margin-bottom:12px}
+.ex-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:13px 15px;display:flex;flex-direction:column;gap:3px;position:relative;overflow:hidden}
+.ex-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#c9d7ea}
+.ex-card.good::before{background:#23a570}.ex-card.warn::before{background:#d6a51f}.ex-card.bad::before{background:#cd5b58}
+.ex-card span{font-size:10.5px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:#6b7b91}
+.ex-card strong{font-size:21px;color:#1f3354;font-variant-numeric:tabular-nums;line-height:1.2}
+.ex-card small{font-size:11.5px;color:#7a889b;line-height:1.4}
+.ex-compare{margin:0 0 16px}
+.ex-compare-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+.ex-compare-title strong{font-size:14px;color:#1f3354}.ex-compare-title small{font-size:11.5px;color:#7a889b}
+.ex-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:650;padding:2px 8px;border-radius:999px;background:#f1f3f6;color:#5f6c7e;white-space:nowrap}
+.ex-chip.up{background:#e3f4ec;color:#17734f}.ex-chip.down{background:#fae6e5;color:#a23c39}
+.ex-table-wrap{overflow-x:auto}
+.ex-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ex-table th{font-size:10px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:#7c8a9d;text-align:left;padding:8px 10px;border-bottom:1px solid #e2e8f0;background:transparent!important;white-space:nowrap}
+.ex-table td{padding:8px 10px;border-bottom:1px solid #eef2f6;color:#33465f;vertical-align:middle}
+.ex-table td strong{color:#1f3354;font-weight:650}.ex-table td small{color:#8a97a9}
+.ex-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ex-table tbody tr:last-child td{border-bottom:0}
+.ex-share{display:inline-block;width:70px;height:6px;border-radius:4px;background:#e7ecf3;vertical-align:middle;margin-right:6px;overflow:hidden}
+.ex-share i{display:block;height:100%;background:#4f7fc0;border-radius:4px}.ex-share.good i{background:#23a570}.ex-share.bad i{background:#cd5b58}
+.ex-more{margin-top:10px}.ex-more summary{cursor:pointer;font-size:12.5px;font-weight:650;color:#2f5795;padding:6px 0}
+.ex-plus{color:#8a97a9;font-weight:700;margin:0 4px}
+.ex-empty{font-size:12.5px;color:#7a889b;margin:4px 0}
+.ex-note{font-size:11.5px;color:#6b7b91;margin:10px 0 0;line-height:1.5}.ex-note b{color:#a23c39}
+.ex-aging{display:flex;flex-direction:column;gap:9px}
+.ex-aging-row{display:grid;grid-template-columns:110px 1fr 90px 80px;gap:10px;align-items:center;font-size:12.5px;color:#33465f}
+.ex-aging-row strong{text-align:right;font-variant-numeric:tabular-nums;color:#1f3354}.ex-aging-row small{color:#8a97a9;text-align:right}
+.ex-aging-bar{position:relative;height:12px;border-radius:6px;background:#eef2f7;overflow:hidden}
+.ex-aging-bar i{position:absolute;left:0;top:0;bottom:0;background:#4f7fc0;border-radius:6px}
+.ex-aging-bar b{position:absolute;left:0;top:0;bottom:0;background:repeating-linear-gradient(135deg,#cd5b58 0 4px,#e48b88 4px 8px);border-radius:6px 0 0 6px}
+.ex-aging-row.is-old span{color:#a23c39;font-weight:650}.ex-aging-row.is-old .ex-aging-bar i{background:#d6a51f}
+.ex-key-blocked{display:inline-block;width:14px;height:8px;border-radius:3px;background:repeating-linear-gradient(135deg,#cd5b58 0 4px,#e48b88 4px 8px);vertical-align:middle}
+.ex-stack{display:flex;gap:3px;height:22px;border-radius:7px;overflow:hidden}
+.ex-stack i{display:flex;align-items:center;justify-content:center;font-style:normal;font-size:11px;font-weight:700;color:#fff;background:#4f7fc0;min-width:22px}
+.ex-stack i.good{background:#23a570}.ex-stack i.warn{background:#d6a51f}
+.ex-abc{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;font-size:11px;font-weight:700;background:#e7ecf3;color:#33465f}
+.ex-abc.A{background:#e3f4ec;color:#17734f}.ex-abc.C{background:#faf0d4;color:#8a6510}
+.ex-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:#52647b;margin-bottom:10px}.ex-legend span{display:flex;align-items:center;gap:5px}.ex-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.ex-mix{display:flex;flex-direction:column;gap:8px}
+.ex-mix-row{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:10px;align-items:center;font-size:12.5px}
+.ex-mix-row small{color:#8a97a9}
+.ex-mix-bar{display:flex;height:14px;border-radius:5px;overflow:hidden;background:#eef2f7;gap:1px}.ex-mix-bar i{display:block;min-width:2px}
+@media(max-width:999px){.ex-grid-2{grid-template-columns:1fr}}
+@media(max-width:560px){.ex-aging-row{grid-template-columns:74px 1fr 86px;gap:8px;font-size:12px}.ex-aging-row strong{white-space:nowrap;font-size:12px}body[data-module=commercial] .order-position-choice{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:4px!important;text-align:left!important;min-width:0}body[data-module=commercial] .order-position-choice b{position:static!important;white-space:normal!important}body[data-module=commercial] .order-position-choice strong{position:static!important;font-size:17px!important;white-space:nowrap}.ex-aging-row small{display:none}.ex-mix-row{grid-template-columns:1fr}#content .ex-panel{padding:16px!important}}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
@@ -1493,12 +1546,14 @@ function compactInsights(filters,rows){
   const out=[];
   const pf=previousFilters(filters);
   if(pf){
-    const prev=filterSales(pf);
-    const now=metrics(rows),before=metrics(prev);
+    // Mês em andamento: compara com o mês anterior até o mesmo dia, para não acusar queda falsa.
+    const limit=exDayLimit(filters);
+    const prev=limit?exCut(filterSales(pf),{month:pf.month,day:limit.day}):filterSales(pf);
+    const now=metrics(rows),before=metrics(prev),versus=limit?'versus mês anterior até o dia '+limit.day:'versus mês anterior';
     if(before.revenue>0){
       const v=(now.revenue/before.revenue-1)*100;
-      if(v<0)out.push({level:v<=-10?'critical':'attention',title:'Queda do faturamento',value:v,text:'versus mês anterior'});
-      else if(v>5)out.push({level:'opportunity',title:'Crescimento do faturamento',value:v,text:'versus mês anterior'});
+      if(v<0)out.push({level:v<=-10?'critical':'attention',title:'Queda do faturamento',value:v,text:versus});
+      else if(v>5)out.push({level:'opportunity',title:'Crescimento do faturamento',value:v,text:versus});
     }
   }
   const rcaGroups=groupRevenue(rows,s=>s.rca).sort((a,b)=>a.revenue-b.revenue);
@@ -1939,7 +1994,9 @@ function cityInsights(filters,list,chosen){
   }
   const pf=previousFilters(filters);
   if(pf){
-    const prev=cidadesSimple(pf);
+    // Mês em andamento: compara com o mês anterior até o mesmo dia.
+    const lim=exDayLimit(filters);
+    const prev=cidadesSimple(pf,lim?{month:pf.month,day:lim.day}:null);
     const prevMap=new Map(prev.map(x=>[x.key,x]));
     const candidates=(chosen?[chosen]:list).map(c=>{
       const p=prevMap.get(c.key);return p&&p.revenue>0?{...c,variation:(c.revenue/p.revenue-1)*100,prev:p.revenue}:null
@@ -1952,15 +2009,16 @@ function cityInsights(filters,list,chosen){
   const prod=produtosForRows(focus);
   const prevF=previousFilters(filters);
   if(prevF && prod.length){
-    const prevProd=produtosForRows(chosen?filterSales(prevF,{city:chosen.city}):filterSales(prevF));
+    const limP=exDayLimit(filters),cutP=rows=>limP?exCut(rows,{month:prevF.month,day:limP.day}):rows;
+    const prevProd=produtosForRows(cutP(chosen?filterSales(prevF,{city:chosen.city}):filterSales(prevF)));
     const pm=new Map(prevProd.map(x=>[x.code,x]));
     const drops=prod.map(x=>{const p=pm.get(x.code);return p&&p.revenue>0?{...x,var:(x.revenue/p.revenue-1)*100,prev:p.revenue}:null}).filter(Boolean).sort((a,b)=>a.var-b.var);
     if(drops.length&&drops[0].var<0){const x=drops[0];out.push({level:x.var<=-25?'critical':'attention',title:'Produto em queda',value:x.var,text:x.name,kind:'percent'});}
   }
   return out.slice(0,4);
 }
-function cidadesSimple(filters){
-  const rows=filterSales(filters),m=new Map();
+function cidadesSimple(filters,limit=null){
+  const rows=limit?exCut(filterSales(filters),limit):filterSales(filters),m=new Map();
   for(const s of rows){
     if(!s.city)continue;const key=`${norm(s.city)}|${s.uf}`;
     if(!m.has(key))m.set(key,{key,city:s.city,uf:s.uf,revenue:0});m.get(key).revenue+=s.value;
@@ -1981,6 +2039,207 @@ function metasPage(filters){
   return {monthly,supervisors:[...supMap].map(([name,meta])=>({name,meta})).sort((a,b)=>b.meta-a.meta),totalMeta:[...metaByMonth.values()].reduce((a,b)=>a+b,0),totalRevenue:rows.reduce((a,s)=>a+s.value,0)};
 }
 
+
+// ===== Indicadores adicionais por tela (comparações, riscos, ABC, venda cruzada…) =====
+// Ficam em payload.extras; se algo falhar aqui, a tela continua com o conteúdo de sempre.
+function exYear(f){return f.year&&f.year!=='Todos'?Number(f.year):null;}
+function exMonth(f){return f.month&&f.month!=='Todos'?Number(f.month):null;}
+function exLatest(){return LATEST_DATE||new Date();}
+// Limite de dia para comparar períodos de forma justa quando o período atual ainda não terminou.
+function exDayLimit(f){
+  const latest=exLatest(),y=exYear(f),m=exMonth(f);
+  if(y===latest.getUTCFullYear()&&(m===null||m===latest.getUTCMonth()+1))return {month:latest.getUTCMonth()+1,day:latest.getUTCDate()};
+  return null;
+}
+function exCut(rows,limit){
+  if(!limit)return rows;
+  return rows.filter(s=>s.month<limit.month||(s.month===limit.month&&s.date.getUTCDate()<=limit.day));
+}
+function exSum(rows){let v=0;for(const s of rows)v+=s.value;return v;}
+function exGrowth(cur,prev){return prev>0?(cur/prev-1)*100:null;}
+// Mesmo período no ano anterior e período imediatamente anterior (mês anterior ou ano anterior).
+function exComparisons(f){
+  const y=exYear(f),m=exMonth(f),limit=exDayLimit(f);
+  if(y===null)return null;
+  const current=exSum(filterSales(f));
+  const lastYearRows=filterSales({...f,year:String(y-1)});
+  const lastYear=exSum(exCut(lastYearRows,limit));
+  let previous=null,previousLabel='';
+  if(m!==null){
+    const pf=previousFilters(f),prows=filterSales(pf);
+    const plimit=limit?{month:pf.month,day:limit.day}:null;
+    previous=exSum(exCut(prows,plimit));previousLabel=MONTHS[pf.month]+'/'+String(pf.year).slice(2);
+  }
+  return {current,lastYear,lastYearGrowth:exGrowth(current,lastYear),previous,previousLabel,previousGrowth:previous==null?null:exGrowth(current,previous),
+    partial:!!limit,limitDay:limit?limit.day:null,lastYearLabel:(m?MONTHS[m]+'/':'')+String(y-1)};
+}
+function exOverview(f){
+  const y=exYear(f),comparisons=exComparisons(f);
+  let monthlyPrev=null,projection=null;
+  if(y!==null){
+    monthlyPrev=monthSeries(filterSales({...f,year:String(y-1),month:'Todos'}));
+    const latest=exLatest();
+    if(y===latest.getUTCFullYear()){
+      // Estimativa simples do mês em andamento: ritmo por dias de segunda a sexta (sem feriados).
+      const yy=latest.getUTCFullYear(),mm=latest.getUTCMonth(),last=new Date(Date.UTC(yy,mm+1,0)).getUTCDate();
+      let total=0,elapsed=0;for(let d=1;d<=last;d++){const wd=new Date(Date.UTC(yy,mm,d)).getUTCDay();if(wd===0||wd===6)continue;total++;if(d<=latest.getUTCDate())elapsed++;}
+      const monthRev=exSum(filterSales({...f,month:String(mm+1)}));
+      if(elapsed&&elapsed<total)projection={month:mm+1,revenue:monthRev,projected:monthRev*total/elapsed};
+    }
+  }
+  return {comparisons,monthlyPrev,projection};
+}
+function exOrders(f){
+  const rows=filterOpenOrders(f),today=commercialToday(),bands=[['0 a 3 dias',0,3],['4 a 7 dias',4,7],['8 a 15 dias',8,15],['16 a 30 dias',16,30],['Mais de 30 dias',31,1e9]];
+  const ref=Date.parse(today+'T12:00:00Z');
+  const aging=bands.map(([label,min,max])=>({label,min,max,count:0,value:0,blocked:0}));
+  const sups=new Map();
+  for(const o of rows){
+    const age=o.date?Math.max(0,Math.floor((ref-new Date(o.date).getTime())/86400000)):null;
+    const band=age==null?null:aging.find(b=>age>=b.min&&age<=b.max);
+    const value=Number(o.value)||0,blocked=String(o.status||'').toUpperCase()==='BLOQUEADO';
+    if(band){band.count++;band.value+=value;if(blocked)band.blocked+=value;}
+    const sup=o.supervisor||(RCA_BY_CODE.get(o.rca)||RCA_BY_CODE.get(Number(o.rca))||{}).supervisor||'Sem supervisor';
+    if(!sups.has(sup))sups.set(sup,{name:sup,orders:new Set(),value:0,blocked:0,released:0,pending:0});
+    const s=sups.get(sup);s.orders.add(String(o.rca)+'|'+String(o.order));s.value+=value;
+    const st=String(o.status||'').toUpperCase();if(st==='BLOQUEADO')s.blocked+=value;else if(st==='LIBERADO')s.released+=value;else s.pending+=value;
+  }
+  // Conversão: pedidos recebidos no período que já viraram faturamento.
+  const allowed=allowedRca(f),y=exYear(f),m=exMonth(f),departments=multi(f.department);
+  const entries=ORDER_ENTRIES.filter(e=>allowed.has(e.rca)&&(y===null||e.year===y)&&(m===null||e.month===m)&&(!departments.length||departments.includes(String(e.department))));
+  let conversion=null;
+  if(entries.length){
+    const keys=new Map();for(const e of entries){const k=String(e.order);keys.set(k,(keys.get(k)||0)+(Number(e.value)||0));}
+    const billed=new Map();for(const s of SALES){if(s.order==null)continue;const k=String(s.order);if(keys.has(k))billed.set(k,(billed.get(k)||0)+s.value);}
+    const entered=[...keys.values()].reduce((a,b)=>a+b,0),billedValue=[...billed.values()].reduce((a,b)=>a+b,0);
+    conversion={orders:keys.size,billedOrders:billed.size,entered,billed:billedValue,rate:entered?Math.min(100,billedValue/entered*100):null};
+  }
+  return {aging,bySupervisor:[...sups.values()].map(s=>({...s,orders:s.orders.size})).sort((a,b)=>b.value-a.value),conversion};
+}
+async function exPortfolio(f){
+  const links=portfolioLinks?await portfolioLinks.catch(()=>[]):[];
+  const directory=portfolioDirectory(links||[]),clients=portfolioGroups(filterSales({...f,year:'Todos',month:'Todos'}),directory);
+  const latest=exLatest(),y=exYear(f),m=exMonth(f);
+  const periodEnd=y===null?latest:m===null?new Date(Date.UTC(y,11,31,23,59,59)):new Date(Date.UTC(y,m,0,23,59,59));
+  const ref=periodEnd<latest?periodEnd:latest;
+  const periodStart=y===null?null:m===null?new Date(Date.UTC(y,0,1)):new Date(Date.UTC(y,m-1,1));
+  const risk=[],buyers=[];let recovered=0,recoveredRevenue=0;
+  const from12=new Date(ref);from12.setUTCFullYear(from12.getUTCFullYear()-1);
+  for(const [id,group] of clients){
+    let last=null,beforeStart=null,rev12=0,inPeriod=0;
+    for(const sale of group.history){
+      if(sale.date>ref)break;
+      last=sale;if(sale.date>=from12)rev12+=sale.value;
+      if(periodStart&&sale.date<periodStart)beforeStart=sale;
+      if(!periodStart||sale.date>=periodStart)inPeriod+=sale.value;
+    }
+    if(!last)continue;
+    const days=portfolioInactivityDays(ref,last.date);
+    if(days>=60&&days<90){
+      const owner=last.rca;
+      risk.push({client:id,name:group.name||CLIENTS.get(id)?.name||CLIENTS.get(last.client)?.name||String(id),rca:owner,rcaName:RCA_BY_CODE.get(owner)?.name||String(owner),last:last.date.toISOString(),days,revenue12:rev12});
+    }
+    if(periodStart&&inPeriod>0&&beforeStart&&portfolioInactivityDays(periodStart,beforeStart.date)>=90){recovered++;recoveredRevenue+=inPeriod;}
+    if(inPeriod>0)buyers.push(inPeriod);
+  }
+  buyers.sort((a,b)=>b-a);
+  const total=buyers.reduce((a,b)=>a+b,0),top=n=>buyers.slice(0,n).reduce((a,b)=>a+b,0);
+  const top20=Math.max(1,Math.ceil(buyers.length*0.2));
+  return {risk:risk.sort((a,b)=>b.revenue12-a.revenue12),riskRevenue:risk.reduce((a,r)=>a+r.revenue12,0),reference:ref.toISOString(),
+    recovered,recoveredRevenue,concentration:buyers.length?{clients:buyers.length,top10:total?top(10)/total*100:null,top20pct:total?top(top20)/total*100:null,top20count:top20}:null};
+}
+function exPrevious(f){
+  const y=exYear(f),m=exMonth(f);if(y===null)return null;
+  if(m!==null){const pf=previousFilters(f);return {filters:pf,label:MONTHS[pf.month]+'/'+String(pf.year).slice(2)};}
+  return {filters:{...f,year:String(y-1)},label:String(y-1)};
+}
+function exProducts(f){
+  const rows=filterSales(f),limit=exDayLimit(f);
+  const byProd=new Map(),byClient=new Map();
+  for(const s of rows){
+    if(s.product==null)continue;
+    if(!byProd.has(s.product))byProd.set(s.product,{code:s.product,name:s.productName,revenue:0,clients:new Set()});
+    const p=byProd.get(s.product);p.revenue+=s.value;
+    if(s.client!=null&&s.value>0){p.clients.add(s.client);addSet(byClient,s.client,s.product);}
+  }
+  const list=[...byProd.values()].filter(p=>p.revenue>0).sort((a,b)=>b.revenue-a.revenue),total=list.reduce((a,p)=>a+p.revenue,0);
+  let acc=0;const abc={A:{count:0,revenue:0},B:{count:0,revenue:0},C:{count:0,revenue:0}};
+  for(const p of list){const cls=total&&acc/total<0.8?'A':total&&acc/total<0.95?'B':'C';acc+=p.revenue;abc[cls].count++;abc[cls].revenue+=p.revenue;p.abc=cls;}
+  const buyers=byClient.size;
+  const penetration=list.map(p=>({code:p.code,name:p.name,clients:p.clients.size,share:buyers?p.clients.size/buyers*100:0,abc:p.abc})).sort((a,b)=>b.clients-a.clients).slice(0,10);
+  // Comparação com o período anterior (mês anterior ou ano anterior), no mesmo dia quando o período está em andamento.
+  const prev=exPrevious(f);let movers=null;
+  if(prev){
+    let prows=filterSales(prev.filters);
+    if(limit)prows=exCut(prows,exMonth(f)!==null?{month:prev.filters.month,day:limit.day}:limit);
+    const prevMap=new Map();for(const s of prows){if(s.product==null)continue;if(!prevMap.has(s.product))prevMap.set(s.product,{name:s.productName,revenue:0});prevMap.get(s.product).revenue+=s.value;}
+    const keys=new Set([...byProd.keys(),...prevMap.keys()]);
+    const diff=[...keys].map(k=>{const cur=byProd.get(k)?.revenue||0,old=prevMap.get(k)?.revenue||0;return {code:k,name:byProd.get(k)?.name||prevMap.get(k)?.name||String(k),current:cur,previous:old,change:cur-old,growth:exGrowth(cur,old)};});
+    movers={label:prev.label,up:diff.filter(d=>d.change>0).sort((a,b)=>b.change-a.change).slice(0,8),down:diff.filter(d=>d.change<0).sort((a,b)=>a.change-b.change).slice(0,8)};
+  }
+  // Venda cruzada: pares de produtos comprados pelo mesmo cliente no período (entre os 40 mais vendidos).
+  const focus=new Set(list.slice(0,40).map(p=>p.code)),pairs=new Map();
+  for(const set of byClient.values()){
+    const items=[...set].filter(c=>focus.has(c)).sort();
+    for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){const k=items[i]+'|'+items[j];pairs.set(k,(pairs.get(k)||0)+1);}
+  }
+  const name=c=>byProd.get(c)?.name||String(c),clientsOf=c=>byProd.get(c)?.clients.size||0;
+  const cross=[...pairs].filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,n])=>{const [a,b]=k.split('|');const ca=clientsOf(isNaN(a)?a:Number(a)),cb=clientsOf(isNaN(b)?b:Number(b));
+    return {a:name(isNaN(a)?a:Number(a)),b:name(isNaN(b)?b:Number(b)),clients:n,ofA:ca?n/ca*100:null,ofB:cb?n/cb*100:null};});
+  return {abc,totalProducts:list.length,penetration,movers,cross,buyers};
+}
+function exCities(f){
+  const y=exYear(f),limit=exDayLimit(f),rows=filterSales(f);
+  const key=s=>norm(s.city)+'|'+s.uf,cur=new Map();
+  for(const s of rows){if(!s.city)continue;const k=key(s);if(!cur.has(k))cur.set(k,{city:s.city,uf:s.uf,revenue:0,dept:new Map()});const c=cur.get(k);c.revenue+=s.value;c.dept.set(s.department||'Sem departamento',(c.dept.get(s.department||'Sem departamento')||0)+s.value);}
+  let growth=null;
+  if(y!==null){
+    const prev=new Map();for(const s of exCut(filterSales({...f,year:String(y-1)}),limit)){if(!s.city)continue;const k=key(s);if(!prev.has(k))prev.set(k,{city:s.city,uf:s.uf,revenue:0});prev.get(k).revenue+=s.value;}
+    const keys=new Set([...cur.keys(),...prev.keys()]);
+    const diff=[...keys].map(k=>{const c=cur.get(k),p=prev.get(k);return {city:(c||p).city,uf:(c||p).uf,current:c?.revenue||0,previous:p?.revenue||0,change:(c?.revenue||0)-(p?.revenue||0),growth:exGrowth(c?.revenue||0,p?.revenue||0)};});
+    growth={label:'mesmo período de '+(y-1),up:diff.filter(d=>d.change>0).sort((a,b)=>b.change-a.change).slice(0,8),down:diff.filter(d=>d.change<0).sort((a,b)=>a.change-b.change).slice(0,8)};
+  }
+  // Cidades que compravam e pararam: venda nos 12 meses anteriores, nenhuma nos últimos 90 dias.
+  const ref=exLatest(),d90=new Date(ref.getTime()-90*86400000),d365=new Date(ref.getTime()-455*86400000),last=new Map();
+  for(const s of filterSales({...f,year:'Todos',month:'Todos'})){if(!s.city||s.date>ref)continue;const k=key(s);if(!last.has(k))last.set(k,{city:s.city,uf:s.uf,last:s.date,revenue12:0});const c=last.get(k);if(s.date>c.last)c.last=s.date;if(s.date>=d365&&s.date<d90)c.revenue12+=s.value;}
+  const stopped=[...last.values()].filter(c=>c.last<d90&&c.revenue12>0).map(c=>({city:c.city,uf:c.uf,last:c.last.toISOString(),days:Math.floor((ref-c.last)/86400000),revenue:c.revenue12})).sort((a,b)=>b.revenue-a.revenue).slice(0,15);
+  const depts=new Set();cur.forEach(c=>c.dept.forEach((v,d)=>depts.add(d)));
+  const departments=[...depts].sort();
+  const mix=[...cur.values()].sort((a,b)=>b.revenue-a.revenue).slice(0,12).map(c=>({city:c.city,uf:c.uf,revenue:c.revenue,shares:departments.map(d=>c.revenue?(c.dept.get(d)||0)/c.revenue*100:0)}));
+  return {growth,stopped,departments,mix};
+}
+function exGoals(f){
+  const y=exYear(f)||exLatest().getUTCFullYear(),latest=exLatest();
+  const upTo=y<latest.getUTCFullYear()?12:y>latest.getUTCFullYear()?0:latest.getUTCMonth()+1;
+  const ff={...f,year:String(y),month:'Todos'},sales=filterSales(ff),metas=filterMetas(ff,{ignoreMonth:true});
+  const by=(rows,keyFn,valueKey)=>{const m=new Map();for(const r of rows){const k=keyFn(r);m.set(k,(m.get(k)||0)+(Number(r[valueKey])||0));}return m;};
+  const sup=s=>(RCA_BY_CODE.get(s.rca)||{}).supervisor||'Sem supervisor';
+  const metaYear=by(metas,m=>m.supervisor||'Sem supervisor','value'),metaToDate=by(metas.filter(m=>m.month<=upTo),m=>m.supervisor||'Sem supervisor','value');
+  const revToDate=by(sales.filter(s=>s.month<=upTo),sup,'value');
+  const names=new Set([...metaYear.keys(),...revToDate.keys()]);
+  const supervisors=[...names].map(n=>{const mt=metaToDate.get(n)||0,my=metaYear.get(n)||0,r=revToDate.get(n)||0;return {name:n,metaYear:my,metaToDate:mt,revenue:r,attainment:mt?r/mt*100:null,missingYear:Math.max(0,my-r)};}).sort((a,b)=>(b.attainment??-1)-(a.attainment??-1));
+  const dMetaY=by(metas,m=>m.department||'Sem departamento','value'),dMetaT=by(metas.filter(m=>m.month<=upTo),m=>m.department||'Sem departamento','value'),dRev=by(sales.filter(s=>s.month<=upTo),s=>s.department||'Sem departamento','value');
+  const departments=[...new Set([...dMetaY.keys(),...dRev.keys()])].map(n=>{const mt=dMetaT.get(n)||0,my=dMetaY.get(n)||0,r=dRev.get(n)||0;return {name:n,metaYear:my,metaToDate:mt,revenue:r,attainment:mt?r/mt*100:null,missingYear:Math.max(0,my-r)};}).sort((a,b)=>b.revenue-a.revenue);
+  const totalMetaToDate=[...metaToDate.values()].reduce((a,b)=>a+b,0),totalMetaYear=[...metaYear.values()].reduce((a,b)=>a+b,0),totalRev=[...revToDate.values()].reduce((a,b)=>a+b,0);
+  const monthsLeft=Math.max(0,12-upTo+(upTo&&y===latest.getUTCFullYear()?1:0));
+  return {year:y,upTo,supervisors,departments,totalMetaToDate,totalMetaYear,totalRevenue:totalRev,attainmentToDate:totalMetaToDate?totalRev/totalMetaToDate*100:null,missingYear:Math.max(0,totalMetaYear-totalRev),monthsLeft};
+}
+function exHistory(){
+  // Acumulado do ano até o mesmo dia × mesmo período do ano anterior (empresa toda, sem filtros).
+  const latest=exLatest(),y=latest.getUTCFullYear(),limit={month:latest.getUTCMonth()+1,day:latest.getUTCDate()};
+  const cur=exSum(exCut(SALES.filter(s=>s.year===y),limit)),prev=exSum(exCut(SALES.filter(s=>s.year===y-1),limit));
+  return {ytd:{year:y,current:cur,previous:prev,growth:exGrowth(cur,prev),until:latest.toISOString()}};
+}
+async function pageExtras(page,f){
+  if(page==='overview')return exOverview(f);
+  if(page==='pedidos')return exOrders(f);
+  if(page==='carteira')return await exPortfolio(f);
+  if(page==='produtos')return exProducts(f);
+  if(page==='cidades')return exCities(f);
+  if(page==='metas')return exGoals(f);
+  if(page==='history')return exHistory();
+  return null;
+}
 
 function biComponents_(filters,widgets,groupedPortfolio=null){
  const sales=filterSales(filters),open=filterOpenOrders(filters),goals=filterMetas(filters),cache=new Map();let portfolio;
@@ -2043,6 +2302,7 @@ onmessage=async(e)=>{
       else if(msg.page==='metas')payload=metasPage(f);
       else if(msg.page==='pedidos')payload=ordersPage(f);
       else payload={};
+      if(!msg.coverageContext){try{payload.extras=await pageExtras(msg.page,f);}catch(err){payload.extras={error:err?.message||String(err)};}}
       payload.bi=biComponents_(f,msg.biWidgets||[],msg.page==='carteira'?payload:null);
       postMessage({type:'result',requestId:msg.requestId,page:msg.page,payload});
     }catch(err){postMessage({type:'queryError',requestId:msg.requestId,message:err?.message||String(err)});}
