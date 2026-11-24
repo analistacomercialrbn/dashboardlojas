@@ -10,6 +10,41 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@0d7b4bb1e0acaa3a66c81407489ac620f1fb5cdb/supervisao-web/gas/gas-app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
+.teams-view{color:#24354d;min-width:0;max-width:1540px;margin:0 auto}
+.teams-indicator-tabs{display:flex;flex-wrap:wrap;gap:6px;background:#eaf0f7;padding:6px;border-radius:13px;margin:0 0 20px}
+.teams-indicator-tabs button{border:0;background:transparent;color:#596c84;font:600 14px Inter,system-ui,sans-serif;min-height:43px;border-radius:9px;padding:10px 19px;cursor:pointer;flex:1;white-space:nowrap}
+.teams-indicator-tabs button[aria-pressed=true]{background:#223d75;color:#fff;box-shadow:0 3px 8px #223d7524}
+.teams-indicator-tabs button:focus-visible,.teams-legend button:focus-visible{outline:3px solid #7ca2d8;outline-offset:2px}
+.teams-hero{display:flex;align-items:center;justify-content:space-between;gap:28px;background:linear-gradient(110deg,#172c59,#315b95);padding:29px 32px;border-radius:18px;color:#fff;margin-bottom:18px}
+.teams-eyebrow{font-size:10px;font-weight:750;letter-spacing:.16em;color:#bbd1ed}
+.teams-hero h2{font-size:27px;line-height:1.2;margin:10px 0;color:#fff}.teams-hero p{max-width:720px;margin:0;font-size:13px;line-height:1.6;color:#d7e3f4}
+.teams-period{flex:none;border-left:1px solid #ffffff36;padding-left:28px;display:flex;flex-direction:column;gap:6px;font-size:13px}.teams-period>span{font-weight:700;color:#bed3ee}.teams-period strong{font-size:17px;color:#fff}.teams-period small{color:#bed3ee}
+.teams-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:20px}.teams-summary .kpi-card{margin:0;min-width:0;padding:19px 20px;background:white;border:1px solid #dfe6f0;border-radius:13px;box-shadow:none}.teams-summary .kpi-value{font-size:24px;line-height:1.25;overflow-wrap:anywhere}.teams-summary .kpi-label{font-size:11px;color:#6d7e95}.teams-summary .kpi-note{font-size:11px;line-height:1.6;color:#7b899e;margin-top:6px}
+.teams-view .panel{border:1px solid #dfe6ef;border-radius:16px;box-shadow:none;padding:23px;background:#fff;margin-bottom:18px}
+.teams-ranking-heading{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:17px}.teams-ranking-heading h3{font-size:19px;margin:0 0 6px;color:#243b60}.teams-ranking-heading p{font-size:12px;color:#6f7f94;margin:0;line-height:1.5}
+.teams-search{display:flex;flex-direction:column;gap:5px;font-size:11px;color:#60738e;min-width:250px}.teams-search input{font:inherit;font-size:13px;border:1px solid #d1dce9;border-radius:9px;padding:11px 12px;min-height:41px;background:#fafcff;color:#24354d;width:100%}
+.teams-legend{display:flex;align-items:center;gap:17px;flex-wrap:wrap;padding:11px 14px;background:#f3f6fa;border-radius:9px;font-size:11px;color:#52647b}.teams-legend>span{display:flex;align-items:center;gap:7px}.teams-legend button{margin-left:auto;border:0;background:transparent;color:#42618c;cursor:pointer;font:inherit;text-decoration:underline;text-underline-offset:3px;padding:4px}
+.teams-rule-note{font-size:11px;color:#748298;line-height:1.5;margin:11px 0}
+.teams-grid-head,.teams-rank-row{display:grid;grid-template-columns:50px minmax(190px,1.5fr) minmax(130px,1fr) minmax(115px,.85fr) minmax(140px,1fr) minmax(115px,.85fr);gap:16px;align-items:center}
+.teams-grid-head{padding:16px 15px 10px;color:#7c8a9d;font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.045em}
+.teams-rank-row{border:1px solid #e6ebf2;border-left:3px solid #d7dfea;border-radius:11px;margin:8px 0;padding:16px 14px;line-height:1.4;background:#fff}
+.teams-tone-green{border-left-color:#269c70;background:linear-gradient(90deg,#f5fbf8,#fff 34%)}.teams-tone-yellow{border-left-color:#d5a323;background:linear-gradient(90deg,#fffcf4,#fff 34%)}.teams-tone-red{border-left-color:#ce605b;background:linear-gradient(90deg,#fff8f7,#fff 34%)}
+.teams-rank-place{font-size:18px;font-weight:750;color:#526b8d}.teams-seller{min-width:0}.teams-seller>strong{display:block;font-size:13px;color:#243b60;overflow-wrap:anywhere}.teams-seller small,.teams-rank-number small,.teams-rank-goal small,.teams-rank-projection small{display:block;font-size:10px;color:#7a8aa0;margin-top:4px;line-height:1.5}
+.teams-seller .teams-inactive{color:#8b93a2;font-size:9px}.teams-rank-number strong,.teams-rank-goal strong,.teams-rank-projection strong{font-size:14px;color:#2a466e;font-variant-numeric:tabular-nums}.teams-rank-projection strong{color:#244a85}.teams-rank-goal strong{font-weight:550;color:#647892}
+.teams-score-track{height:4px;border-radius:6px;overflow:hidden;background:#e8eef5;margin-top:9px;max-width:190px}.teams-score-track i{height:100%;display:block;background:#456b9f;border-radius:6px}
+.teams-rank-signal{display:flex;align-items:center;gap:8px;font-size:10px;color:#63738b}.teams-dot{display:inline-block;flex:none;width:9px;height:9px;border-radius:50%;background:#a7b1bf}.teams-dot.green{background:#23a570;--team-glow:35,165,112}.teams-dot.yellow{background:#d6a51f;--team-glow:214,165,31}.teams-dot.red{background:#cd5b58;--team-glow:205,91,88}
+.teams-rank-signal .teams-dot:not(.muted){animation:teams-status-pulse 2s ease-in-out infinite}.teams-legend .teams-dot{animation:none}.teams-motion-paused .teams-dot{animation:none!important}
+@keyframes teams-status-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(var(--team-glow),.25)}50%{opacity:.45;box-shadow:0 0 0 5px rgba(var(--team-glow),0)}}
+.teams-ranking-footer{display:flex;justify-content:space-between;gap:12px;color:#8692a3;font-size:10px;margin-top:16px;border-top:1px solid #e8edf4;padding-top:14px}.teams-mobile-label{display:none}.teams-empty{text-align:center;padding:32px;color:#78879d}.teams-empty h2{font-size:20px;color:#30496e}.teams-empty p{font-size:13px;line-height:1.6}
+.teams-method{font-size:12px;color:#718198;line-height:1.7}.teams-method summary{cursor:pointer;color:#4e6687;font-weight:650}.teams-method p{margin:13px 0 0}
+@media(min-width:1000px) and (max-width:1250px){.teams-grid-head,.teams-rank-row{grid-template-columns:36px minmax(140px,1.4fr) repeat(3,minmax(100px,1fr)) minmax(95px,.85fr);gap:10px}.teams-rank-row{padding:14px 10px}.teams-rank-number strong,.teams-rank-goal strong,.teams-rank-projection strong{font-size:12px}}
+@media(max-width:999px){.teams-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.teams-grid-head{display:none}.teams-rank-row{grid-template-columns:35px minmax(0,1fr) minmax(0,1fr);gap:14px}.teams-rank-place{grid-row:1/4;align-self:start;font-size:20px}.teams-seller{grid-column:2/4}.teams-rank-signal{grid-column:2/4}.teams-mobile-label{display:block;font-size:10px;color:#8691a4;margin-bottom:4px}.teams-ranking-heading{align-items:start;flex-direction:column}.teams-search{width:100%;min-width:0}.teams-rank-projection{grid-column:2}.teams-period{padding-left:18px}.teams-hero{padding:24px}.teams-hero h2{font-size:23px}}
+@media(max-width:600px){.teams-indicator-tabs{gap:3px;padding:4px}.teams-indicator-tabs button{flex:1 1 30%;font-size:11px;padding:9px 7px;min-height:39px}.teams-hero{flex-direction:column;align-items:start;gap:18px;padding:22px}.teams-period{border-left:0;border-top:1px solid #ffffff36;padding:14px 0 0;width:100%;gap:5px}.teams-hero h2{font-size:23px}.teams-summary{gap:9px}.teams-summary .kpi-card{padding:14px}.teams-summary .kpi-value{font-size:19px}.teams-view .panel{padding:16px}.teams-legend{gap:11px;padding:11px;font-size:10px}.teams-legend button{margin:0;flex-basis:100%;text-align:left}.teams-rank-row{gap:11px;padding:13px 10px}.teams-rank-number strong,.teams-rank-goal strong,.teams-rank-projection strong{font-size:13px}.teams-ranking-footer{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.teams-dot{animation:none!important}}
+
+.teams-summary .kpi-value{white-space:normal;text-overflow:clip;overflow:visible;max-width:100%}.teams-summary .kpi-card:nth-child(3) .kpi-value{font-size:17px;line-height:1.4}.teams-rank-number strong,.teams-rank-projection strong{font-size:17px}
+@media(max-width:600px){.teams-summary .kpi-card:nth-child(3) .kpi-value{font-size:14px}.teams-rank-number strong,.teams-rank-projection strong{font-size:16px}}
+
 
 /* Resumo compacto e ações agrupadas das cargas. */
 .cargo-queue-card-v3{padding:20px!important}
@@ -712,6 +747,7 @@
       <span id="activeMenuLabel" class="active-menu-label">Visão geral</span><div class="header-account"><div id="userCard" class="user-card"></div><button id="logoutBtn" class="btn ghost small" type="button">Sair</button></div>
     </header>
 <div id="menuBackdrop" class="menu-backdrop" hidden></div><aside id="appMenu" class="app-menu" role="dialog" aria-modal="true" aria-label="Menu de navegação" hidden inert><div class="menu-heading"><div><small>REBANHO</small><strong>Inteligência comercial</strong></div><button id="menuClose" type="button" class="menu-close" aria-label="Fechar menu">×</button></div><p class="menu-caption">PAINEL COMERCIAL</p><nav class="nav" aria-label="Seções do dashboard"><button type="button" data-page="overview" class="nav-item active"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span><b>Visão geral</b></button>
+<button type="button" data-page="teams" class="nav-item" id="teamsNav"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 21v-4a6 6 0 0 1 12 0v4M16 4a3 3 0 0 1 0 6M21 21v-4a6 6 0 0 0-4-5"/></svg></span><b>Visão equipes</b></button>
 <button type="button" data-page="pedidos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 4H5v17h14V4h-3"/><rect x="8" y="2" width="8" height="5" rx="2"/><path d="M8 11h8M8 15h5"/></svg></span><b>Pedidos &amp; Previsão</b></button>
 <button type="button" data-page="carteira" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="3"/><path d="M8 6V3h8v3M3 12h18M10 12v3h4v-3"/></svg></span><b>Carteira</b></button>
 <button type="button" data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7Z"/><path d="m3 7 9 5 9-5M12 12v10M7 4.8l9 5"/></svg></span><b>Produtos</b></button>
@@ -1776,6 +1812,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@ddf1dce30a7bb142c06deb413907f29cd5b6e984/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@c0f6ee978041e582f09a84536e0499739420e8a8/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>
