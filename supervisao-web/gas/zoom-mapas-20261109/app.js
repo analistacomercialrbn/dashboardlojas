@@ -652,6 +652,7 @@ function renderPage(page,payload){
   else if(page==='pedidos')renderOrders(payload);
   if(page!=='history'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
   biRender(page,payload);
+  if(page==='overview')loadCompanySummary();
 }
 
 const TEAM_INDICATORS={
@@ -966,6 +967,137 @@ async function downloadTeamsImage(model){
 }
 
 
+
+// ===== Resumo da empresa (Visão geral) =====
+// Mesmos indicadores e regras da Visão equipes, somados para a empresa toda (teamGroup 'all').
+// Nada por vendedor: só empresa, equipe e supervisão. Pensado para virar imagem e ir ao grupo dos supervisores.
+const COMPANY={payload:null,key:'',loadedAt:0,showMargin:false};
+try{COMPANY.showMargin=localStorage.getItem('companyShowMargin')==='1';}catch{}
+const MONTH_NAMES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+function companyFilters(){return {...state.filters,teamGroup:'all'};}
+function companyKey(){return JSON.stringify([state.user?.login,state.user?.accessVersion,companyFilters(),state.serverUpdatedAt]);}
+function companyHost(){
+  let host=$('#companySummary');
+  if(!host){
+    host=document.createElement('section');host.id='companySummary';host.className='company-summary';
+    const hero=$('#content .overview-summary-hero');if(hero)hero.after(host);else $('#content').prepend(host);
+  }
+  return host;
+}
+
+function companyGroupStats(rows){
+  const withGoal=rows.filter(row=>row.goals?.revenue>0),goal=withGoal.reduce((s,r)=>s+r.goals.revenue,0);
+  const actual=withGoal.reduce((s,r)=>s+(r.revenue||0),0),projected=withGoal.reduce((s,r)=>s+(r.projected||0),0);
+  const ranked=teamsRanking(rows,'revenue'),tones={green:0,yellow:0,red:0,muted:0};
+  ranked.forEach(r=>{tones[r.tone in tones?r.tone:'muted']++;});
+  return {count:rows.length,withGoal:withGoal.length,attainment:goal?actual/goal*100:null,projection:goal&&projected?projected/goal*100:(goal?0:null),tones};
+}
+function companyRcaCount(n){return integer(n)+(n===1?' RCA ativo':' RCAs ativos');}
+function companyTone(value){return value==null?'muted':value>=100?'green':value>=90?'yellow':'red';}
+function companyToneLabel(value){return value==null?'Sem meta':value>=100?'No ritmo da meta':value>=90?'Perto da meta':'Abaixo da meta';}
+
+function companyModel(payload){
+  const rows=(payload.rows||[]).filter(row=>row.active===true);
+  const total=companyGroupStats(rows);
+  const teams=['other','health'].map(key=>({key,label:teamsGroupLabel(key),stats:companyGroupStats(rows.filter(r=>(r.teamGroup||'other')===key)),metrics:payload.teamSummary?.[key]||null})).filter(t=>t.stats.count);
+  const names=[...new Set(rows.map(r=>r.supervisor||'Sem supervisor'))];
+  const supervisors=names.map(name=>({name,stats:companyGroupStats(rows.filter(r=>(r.supervisor||'Sem supervisor')===name)),metrics:(payload.supervisorSummary||[]).find(s=>s.name===name)||null}))
+    .sort((a,b)=>(b.stats.projection??-1)-(a.stats.projection??-1)||a.name.localeCompare(b.name,'pt-BR'));
+  return {payload,rows,total,teams,supervisors,summary:payload.summary||{},calendar:payload.calendar||{},canMargin:payload.canMargin===true};
+}
+
+function companyBar(stats){
+  const scale=Math.min(150,Math.max(110,stats.projection||0,stats.attainment||0)),w=v=>v==null?0:Math.max(0,Math.min(100,v/scale*100));
+  return `<div class="company-bar tone-${companyTone(stats.projection)}" aria-hidden="true"><i class="company-bar-projection" style="width:${w(stats.projection)}%"></i><i class="company-bar-actual" style="width:${w(stats.attainment)}%"></i><span class="company-bar-goal" style="left:${w(100)}%"><b>Meta</b></span></div>`;
+}
+function companyDots(t){
+  return `<span class="company-dots" title="RCAs: ${t.green} no ritmo, ${t.yellow} perto, ${t.red} abaixo, ${t.muted} sem meta">${[['green',t.green],['yellow',t.yellow],['red',t.red]].map(([tone,n])=>`<span><i class="teams-dot ${tone}"></i>${integer(n)}</span>`).join('')}${t.muted?`<span class="is-muted"><i class="teams-dot muted"></i>${integer(t.muted)}</span>`:''}</span>`;
+}
+function companyRow(label,sub,stats,metrics,showMargin){
+  return `<tr><th scope="row"><strong>${esc(label)}</strong><small>${esc(sub)}</small></th><td><div class="company-cell-bar">${companyBar(stats)}</div></td><td class="num">${pct(stats.attainment)}</td><td class="num strong">${pct(stats.projection)}</td><td class="num">${metrics?integer(metrics.clients):'—'}</td><td class="num">${metrics?.mix!=null?dec(metrics.mix):'—'}</td><td class="num">${metrics?.ticket!=null?money(metrics.ticket,true):'—'}</td>${showMargin?`<td class="num">${metrics?.margin!=null?pct(metrics.margin):'—'}</td>`:''}<td>${companyDots(stats.tones)}</td></tr>`;
+}
+
+function renderCompanySummary(payload){
+  const host=companyHost(),m=companyModel(payload),{total,summary,calendar}=m;
+  const showMargin=m.canMargin&&COMPANY.showMargin;
+  const [year,month]=String(calendar.month||'').split('-');
+  const monthLabel=month?MONTH_NAMES[Number(month)-1]+' de '+year:'';
+  const cutoff=calendar.cutoff?calendar.cutoff.split('-').reverse().join('/'):'—';
+  const pace=calendar.closed?'Mês encerrado':calendar.future?'Mês futuro':integer(calendar.remainingToday??calendar.remaining)+' dias úteis até o fim do mês';
+  const tone=companyTone(total.projection);
+  const filtersText=teamsScopeText({filters:state.filters,group:'all',search:''}).replace(/^Demais equipes · /,'');
+  const tiles=[
+    ['Positivações',integer(summary.clients),'clientes principais com compra'],
+    ['Mix por cliente',summary.mix!=null?dec(summary.mix):'—','produtos distintos por cliente'],
+    ['Ticket médio',summary.ticket!=null?money(summary.ticket,true):'—','faturamento ÷ clientes com compra'],
+    ...(showMargin?[['Margem bruta',summary.margin!=null?pct(summary.margin):'—','lucro bruto ÷ faturamento']]:[]),
+    ['RCAs no ritmo',integer(total.tones.green)+' de '+integer(total.count),'projeção ≥ 100% da meta']
+  ];
+  const head=`<tr><th data-sort-ready="1" scope="col">${'%LABEL%'}</th><th data-sort-ready="1" scope="col">Faturado e projeção × meta</th><th data-sort-ready="1" scope="col" class="num">Faturado</th><th data-sort-ready="1" scope="col" class="num">Projeção</th><th data-sort-ready="1" scope="col" class="num">Positivações</th><th data-sort-ready="1" scope="col" class="num">Mix</th><th data-sort-ready="1" scope="col" class="num">Ticket</th>${showMargin?'<th data-sort-ready="1" scope="col" class="num">Margem</th>':''}<th data-sort-ready="1" scope="col">RCAs</th></tr>`;
+  host.innerHTML=`<div class="company-toolbar"><div><h2>Resumo da empresa</h2><p>Indicadores da Visão equipes somados para a empresa, por equipe e por supervisão. Sem dados de vendedor — pronto para enviar aos supervisores.</p></div><div class="company-actions">${m.canMargin?`<label class="company-margin-toggle"><input type="checkbox" id="companyShowMargin" ${COMPANY.showMargin?'checked':''}> Mostrar margem</label>`:''}<button type="button" class="btn secondary small" id="companyCopy">Copiar imagem</button><button type="button" class="btn primary small" id="companyDownload">Baixar imagem</button></div></div>
+  <article id="companyCard" class="company-card">
+    <header class="company-head"><div><span class="company-eyebrow">REBANHO · RESUMO COMERCIAL DA EMPRESA</span><h3>${esc(monthLabel.charAt(0).toUpperCase()+monthLabel.slice(1))}</h3><p>${esc(filtersText)}</p></div><div class="company-period"><strong>${esc(pace)}</strong><span>Corte dos dados: ${esc(cutoff)}</span></div></header>
+    <section class="company-goal tone-${tone}"><div class="company-goal-numbers"><div><span>Faturado</span><strong>${pct(total.attainment)}</strong><small>da meta do mês</small></div><div class="is-main"><span>Projeção</span><strong>${pct(total.projection)}</strong><small>até o fim do mês</small></div><span class="teams-pill tone-${tone}"><i class="teams-dot ${tone}"></i>${esc(companyToneLabel(total.projection))}</span></div><div class="company-goal-bar">${companyBar(total)}<div class="company-goal-legend"><span><i class="k-actual"></i>Faturado</span><span><i class="k-projection"></i>Projeção</span><span><i class="k-goal"></i>Meta (100%)</span><span class="muted">${integer(total.withGoal)} de ${integer(total.count)} RCAs com meta</span></div></div></section>
+    <section class="company-tiles">${tiles.map(([l,v,n])=>`<div><span>${esc(l)}</span><strong>${esc(v)}</strong><small>${esc(n)}</small></div>`).join('')}</section>
+    <section class="company-dist"><div class="company-dist-bar">${['green','yellow','red','muted'].filter(t=>total.tones[t]).map(t=>`<i class="tone-${t}" style="flex:${total.tones[t]}"></i>`).join('')}</div><div class="company-dist-legend"><span><i class="teams-dot green"></i><b>${integer(total.tones.green)}</b> RCAs no ritmo (≥ 100%)</span><span><i class="teams-dot yellow"></i><b>${integer(total.tones.yellow)}</b> perto (90% a 99,9%)</span><span><i class="teams-dot red"></i><b>${integer(total.tones.red)}</b> abaixo de 90%</span>${total.tones.muted?`<span><i class="teams-dot muted"></i><b>${integer(total.tones.muted)}</b> sem meta</span>`:''}</div></section>
+    ${m.teams.length>1?`<section class="company-table-wrap"><h4>Por equipe</h4><table class="company-table"><thead>${head.replace('%LABEL%','Equipe')}</thead><tbody>${m.teams.map(t=>companyRow(t.label,companyRcaCount(t.stats.count),t.stats,t.metrics,showMargin)).join('')}</tbody></table></section>`:''}
+    <section class="company-table-wrap"><h4>Por supervisão</h4><table class="company-table"><thead>${head.replace('%LABEL%','Supervisão')}</thead><tbody>${m.supervisors.map(s=>companyRow(s.name,companyRcaCount(s.stats.count),s.stats,s.metrics,showMargin)).join('')}</tbody></table></section>
+    <footer class="company-foot">Faturamento: somente vendas faturadas. Faturado e projeção em % da meta, considerando RCAs com meta; projeção pelo ritmo de dias úteis. Positivações, mix e ticket pelos clientes principais. Somente RCAs ativos — mesmas regras da Visão equipes.</footer>
+  </article><p id="companyStatus" class="company-status" role="status"></p>`;
+  $('#companyCopy').onclick=()=>companyExport('copy');
+  $('#companyDownload').onclick=()=>companyExport('download');
+  const toggle=$('#companyShowMargin');if(toggle)toggle.onchange=()=>{COMPANY.showMargin=toggle.checked;try{localStorage.setItem('companyShowMargin',toggle.checked?'1':'0');}catch{}renderCompanySummary(payload);};
+}
+
+async function loadCompanySummary(){
+  if(state.page!=='overview'||state.module!=='commercial')return;
+  const requestId=state.requestId,host=companyHost();
+  if(!/^20\d{2}$/.test(String(state.filters.year))||!/^([1-9]|1[0-2])$/.test(String(state.filters.month))){
+    host.innerHTML='<div class="company-empty"><strong>Resumo da empresa</strong><span>Escolha um ano e um mês nos filtros para ver o resumo com meta, projeção, positivações, mix e ticket.</span></div>';return;
+  }
+  const key=companyKey();
+  if(COMPANY.payload&&COMPANY.key===key&&Date.now()-COMPANY.loadedAt<180000){renderCompanySummary(COMPANY.payload);return;}
+  host.innerHTML='<div class="company-empty"><strong>Resumo da empresa</strong><span>Somando os indicadores das equipes…</span></div>';
+  try{
+    const payload=await api('/api/teamsView',{body:JSON.stringify({filters:companyFilters()})});
+    if(state.page!=='overview'||state.requestId!==requestId||!document.body.contains(host))return;
+    COMPANY.payload=payload;COMPANY.key=key;COMPANY.loadedAt=Date.now();renderCompanySummary(payload);
+  }catch(error){
+    if(!document.body.contains(host))return;
+    host.innerHTML=`<div class="company-empty"><strong>Resumo da empresa indisponível</strong><span>${esc(error.message||String(error))}</span></div>`;
+  }
+}
+
+let html2canvasPromise=null;
+function loadHtml2canvas(){
+  if(window.html2canvas)return Promise.resolve(window.html2canvas);
+  html2canvasPromise||=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';s.onload=()=>resolve(window.html2canvas);s.onerror=()=>{html2canvasPromise=null;reject(new Error('Não foi possível carregar o gerador de imagem.'));};document.head.append(s);});
+  return html2canvasPromise;
+}
+async function companyExport(mode){
+  const card=$('#companyCard'),status=$('#companyStatus');if(!card)return;
+  const buttons=[$('#companyCopy'),$('#companyDownload')];buttons.forEach(b=>b&&(b.disabled=true));
+  if(status)status.textContent='Gerando imagem…';
+  try{
+    const render=await loadHtml2canvas();
+    card.classList.add('is-exporting');
+    const canvas=await render(card,{scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false});
+    card.classList.remove('is-exporting');
+    const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
+    const name='rebanho-resumo-empresa-'+String(COMPANY.payload?.calendar?.month||'')+'.png';
+    if(mode==='copy'){
+      try{
+        if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');
+        await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+        if(status)status.textContent='Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.';return;
+      }catch{if(status)status.textContent='Este navegador não deixou copiar; a imagem foi baixada.';}
+    }
+    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+    if(status&&mode!=='copy')status.textContent='Imagem baixada: '+name;
+  }catch(error){if(status)status.textContent='Não foi possível gerar a imagem. '+(error?.message||String(error));}
+  finally{card.classList.remove('is-exporting');buttons.forEach(b=>b&&(b.disabled=false));}
+}
 
 function renderOverview(p){
   const k=p.kpis||{};
