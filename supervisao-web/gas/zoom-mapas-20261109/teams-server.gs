@@ -139,6 +139,17 @@ function teamsSalesMonth_(month,version,today) {
   return result;
 }
 
+function teamsGroupMap_(aux) {
+  // A matriz distingue os especialistas de Saúde dos RCAs que atendem várias linhas.
+  // Um nome presente também em Nutrição, Aves ou Suínos permanece nas demais equipes.
+  const cities=coverageData_().cities,health=new Set(),general=new Set();
+  for(const city of cities){
+    if(city.animalHealth)health.add(norm_(city.animalHealth));
+    for(const field of ['nutrition','poultry','swine'])if(city[field])general.add(norm_(city[field]));
+  }
+  return new Map(aux.rcas.map(person=>[String(person.code),health.has(norm_(person.name))&&!general.has(norm_(person.name))?'health':'other']));
+}
+
 function teamsView_(user,payload) {
   if(!['ADMIN','DIRETOR','GERENTE','SUPERVISOR','RCA'].includes(user.perfil))throw new Error('Seu perfil não tem acesso à visão de equipes.');
   const f=payload.filters||{},year=Number(f.year),monthNumber=Number(f.month);
@@ -146,12 +157,19 @@ function teamsView_(user,payload) {
   const month=year+'-'+String(monthNumber).padStart(2,'0'),today=centralToday_('America/Fortaleza');
   const aux=readAuxiliary_(),reference=teamsReference_(month),departments=teamsList_(f.department),supervisors=teamsList_(f.supervisor),sellers=teamsList_(f.rca);
   const ufs=teamsList_(f.uf).map(norm_),city=teamsList_(f.city).map(norm_),region=teamsList_(f.region).map(norm_);
+  const group=f.teamGroup==='health'?'health':'other',groups=teamsGroupMap_(aux);
   const catalog=new Map(aux.rcas.map(rca=>[String(rca.code),rca]));
-  const sellerAllowed=code=>userAllowsRca_(user,code)&&(!sellers.length||sellers.includes(String(code)))&&
-    (!supervisors.length||supervisors.includes(String(catalog.get(String(code))?.supervisor||'')));
+  const activeAllowed=code=>catalog.get(String(code))?.active===true&&userAllowsRca_(user,code);
+  const groupAllowed=code=>activeAllowed(code)&&groups.get(String(code))===group;
+  const sellerAllowed=code=>groupAllowed(code)&&(!sellers.length||sellers.includes(String(code)))&&
+    (!supervisors.length||supervisors.includes(String(catalog.get(String(code))?.supervisor||'Sem supervisor')));
+  const supervisorOptions=[...new Set(aux.rcas.filter(person=>activeAllowed(person.code)).map(person=>person.supervisor||'Sem supervisor'))]
+    .sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:aux.rcas.filter(person=>groupAllowed(person.code)&&(person.supervisor||'Sem supervisor')===name).length}));
+  const groupCounts=Object.fromEntries(['other','health'].map(key=>[key,aux.rcas.filter(person=>activeAllowed(person.code)&&groups.get(String(person.code))===key).length]));
   const canMargin=['ADMIN','DIRETOR','GERENTE'].includes(user.perfil);
   const version=SCRIPT_PROPS.getProperty('SNAPSHOT_UPDATED_AT')||'';
-  const key='TEAMS_VIEW_V2_'+digestHex_(JSON.stringify([month,today,version,f,user.login,user.perfil,user.accessVersion,user.supervisor,user.cod_rca,aux.goals,reference])).slice(0,40);
+  const key='TEAMS_VIEW_V3_'+digestHex_(JSON.stringify([month,today,version,f,group,user.login,user.perfil,user.accessVersion,user.supervisor,user.cod_rca,aux.goals,reference,
+    aux.rcas.map(person=>[person.code,person.name,person.supervisor,person.active,groups.get(String(person.code))])])).slice(0,40);
   const cache=CacheService.getScriptCache(),saved=centralCacheRead_(cache,key);
   if(saved)return saved;
   const buckets=new Map(),overall=teamsBucket_();
@@ -162,7 +180,6 @@ function teamsView_(user,payload) {
     if(!sellerAllowed(rca))continue;
     if(departments.length&&!departments.includes(sale.department)||ufs.length&&!ufs.includes(sale.uf)||city.length&&!city.includes(norm_(sale.city)))continue;
     if(region.length&&!region.includes(norm_(aux.routeMap.get(rca+'|'+norm_(sale.city))||'')))continue;
-    if(!buckets.has(String(rca))){buckets.set(String(rca),teamsBucket_());catalog.set(String(rca),{code:rca,name:'RCA '+rca,supervisor:''});}
     teamsAddSale_(buckets.get(String(rca)),sale);teamsAddSale_(overall,sale);
   }
   const calendar=teamsCalendar_(month,lastBilled,today,reference.holidays);
@@ -177,10 +194,10 @@ function teamsView_(user,payload) {
       if(goalsInScope.length===1)goals[indicator]=goalsInScope[0].value;
     }
     const projected=calendar.factor==null?null:actual.revenue*calendar.factor;
-    return {code:Number(code),name:person.name||'RCA '+code,supervisor:person.supervisor||'Sem supervisor',active:person.active===true,...actual,goals,
+    return {code:Number(code),name:person.name||'RCA '+code,supervisor:person.supervisor||'Sem supervisor',active:true,teamGroup:group,...actual,goals,
       attainment:goals.revenue?actual.revenue/goals.revenue*100:null,projected,projectedAttainment:goals.revenue&&projected!=null?projected/goals.revenue*100:null};
   });
-  const result={ok:true,rows,summary:teamsMetrics_(overall,canMargin),calendar,canMargin,
+  const result={ok:true,rows,summary:teamsMetrics_(overall,canMargin),calendar,canMargin,teamGroup:group,groupCounts,supervisorOptions,
     goalScopeLimited:Boolean(ufs.length||city.length||region.length),updatedAt:new Date().toISOString(),baseUpdatedAt:version};
   centralCacheWrite_(cache,key,JSON.stringify(result),180);
   return result;
