@@ -287,7 +287,7 @@ const AUTH = {
   passwordChangeSessionSeconds: 600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/8ccf83a2335dc97679443b2e05a08eeadf1f9bbf/supervisao-web/gas/zoom-mapas-20261109/app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/4eee9a544ce7f14183ed2abe5d4621597e1651e5/supervisao-web/gas/zoom-mapas-20261109/app.html';
 
 function doGet() {
   const timing=centralTiming_('central.interface');
@@ -5274,10 +5274,11 @@ function teamsView_(user,payload) {
   const month=year+'-'+String(monthNumber).padStart(2,'0'),today=centralToday_('America/Fortaleza');
   const aux=readAuxiliary_(),reference=teamsReference_(month),departments=teamsList_(f.department),supervisors=teamsList_(f.supervisor),sellers=teamsList_(f.rca);
   const ufs=teamsList_(f.uf).map(norm_),city=teamsList_(f.city).map(norm_),region=teamsList_(f.region).map(norm_);
-  const group=f.teamGroup==='health'?'health':'other',groups=teamsGroupMap_(aux);
+  // teamGroup 'all' = empresa toda (resumo da Visão geral), com as mesmas regras do ranking.
+  const group=f.teamGroup==='health'?'health':f.teamGroup==='all'?'all':'other',groups=teamsGroupMap_(aux);
   const catalog=new Map(aux.rcas.map(rca=>[String(rca.code),rca]));
   const activeAllowed=code=>catalog.get(String(code))?.active===true&&userAllowsRca_(user,code);
-  const groupAllowed=code=>activeAllowed(code)&&groups.get(String(code))===group;
+  const groupAllowed=code=>activeAllowed(code)&&(group==='all'||groups.get(String(code))===group);
   const sellerAllowed=code=>groupAllowed(code)&&(!sellers.length||sellers.includes(String(code)))&&
     (!supervisors.length||supervisors.includes(String(catalog.get(String(code))?.supervisor||'Sem supervisor')));
   const supervisorOptions=[...new Set(aux.rcas.filter(person=>activeAllowed(person.code)).map(person=>person.supervisor||'Sem supervisor'))]
@@ -5289,7 +5290,7 @@ function teamsView_(user,payload) {
     aux.rcas.map(person=>[person.code,person.name,person.supervisor,person.active,groups.get(String(person.code))])])).slice(0,40);
   const cache=CacheService.getScriptCache(),saved=centralCacheRead_(cache,key);
   if(saved)return saved;
-  const buckets=new Map(),overall=teamsBucket_();
+  const buckets=new Map(),overall=teamsBucket_(),bySupervisor=new Map(),byTeam=new Map();
   for(const rca of aux.rcas)if(sellerAllowed(rca.code))buckets.set(String(rca.code),teamsBucket_());
   const monthly=teamsSalesMonth_(month,version,today),lastBilled=monthly.lastBilled;
   for(const sale of monthly.records){
@@ -5298,6 +5299,11 @@ function teamsView_(user,payload) {
     if(departments.length&&!departments.includes(sale.department)||ufs.length&&!ufs.includes(sale.uf)||city.length&&!city.includes(norm_(sale.city)))continue;
     if(region.length&&!region.includes(norm_(aux.routeMap.get(rca+'|'+norm_(sale.city))||'')))continue;
     teamsAddSale_(buckets.get(String(rca)),sale);teamsAddSale_(overall,sale);
+    if(group==='all'){
+      const sup=String(catalog.get(String(rca))?.supervisor||'Sem supervisor'),team=groups.get(String(rca))||'other';
+      if(!bySupervisor.has(sup))bySupervisor.set(sup,teamsBucket_());if(!byTeam.has(team))byTeam.set(team,teamsBucket_());
+      teamsAddSale_(bySupervisor.get(sup),sale);teamsAddSale_(byTeam.get(team),sale);
+    }
   }
   const calendar=teamsCalendar_(month,lastBilled,today,reference.holidays);
   const rows=[...buckets].map(([code,bucket])=>{
@@ -5311,10 +5317,12 @@ function teamsView_(user,payload) {
       if(goalsInScope.length===1)goals[indicator]=goalsInScope[0].value;
     }
     const projected=calendar.factor==null?null:actual.revenue*calendar.factor;
-    return {code:Number(code),name:person.name||'RCA '+code,supervisor:person.supervisor||'Sem supervisor',active:true,teamGroup:group,...actual,goals,
+    return {code:Number(code),name:person.name||'RCA '+code,supervisor:person.supervisor||'Sem supervisor',active:true,teamGroup:groups.get(code)||'other',...actual,goals,
       attainment:goals.revenue?actual.revenue/goals.revenue*100:null,projected,projectedAttainment:goals.revenue&&projected!=null?projected/goals.revenue*100:null};
   });
-  const result={ok:true,rows,summary:teamsMetrics_(overall,canMargin),calendar,canMargin,teamGroup:group,groupCounts,supervisorOptions,
+  const supervisorSummary=group==='all'?[...bySupervisor].map(([name,bucket])=>({name,...teamsMetrics_(bucket,canMargin)})):null;
+  const teamSummary=group==='all'?Object.fromEntries([...byTeam].map(([team,bucket])=>[team,teamsMetrics_(bucket,canMargin)])):null;
+  const result={ok:true,rows,summary:teamsMetrics_(overall,canMargin),supervisorSummary,teamSummary,calendar,canMargin,teamGroup:group,groupCounts,supervisorOptions,
     goalScopeLimited:Boolean(ufs.length||city.length||region.length),updatedAt:new Date().toISOString(),baseUpdatedAt:version};
   centralCacheWrite_(cache,key,JSON.stringify(result),180);
   return result;
