@@ -419,6 +419,7 @@ function dashboardApi(action, payload, token) {
     requireArea_(user,'commercial');
     if(action==='portfolioClients')return portfolioClients_(user);
     if(action==='teamsView')return teamsView_(user,payload);
+    if(action==='productsView')return productsView_(user,payload);
     if(action==='biLayout')return biLayoutApi_(user,payload);
     if(action==='biDiagnostics')return biDiagnostics_(user);
     if (action === 'history') return recoveredMacroHistory_(user);
@@ -5339,4 +5340,84 @@ function teamsView_(user,payload) {
     goalScopeLimited:Boolean(ufs.length||city.length||region.length),updatedAt:new Date().toISOString(),baseUpdatedAt:version};
   centralCacheWrite_(cache,key,JSON.stringify(result),180);
   return result;
+}
+
+// ===== Mix e Produtos: lucro, desconto, quantidade e fornecedor do mês =====
+// A cópia do painel no navegador não traz essas colunas; aqui elas são lidas da base de vendas
+// (somente FECHADO, pela data de faturamento), somadas por RCA, produto e cidade, e guardadas por 6 horas.
+function productsMonth_(month,version,today) {
+  const cache=CacheService.getScriptCache(),key='PRODUCTS_MONTH_V1_'+digestHex_(month+'|'+version+'|'+today).slice(0,32);
+  const saved=centralCacheRead_(cache,key);if(saved)return saved;
+  const source=SpreadsheetApp.openById(CFG.salesSpreadsheetId),tz=source.getSpreadsheetTimeZone();
+  const dict=()=>{const list=[],index=new Map();return {list,id:v=>{const k=String(v==null?'':v).trim();if(!index.has(k)){index.set(k,list.length);list.push(k);}return index.get(k);}};};
+  const deps=dict(),sups=dict(),cities=dict(),groups=new Map();
+  const numberOrNull=v=>typeof v==='number'&&Number.isFinite(v)||typeof v==='string'&&/^\s*-?\d[\d.,]*\s*$/.test(v)?num_(v):null;
+  for(const sourceYear of CFG.years){
+    const sheet=source.getSheetByName(String(sourceYear));
+    if(!sheet)continue;
+    const headers=headerIndex_(sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0]);
+    const needed=['Posição','Data Faturamento','Cod/Vend.','Cod/Produto','Pedidos Enviados','DEPARTAMENTO','MUNICENT','ESTENT'];
+    if(needed.some(name=>headers[name]==null))throw new Error('A base comercial não possui todas as colunas necessárias para Mix e Produtos.');
+    const width=Math.max(...needed.concat(['Vl Lucro','Vl Desconto','Qt Pedida','Cod/Fornecedor']).map(name=>headers[name]??-1))+1;
+    const count=Math.max(0,sheet.getLastRow()-1);
+    if(!count)continue;
+    const billings=sheet.getRange(2,headers['Data Faturamento']+1,count,1).getValues(),statuses=sheet.getRange(2,headers['Posição']+1,count,1).getValues(),blocks=new Set();
+    for(let i=0;i<count;i++){
+      if(norm_(statuses[i][0])!=='FECHADO')continue;
+      const day=teamsDate_(billings[i][0],tz);
+      if(!day.startsWith(month)||day>today)continue;
+      blocks.add(Math.floor(i/4000));
+    }
+    for(const block of blocks){
+      const first=2+block*4000,rows=sheet.getRange(first,1,Math.min(4000,count-block*4000),width).getValues();
+      for(const row of rows){
+        if(norm_(cell_(row,headers,'Posição'))!=='FECHADO')continue;
+        const day=teamsDate_(cell_(row,headers,'Data Faturamento'),tz);
+        if(!day.startsWith(month)||day>today)continue;
+        const rca=code_(cell_(row,headers,'Cod/Vend.')),product=code_(cell_(row,headers,'Cod/Produto'));
+        if(product==null)continue;
+        const dep=deps.id(cell_(row,headers,'DEPARTAMENTO')),sup=sups.id(headers['Cod/Fornecedor']==null?'':cell_(row,headers,'Cod/Fornecedor'));
+        const city=cities.id(cell_(row,headers,'MUNICENT')),uf=norm_(cell_(row,headers,'ESTENT'));
+        const value=num_(cell_(row,headers,'Pedidos Enviados')),profit=headers['Vl Lucro']==null?null:numberOrNull(cell_(row,headers,'Vl Lucro'));
+        const discount=headers['Vl Desconto']==null?0:(numberOrNull(cell_(row,headers,'Vl Desconto'))||0),qty=headers['Qt Pedida']==null?0:(numberOrNull(cell_(row,headers,'Qt Pedida'))||0);
+        const k=[rca,product,dep,sup,city,uf].join('|');
+        // [rca, produto, departamento, fornecedor, cidade, UF, faturamento, lucro, faturamento com lucro informado, desconto, quantidade]
+        if(!groups.has(k))groups.set(k,[rca,product,dep,sup,city,uf,0,0,0,0,0]);
+        const g=groups.get(k);g[6]+=value;g[9]+=discount;g[10]+=qty;
+        if(profit!=null){g[7]+=profit;g[8]+=value;}
+      }
+    }
+  }
+  const result={rows:[...groups.values()],departments:deps.list,suppliers:sups.list,cities:cities.list};
+  centralCacheWrite_(cache,key,JSON.stringify(result),21600);
+  return result;
+}
+
+// Fornecedor de cada produto (o mais recente nas abas anuais), para comparar meses anteriores por fornecedor.
+function productsSuppliers_(version) {
+  const cache=CacheService.getScriptCache(),key='PRODUCTS_SUPPLIERS_V1_'+digestHex_(version).slice(0,32);
+  const saved=centralCacheRead_(cache,key);if(saved)return saved;
+  const source=SpreadsheetApp.openById(CFG.salesSpreadsheetId),map=new Map();
+  for(const sourceYear of CFG.years){
+    const sheet=source.getSheetByName(String(sourceYear));
+    if(!sheet)continue;
+    const headers=headerIndex_(sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0]),count=Math.max(0,sheet.getLastRow()-1);
+    if(!count||headers['Cod/Produto']==null||headers['Cod/Fornecedor']==null)continue;
+    const products=sheet.getRange(2,headers['Cod/Produto']+1,count,1).getValues(),suppliers=sheet.getRange(2,headers['Cod/Fornecedor']+1,count,1).getValues();
+    for(let i=0;i<count;i++){const p=code_(products[i][0]),s=String(suppliers[i][0]||'').trim();if(p!=null&&s)map.set(String(p),s);}
+  }
+  const result=[...map];
+  centralCacheWrite_(cache,key,JSON.stringify(result),21600);
+  return result;
+}
+
+function productsView_(user,payload) {
+  const month=String(payload&&payload.month||'');
+  if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)||!CFG.years.map(String).includes(month.slice(0,4)))throw new Error('Selecione um mês válido para Mix e Produtos.');
+  const today=centralToday_('America/Fortaleza'),version=SCRIPT_PROPS.getProperty('SNAPSHOT_UPDATED_AT')||'';
+  const data=productsMonth_(month,version,today);
+  const canMargin=['ADMIN','DIRETOR','GERENTE'].includes(user.perfil);
+  // Recorte de acesso do usuário; margem só para os perfis que já veem margem na Visão equipes.
+  const rows=data.rows.filter(row=>userAllowsRca_(user,row[0])).map(row=>canMargin?row:row.slice(0,7).concat([0,0]).concat(row.slice(9)));
+  return {ok:true,month,canMargin,rows,departments:data.departments,suppliers:data.suppliers,cities:data.cities,catalog:productsSuppliers_(version),updatedAt:version};
 }

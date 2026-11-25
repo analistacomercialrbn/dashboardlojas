@@ -1249,6 +1249,50 @@ body.ct-page .filter-group.period{display:none!important}
 @media(max-width:999px){.ct-hero-grid{grid-template-columns:1fr 1fr}.ct-foot-row{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.ct-hv-lg{font-size:32px}.ct-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.ct-eq>i{display:none}.ct-eq>div{flex:1 1 40%}.ct-foot-row{grid-template-columns:1fr}.ct-foot-row>div{border-left:0;padding-left:0}.ct-chart{height:240px}.ct-scope{margin-left:0}}
 </style>
+<style id="products-report-style">
+/* Mix e Produtos — visual das páginas novas */
+#content.mp-report{display:flex;flex-direction:column;gap:16px;color:#0f1b3d;font-family:Inter,system-ui,sans-serif}
+.mp-report p{margin:0}
+.mp-toolbar{flex-wrap:wrap;gap:8px}
+.mp-period{margin-left:auto}
+.mp-warn{padding:10px 14px;border-radius:10px;background:#fff6e5;border:1px solid #f0d9a6;color:#7a5a12;font-size:13px}
+.mp-hero{gap:10px!important}
+.mp-hero-grid{display:grid;grid-template-columns:1.4fr repeat(4,1fr);gap:24px;align-items:end}
+.mp-hv-lg{margin:4px 0 0!important;font-size:42px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:#fff}
+.mp-hero-note{opacity:.85}
+.mp-groups,.mp-rank,.mp-matrix,.mp-rcas,.mp-cross,.mp-move{display:flex;flex-direction:column;gap:12px}
+.mp-table th,.mp-table td{text-align:left;white-space:nowrap}
+.mp-table th.num,.mp-table td.num{text-align:right}
+.mp-table th button.ct-sort{all:unset;cursor:pointer;font:inherit;white-space:nowrap}
+.mp-table th button.ct-sort.on{color:#14275c;text-decoration:underline}
+.mp-ranking,.mp-rca{min-width:900px}
+.mp-var{font-weight:700;font-size:12px;white-space:nowrap}.mp-var.up{color:#1f8a5b}.mp-var.down{color:#c2453f}
+.mp-search{min-height:34px;border:1px solid #d5dbe6;border-radius:8px;padding:6px 10px;font-size:13px;min-width:220px}
+.mp-moves{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.mp-move-list{margin:0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:8px;font-size:12.5px}
+.mp-move-list li{padding-left:2px}
+.mp-move-list li{display:list-item}
+.mp-move-list li>span:first-child{display:inline-flex;flex-direction:column;max-width:62%;vertical-align:top}
+.mp-move-list small{font-size:11px}
+.mp-diff{float:right;text-align:right;font-weight:700;display:inline-flex;flex-direction:column;align-items:flex-end}
+.mp-diff.up{color:#1f8a5b}.mp-diff.down{color:#c2453f}.mp-diff small{font-weight:600}
+.mp-more summary{cursor:pointer;font-size:12px;color:#14275c;margin-top:6px}
+.mp-matrix-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.mp-cell{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid #e2e7f0;border-left-width:5px;background:#fff;border-radius:10px;padding:12px 14px;cursor:pointer;font:inherit;color:#0f1b3d;min-height:0}
+.mp-cell b{font-size:24px}.mp-cell span{font-weight:700}.mp-cell small{font-size:11.5px;color:#5b6785}
+.mp-cell.g{border-left-color:#1f8a5b}.mp-cell.y{border-left-color:#d89b35}.mp-cell.b{border-left-color:#4a72d1}.mp-cell.r{border-left-color:#c2453f}
+.mp-cell.on{background:#eef3fb;border-color:#14275c}
+.mp-top2 small{display:block;white-space:normal;min-width:220px}
+.mp-pairs{display:flex;flex-wrap:wrap;gap:8px}
+.mp-pair{display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:1px solid #d5dbe6;background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;font:inherit;color:#0f1b3d;text-align:left;min-height:0;max-width:100%}
+.mp-pair span{font-size:12.5px}.mp-pair small{font-size:11px;color:#5b6785}
+.mp-pair.on{background:#14275c;border-color:#14275c;color:#fff}.mp-pair.on small{color:#cfd8f0}
+.mp-cross-lists{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.mp-cross-lists>div{display:flex;flex-direction:column;gap:8px;min-width:0}
+@media(max-width:1199px){.mp-moves{grid-template-columns:1fr 1fr}.mp-hero-grid{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:760px){.mp-cross-lists{grid-template-columns:1fr}.mp-matrix-grid{grid-template-columns:1fr}}
+@media(max-width:560px){.mp-hero-grid>div:first-child{grid-column:1/-1}.mp-toolbar .tv-sup{max-width:100%;box-sizing:border-box}.mp-toolbar .tv-sup summary{white-space:normal}.mp-hv-lg{font-size:32px}.mp-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.mp-moves{grid-template-columns:1fr}.mp-period{margin-left:0}.mp-search{min-width:0;width:100%}}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
@@ -1300,7 +1344,7 @@ body.ct-page .filter-group.period{display:none!important}
 <button type="button" data-page="teams" class="nav-item" id="teamsNav"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 21v-4a6 6 0 0 1 12 0v4M16 4a3 3 0 0 1 0 6M21 21v-4a6 6 0 0 0-4-5"/></svg></span><b>Visão equipes</b></button>
 <button type="button" data-page="pedidos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 4H5v17h14V4h-3"/><rect x="8" y="2" width="8" height="5" rx="2"/><path d="M8 11h8M8 15h5"/></svg></span><b>Pedidos &amp; Previsão</b></button>
 <button type="button" data-page="carteira" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="3"/><path d="M8 6V3h8v3M3 12h18M10 12v3h4v-3"/></svg></span><b>Carteira</b></button>
-<button type="button" data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7Z"/><path d="m3 7 9 5 9-5M12 12v10M7 4.8l9 5"/></svg></span><b>Produtos</b></button>
+<button type="button" data-page="produtos" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7Z"/><path d="m3 7 9 5 9-5M12 12v10M7 4.8l9 5"/></svg></span><b>Mix e Produtos</b></button>
 <button type="button" data-page="cidades" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg></span><b>Cidades</b></button>
 <button type="button" data-page="metas" class="nav-item"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4"/><path d="m11 13 9-10M16 3h4v4"/></svg></span><b>Metas</b></button>
 <button type="button" data-page="history" class="nav-item hidden" id="historyNav"><span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2 8M3 4v7h7M12 7v5l3 2"/></svg></span><b>Histórico</b></button>
@@ -2513,40 +2557,149 @@ function exPrevious(f){
   if(m!==null){const pf=previousFilters(f);return {filters:pf,label:MONTHS[pf.month]+'/'+String(pf.year).slice(2)};}
   return {filters:{...f,year:String(y-1)},label:String(y-1)};
 }
-function exProducts(f){
-  const rows=filterSales(f),limit=exDayLimit(f);
-  const byProd=new Map(),byClient=new Map();
-  for(const s of rows){
-    if(s.product==null)continue;
-    if(!byProd.has(s.product))byProd.set(s.product,{code:s.product,name:s.productName,revenue:0,clients:new Set()});
-    const p=byProd.get(s.product);p.revenue+=s.value;
-    if(s.client!=null&&s.value>0){p.clients.add(s.client);addSet(byClient,s.client,s.product);}
+// ===== Mix e Produtos (página nova) =====
+// Um mês por vez. Comparações: mês anterior e mesmo mês do ano anterior, até o mesmo dia quando o mês está em andamento.
+const PRODUCTS_SERVER=new Map();
+async function productsServer(month){
+  if(!PRODUCTS_SERVER.has(month))PRODUCTS_SERVER.set(month,serverRequest('productsView',{month}).catch(err=>{PRODUCTS_SERVER.delete(month);throw err;}));
+  return await PRODUCTS_SERVER.get(month);
+}
+function productsFirstWords(name){return norm(String(name||'').replace(/^\s*\d+\s*-\s*/,'')).replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(Boolean).slice(0,2).join(' ');}
+async function produtosV2(f){
+  const latest=exLatest();
+  let y=exYear(f),m=exMonth(f),fallback=false;
+  if(y===null||m===null){y=latest.getUTCFullYear();m=latest.getUTCMonth()+1;fallback=true;}
+  const key=(yy,mm)=>{const d=new Date(Date.UTC(yy,mm-1,1));return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');};
+  const monthKey=key(y,m),prevKey=key(y,m-1),lyKey=key(y-1,m),back=[key(y,m-1),key(y,m-2),key(y,m-3)],cross=[key(y,m),key(y,m-1),key(y,m-2)];
+  const running=latest.getUTCFullYear()===y&&latest.getUTCMonth()+1===m,cutDay=running?latest.getUTCDate():31;
+  const minPrev=Math.max(0,Number(f.minPrev)||10000);
+  const links=portfolioLinks?await portfolioLinks.catch(()=>[]):[];
+  const directory=portfolioDirectory(links||[]),principal=c=>c==null?null:portfolioClientKey({client:c},directory);
+  // Filtros: supervisão/RCA pelo vendedor da venda; departamentos marcados (ou todos menos os de fora por padrão); região.
+  const allowed=allowedRca(f),deps=new Set(multi(f.department)),depOut=multi(f.excludeDepartments).map(norm),geo=portfolioGeography(f);
+  const depOk=d=>deps.size?deps.has(String(d)):!depOut.some(x=>norm(d).includes(x));
+  const keep=s=>allowed.has(s.rca)&&depOk(s.department)&&geo(s);
+  const want=new Set([monthKey,prevKey,lyKey,...back,...cross]);
+  const byMonth=new Map([...want].map(k=>[k,[]]));
+  const regionOf=new Map();
+  for(const s of SALES){
+    if(s.city&&s.region)regionOf.set(String(s.rca)+'|'+norm(s.city),s.region);
+    if(!want.has(s.monthKey)||!keep(s))continue;
+    byMonth.get(s.monthKey).push(s);
   }
-  const list=[...byProd.values()].filter(p=>p.revenue>0).sort((a,b)=>b.revenue-a.revenue),total=list.reduce((a,p)=>a+p.revenue,0);
-  let acc=0;const abc={A:{count:0,revenue:0},B:{count:0,revenue:0},C:{count:0,revenue:0}};
-  for(const p of list){const cls=total&&acc/total<0.8?'A':total&&acc/total<0.95?'B':'C';acc+=p.revenue;abc[cls].count++;abc[cls].revenue+=p.revenue;p.abc=cls;}
-  const buyers=byClient.size;
-  const penetration=list.map(p=>({code:p.code,name:p.name,clients:p.clients.size,share:buyers?p.clients.size/buyers*100:0,abc:p.abc})).sort((a,b)=>b.clients-a.clients).slice(0,10);
-  // Comparação com o período anterior (mês anterior ou ano anterior), no mesmo dia quando o período está em andamento.
-  const prev=exPrevious(f);let movers=null;
-  if(prev){
-    let prows=filterSales(prev.filters);
-    if(limit)prows=exCut(prows,exMonth(f)!==null?{month:prev.filters.month,day:limit.day}:limit);
-    const prevMap=new Map();for(const s of prows){if(s.product==null)continue;if(!prevMap.has(s.product))prevMap.set(s.product,{name:s.productName,revenue:0});prevMap.get(s.product).revenue+=s.value;}
-    const keys=new Set([...byProd.keys(),...prevMap.keys()]);
-    const diff=[...keys].map(k=>{const cur=byProd.get(k)?.revenue||0,old=prevMap.get(k)?.revenue||0;return {code:k,name:byProd.get(k)?.name||prevMap.get(k)?.name||String(k),current:cur,previous:old,change:cur-old,growth:exGrowth(cur,old)};});
-    movers={label:prev.label,up:diff.filter(d=>d.change>0).sort((a,b)=>b.change-a.change).slice(0,8),down:diff.filter(d=>d.change<0).sort((a,b)=>a.change-b.change).slice(0,8)};
+  const upTo=rows=>running?rows.filter(s=>s.date.getUTCDate()<=cutDay):rows;
+  const cur=byMonth.get(monthKey),prevCut=upTo(byMonth.get(prevKey)),lyCut=upTo(byMonth.get(lyKey)),prevFull=byMonth.get(prevKey);
+  // Servidor: lucro, desconto, quantidade e fornecedor do mês.
+  let server=null,serverError='';
+  try{server=await productsServer(monthKey);}catch(err){serverError=err?.message||String(err);}
+  const supplierOf=new Map((server?.catalog||[]).map(([p,s])=>[String(p),s]));
+  const srows=[];
+  if(server){
+    for(const r of server.rows){
+      const [rca,product,dep,sup,city,uf,value,profit,base,discount,qty]=r,depName=server.departments[dep],cityName=server.cities[city];
+      const loc={uf,city:cityName,region:regionOf.get(String(rca)+'|'+norm(cityName))||''};
+      if(!allowed.has(rca)||!depOk(depName)||!geo(loc))continue;
+      srows.push({rca,product,department:depName,supplier:server.suppliers[sup]||'',value,profit,base,discount,qty});
+      if(server.suppliers[sup])supplierOf.set(String(product),server.suppliers[sup]);
+    }
   }
-  // Venda cruzada: pares de produtos comprados pelo mesmo cliente no período (entre os 40 mais vendidos).
-  const focus=new Set(list.slice(0,40).map(p=>p.code)),pairs=new Map();
-  for(const set of byClient.values()){
-    const items=[...set].filter(c=>focus.has(c)).sort();
-    for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){const k=items[i]+'|'+items[j];pairs.set(k,(pairs.get(k)||0)+1);}
+  const canMargin=!!server?.canMargin;
+  const supName=p=>supplierOf.get(String(p))||'Fornecedor não informado';
+  const sumBy=(rows,fn)=>{const m=new Map();for(const s of rows){const k=fn(s);m.set(k,(m.get(k)||0)+(Number(s.value)||0));}return m;};
+  const fin=()=>({value:0,profit:0,base:0,discount:0,qty:0});
+  const addFin=(map,k,r)=>{if(!map.has(k))map.set(k,fin());const g=map.get(k);g.value+=r.value;g.profit+=r.profit;g.base+=r.base;g.discount+=r.discount;g.qty+=r.qty;};
+  const marginOf=g=>canMargin&&g&&g.base>0?g.profit/g.base*100:null;
+  const discOf=g=>g&&(g.value+g.discount)>0?g.discount/(g.value+g.discount)*100:null;
+  const growth=(a,b)=>b>0?(a/b-1)*100:null;
+  const finTotal=fin(),finProd=new Map(),finDep=new Map(),finSup=new Map(),finRca=new Map();
+  const addTotal=r=>{finTotal.value+=r.value;finTotal.profit+=r.profit;finTotal.base+=r.base;finTotal.discount+=r.discount;finTotal.qty+=r.qty;};
+  for(const r of srows){addTotal(r);addFin(finProd,String(r.product),r);addFin(finDep,r.department,r);addFin(finSup,r.supplier||supName(r.product),r);addFin(finRca,String(r.rca),r);}
+  // Produtos do mês (faturamento e clientes pela base do painel).
+  const prods=new Map(),clientsAll=new Map();
+  for(const s of cur){
+    if(s.product==null)continue;const k=String(s.product);
+    if(!prods.has(k))prods.set(k,{code:k,name:productLabel(s.productName||k),deps:new Map(),revenue:0,clients:new Set()});
+    const p=prods.get(k);p.revenue+=s.value;p.deps.set(s.department,(p.deps.get(s.department)||0)+s.value);
+    const c=principal(s.client);if(c!=null&&s.value>0){p.clients.add(c);if(!clientsAll.has(c))clientsAll.set(c,new Set());clientsAll.get(c).add(k);}
   }
-  const name=c=>byProd.get(c)?.name||String(c),clientsOf=c=>byProd.get(c)?.clients.size||0;
-  const cross=[...pairs].filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,n])=>{const [a,b]=k.split('|');const ca=clientsOf(isNaN(a)?a:Number(a)),cb=clientsOf(isNaN(b)?b:Number(b));
-    return {a:name(isNaN(a)?a:Number(a)),b:name(isNaN(b)?b:Number(b)),clients:n,ofA:ca?n/ca*100:null,ofB:cb?n/cb*100:null};});
-  return {abc,totalProducts:list.length,penetration,movers,cross,buyers};
+  const prevByProd=sumBy(prevCut,s=>String(s.product)),prevFullByProd=sumBy(prevFull,s=>String(s.product)),lyByProd=sumBy(lyCut,s=>String(s.product));
+  const list=[...prods.values()].filter(p=>p.revenue>0).sort((a,b)=>b.revenue-a.revenue);
+  const total=list.reduce((a,p)=>a+p.revenue,0);let acc=0,to80=0;
+  for(const p of list){const share=total?acc/total:1;p.abc=share<0.8?'A':share<0.95?'B':'C';acc+=p.revenue;if(p.abc==='A')to80++;}
+  const pairsOfClients=[...clientsAll.values()].reduce((a,s)=>a+s.size,0);
+  const ranking=list.map(p=>{const g=finProd.get(p.code),prev=prevByProd.get(p.code)||0;return {code:p.code,name:p.name,department:[...p.deps].sort((a,b)=>b[1]-a[1])[0]?.[0]||'',supplier:supName(p.code),abc:p.abc,revenue:p.revenue,qty:g?g.qty:null,margin:marginOf(g),clients:p.clients.size,previous:prev,change:p.revenue-prev,growth:growth(p.revenue,prev)};});
+  const margin=marginOf(finTotal);
+  // Departamentos e fornecedores.
+  const groupTable=(keyOf,finMap)=>{
+    const now=new Map(),clients=new Map();
+    for(const s of cur){const k=keyOf(s);now.set(k,(now.get(k)||0)+s.value);const c=principal(s.client);if(c!=null&&s.value>0){if(!clients.has(k))clients.set(k,new Set());clients.get(k).add(c);}}
+    const prev=sumBy(prevCut,keyOf),ly=sumBy(lyCut,keyOf);
+    return [...new Set([...now.keys(),...prev.keys()])].map(k=>({name:k||'Não informado',revenue:now.get(k)||0,margin:marginOf(finMap.get(k)),discount:discOf(finMap.get(k)),clients:clients.get(k)?.size||0,previous:prev.get(k)||0,vsPrev:growth(now.get(k)||0,prev.get(k)||0),lastYear:ly.get(k)||0,vsYear:growth(now.get(k)||0,ly.get(k)||0)})).sort((a,b)=>b.revenue-a.revenue);
+  };
+  const departments=groupTable(s=>s.department||'',finDep);
+  const suppliers=groupTable(s=>supName(s.product),finSup);
+  // Movimentos.
+  const nameOf=new Map();for(const rows of byMonth.values())for(const s of rows)if(s.product!=null&&!nameOf.has(String(s.product)))nameOf.set(String(s.product),productLabel(s.productName||s.product));
+  const mv=[...new Set([...prods.keys(),...prevByProd.keys()])].map(k=>{const c=prods.get(k)?.revenue||0,p=prevByProd.get(k)||0;return {code:k,name:nameOf.get(k)||k,current:c,previous:p,change:c-p,growth:growth(c,p)};});
+  const eligible=mv.filter(x=>x.previous>=minPrev);
+  const up=eligible.filter(x=>x.change>0).sort((a,b)=>b.change-a.change);
+  const down=eligible.filter(x=>x.change<0).sort((a,b)=>a.change-b.change);
+  const started=list.filter(p=>!(prevFullByProd.get(p.code)>0)).map(p=>({code:p.code,name:p.name,current:p.revenue,clients:p.clients.size})).sort((a,b)=>b.current-a.current);
+  const backRev=new Map();for(const k of back)for(const s of byMonth.get(k)){if(s.product==null)continue;const c=String(s.product);if(!backRev.has(c))backRev.set(c,{revenue:0,last:null});const b=backRev.get(c);b.revenue+=s.value;if(!b.last||s.date>b.last)b.last=s.date;}
+  const stopped=[...backRev].filter(([k,b])=>b.revenue>0&&!(prods.get(k)?.revenue>0)).map(([k,b])=>({code:k,name:nameOf.get(k)||k,previous3:b.revenue,last:b.last.toISOString()})).sort((a,b)=>b.previous3-a.previous3);
+  // Matriz ABC × margem (corte pela margem do recorte).
+  let matrix=null;
+  if(canMargin&&margin!=null){
+    matrix={cut:margin,groups:{aHigh:[],aLow:[],bcHigh:[],bcLow:[]},noMargin:0};
+    for(const p of ranking){if(p.margin==null){matrix.noMargin++;continue;}const g=(p.abc==='A'?'a':'bc')+(p.margin>=margin?'High':'Low');matrix.groups[g].push({code:p.code,name:p.name,revenue:p.revenue,margin:p.margin,abc:p.abc});}
+  }
+  // Por RCA (sem Cecé e sem RCAs fora da equipe).
+  const outNames=multi(f.excludeRcaNames).map(norm);
+  const ref=running?new Date(Date.UTC(y,m-1,cutDay,23,59,59)):new Date(Date.UTC(y,m,0,23,59,59));
+  const lastBuy=new Map();
+  for(const s of SALES){if(s.client==null||s.date>ref)continue;const c=principal(s.client);const prev=lastBuy.get(c);if(!prev||s.date>prev.date)lastBuy.set(c,s);}
+  const activeBy=new Map();
+  for(const [c,s] of lastBuy){if(portfolioInactivityDays(ref,s.date)>=90)continue;const owner=CLIENTS.get(c)?.rca??s.rca;if(!activeBy.has(String(owner)))activeBy.set(String(owner),new Set());activeBy.get(String(owner)).add(c);}
+  const depList=departments.filter(d=>d.revenue>0).map(d=>d.name);
+  const boughtDep=new Map();for(const s of cur){const c=principal(s.client);if(c==null||!(s.value>0))continue;if(!boughtDep.has(c))boughtDep.set(c,new Set());boughtDep.get(c).add(s.department||'Não informado');}
+  const rcaMap=new Map();
+  for(const s of cur){const k=String(s.rca);if(!rcaMap.has(k))rcaMap.set(k,{rca:s.rca,revenue:0,prods:new Map(),clients:new Map()});const r=rcaMap.get(k);r.revenue+=s.value;if(s.product!=null)r.prods.set(String(s.product),(r.prods.get(String(s.product))||0)+s.value);const c=principal(s.client);if(c!=null&&s.value>0){if(!r.clients.has(c))r.clients.set(c,new Set());if(s.product!=null)r.clients.get(c).add(String(s.product));}}
+  const rcas=[];
+  for(const [k,r] of rcaMap){
+    const info=RCA_BY_CODE.get(r.rca);
+    if(!info||info.active===false)continue;
+    const n=norm(info.name||'');if(outNames.some(t=>n===t||n.split(/\s+/).includes(t)||n.startsWith(t+' ')))continue;
+    const top=[...r.prods].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([code,v])=>({name:nameOf.get(code)||code,share:r.revenue?v/r.revenue*100:0}));
+    const active=activeBy.get(k)||new Set();
+    const pen={};for(const d of depList){let n2=0;for(const c of active)if(boughtDep.get(c)?.has(d))n2++;pen[d]=active.size?n2/active.size*100:null;}
+    const g=finRca.get(k);
+    rcas.push({code:k,name:info.name,supervisor:info.supervisor||'Sem supervisor',revenue:r.revenue,margin:marginOf(g),discount:discOf(g),mix:r.clients.size?[...r.clients.values()].reduce((a,s)=>a+s.size,0)/r.clients.size:null,clients:r.clients.size,top2:top,top2Share:top.reduce((a,t)=>a+t.share,0),active:active.size,penetration:pen});
+  }
+  rcas.sort((a,b)=>b.revenue-a.revenue);
+  // Venda cruzada (últimos 3 meses): pares fora da mesma linha; clientes que compram um e não o outro.
+  const crossRows=cross.flatMap(k=>k===monthKey?cur:byMonth.get(k));
+  const crossProd=new Map(),crossClient=new Map(),ownerName=new Map();
+  for(const s of crossRows){
+    if(s.product==null||!(s.value>0))continue;const p=String(s.product),c=principal(s.client);if(c==null)continue;
+    crossProd.set(p,(crossProd.get(p)||0)+s.value);
+    if(!crossClient.has(c))crossClient.set(c,new Map());const cm=crossClient.get(c);cm.set(p,(cm.get(p)||0)+s.value);
+    const owner=CLIENTS.get(c)?.rca??s.rca;ownerName.set(c,RCA_BY_CODE.get(owner)?.name||(owner==null?'Sem RCA':'RCA '+owner));
+  }
+  const focus=new Set([...crossProd].sort((a,b)=>b[1]-a[1]).slice(0,40).map(([p])=>p)),pairCount=new Map();
+  for(const cm of crossClient.values()){const items=[...cm.keys()].filter(p=>focus.has(p)).sort();for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){const a=items[i],b=items[j];if(productsFirstWords(nameOf.get(a))===productsFirstWords(nameOf.get(b)))continue;const k2=a+'|'+b;pairCount.set(k2,(pairCount.get(k2)||0)+1);}}
+  const buyersOf=p=>[...crossClient].filter(([,cm])=>cm.has(p));
+  const clientName=c=>CLIENTS.get(c)?.name||directory.get(c)?.name||('Cliente '+c);
+  const crossPairs=[...pairCount].sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k2,both])=>{
+    const [a,b]=k2.split('|');
+    const missing=(has,lack)=>buyersOf(has).filter(([,cm])=>!cm.has(lack)).map(([c,cm])=>({id:String(c),name:clientName(c),rca:ownerName.get(c)||'—',value:cm.get(has)})).sort((x,y2)=>y2.value-x.value);
+    const aBuyers=buyersOf(a).length,bBuyers=buyersOf(b).length;
+    return {a:{code:a,name:nameOf.get(a)||a},b:{code:b,name:nameOf.get(b)||b},both,ofA:aBuyers?both/aBuyers*100:0,ofB:bBuyers?both/bBuyers*100:0,onlyA:missing(a,b),onlyB:missing(b,a)};
+  });
+  const depOptions=[...new Set(SALES.filter(s=>s.year>=y-1).map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const supervisorOptions=[...new Set([...RCA_BY_CODE.values()].filter(r=>r.active!==false).map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&(r.supervisor||'Sem supervisor')===name).length}));
+  return {month:monthKey,previousMonth:prevKey,lastYearMonth:lyKey,running,cutDay,fallback,latest:latest.toISOString(),updatedAt:SERVER_UPDATED_AT,minPrev,serverError,canMargin,hasServer:!!server,
+    kpis:{revenue:total,margin,products:list.length,mix:clientsAll.size?pairsOfClients/clientsAll.size:null,clients:clientsAll.size,to80,discount:discOf(finTotal),qty:server?finTotal.qty:null},
+    departments,suppliers,ranking,moves:{up,down,started,stopped},matrix,rcas,depList,cross:crossPairs,depOptions,supervisorOptions};
 }
 function exCities(f){
   const y=exYear(f),limit=exDayLimit(f),rows=filterSales(f);
@@ -2594,7 +2747,7 @@ async function pageExtras(page,f){
   if(page==='overview')return await exOverview(f);
   if(page==='pedidos')return exOrders(f);
   if(page==='carteira')return await carteiraV2(f);
-  if(page==='produtos')return exProducts(f);
+  if(page==='produtos')return await produtosV2(f);
   if(page==='cidades')return exCities(f);
   if(page==='metas')return exGoals(f);
   if(page==='history')return exHistory();
