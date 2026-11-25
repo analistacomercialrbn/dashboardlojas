@@ -1293,6 +1293,59 @@ body.ct-page .filter-group.period{display:none!important}
 @media(max-width:760px){.mp-cross-lists{grid-template-columns:1fr}.mp-matrix-grid{grid-template-columns:1fr}}
 @media(max-width:560px){.mp-hero-grid>div:first-child{grid-column:1/-1}.mp-toolbar .tv-sup{max-width:100%;box-sizing:border-box}.mp-toolbar .tv-sup summary{white-space:normal}.mp-hv-lg{font-size:32px}.mp-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.mp-moves{grid-template-columns:1fr}.mp-period{margin-left:0}.mp-search{min-width:0;width:100%}}
 </style>
+<style id="cities-report-style">
+/* Cidades — visual das páginas novas */
+#content.cd-report{display:flex;flex-direction:column;gap:16px;color:#0f1b3d;font-family:Inter,system-ui,sans-serif}
+.cd-report p{margin:0}
+.cd-filters{display:contents}
+.cd-filters .tv-sup summary{min-height:38px;display:flex;align-items:center;gap:6px;border:1px solid #d5dbe6;border-radius:8px;padding:0 10px;background:#fff;font-size:13px;cursor:pointer;white-space:nowrap}
+.cd-filters .tv-sup summary{max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.cd-filters .cd-sup-group{position:relative}
+.cd-owner-table{min-width:0!important;width:100%}.cd-owner-table th,.cd-owner-table td{font-size:12px;padding-left:5px;padding-right:5px}
+body.ov-exporting .cd-map .leaflet-control-container{display:none}.cd-owner-table td,.cd-owner-table th{white-space:normal}
+.cd-table td:first-child{white-space:normal}
+.cd-hero{gap:10px!important}
+.cd-hero-grid{display:grid;grid-template-columns:1.3fr repeat(4,1fr);gap:22px;align-items:end}
+.cd-hv-lg{margin:4px 0 0!important;font-size:40px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:#fff}
+.cd-hero .mp-var.up{color:#9be7c0}.cd-hero .mp-var.down{color:#ffc3bd}
+.cd-main{display:grid;grid-template-columns:minmax(0,3fr) minmax(320px,2fr);gap:16px;align-items:start}
+.cd-map-card,.cd-card,.cd-table-card,.cd-opp,.cd-owners{display:flex;flex-direction:column;gap:12px;min-width:0}
+.cd-modes{display:flex;flex-wrap:wrap;gap:4px;background:#eef1f6;border-radius:8px;padding:3px}
+.cd-modes button{font:600 12px Inter,system-ui,sans-serif;padding:7px 10px;border-radius:6px;border:0;background:transparent;color:#14275c;cursor:pointer;min-height:0}
+.cd-modes button[aria-pressed=true]{background:#14275c;color:#fff}
+.cd-map{height:480px;border:1px solid #e2e7f0;border-radius:12px;background:#f7f9fc}
+.cd-map .leaflet-container,.cd-map.leaflet-container{background:#f7f9fc}
+.cd-legend{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.cd-legend span{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#26324f;font-weight:500}
+.cd-legend i{width:12px;height:12px;border-radius:3px;border:1px solid #9aa5b8;display:inline-block}
+.cd-legend small{font-size:11.5px;color:#3d4866}
+.cd-map-note{font-size:11.5px}
+.cd-card-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.cd-card-title{margin:4px 0 2px!important;font-size:22px;font-weight:800}
+.cd-sit{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}.cd-sit i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.cd-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.cd-card-grid>div{background:#f7f9fc;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.cd-card-grid b{font-size:18px;font-variant-numeric:tabular-nums}.cd-card-grid small{font-size:11.5px;color:#5b6785}
+.cd-card-k{font-size:12px;font-weight:700;margin:0 0 4px!important}
+.cd-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cd-chip{font-size:12px;padding:4px 9px;border-radius:999px}.cd-chip.ok{background:#e7f4ee;color:#1f6e4a}.cd-chip.no{background:#fbeceb;color:#9b2f2a}
+.cd-link{all:unset;cursor:pointer;font-size:13px;font-weight:700;color:#14275c}
+.cd-table{width:100%;table-layout:auto}
+.cd-table th,.cd-table td{white-space:nowrap;font-size:12px;padding-left:6px;padding-right:6px}
+.cd-table td.cd-missing{white-space:normal;min-width:120px;max-width:200px;font-size:11.5px;color:#5b6785}
+.cd-row{cursor:pointer}.cd-row:hover td{background:#f5f8fd}.cd-row.on td{background:#eef3fb}
+.cd-out td{color:#5b6785}
+.cd-bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.cd-opp-table td,.cd-opp-table th{white-space:normal}
+.cd-check summary{cursor:pointer;font-weight:700;font-size:13px}
+.cd-check[open]{display:flex;flex-direction:column;gap:10px}
+.cd-check-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:10px}
+.cd-check-grid>div{display:flex;flex-direction:column;gap:2px}.cd-check-grid b{font-size:18px}
+.cd-check-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+@media(max-width:1199px){.cd-main,.cd-bottom{grid-template-columns:1fr}.cd-hero-grid{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:760px){.cd-table-wrap{overflow-x:auto}.cd-table{min-width:900px}.cd-check-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.cd-hv-lg{font-size:32px}.cd-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.cd-hero-grid>div:first-child{grid-column:1/-1}.cd-map{height:360px}.cd-card-grid{grid-template-columns:1fr 1fr}}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
@@ -2251,6 +2304,122 @@ function coverageArea(filters,context){
  return {year,cityName:selected?selected.city+' · '+selected.uf:'',period:dateText(r.start)+' a '+dateText(r.end),previousPeriod:dateText(pr.start)+' a '+dateText(pr.end),previousAvailable,partial:!currentAvailable||endDay<new Date(Date.UTC(year,endMonth,0)).getUTCDate(),municipalities:city?(selected?1:0):area.size,current,previous:sum(before),monthly,cities,products,top3Share:current.revenue>0?products.slice(0,3).reduce((a,x)=>a+x.revenue,0)/current.revenue*100:null};
 }
 
+// ===== Cidades (página única: faturamento + território) =====
+function cityKeyW(city,uf){const n=norm(city).replace(/\s+/g,' ');return ({ITAPAGE:'ITAPAJE',PINRETAMA:'PINDORETAMA'}[n]||n)+'|'+String(uf||'').toUpperCase();}
+async function cidadesV2(f,ctx){
+  ctx=ctx||{};
+  const line=ctx.line==='health'?'health':ctx.line==='nutrition'?'nutrition':'all',growthPct=Math.max(1,Number(ctx.growthPct)||10);
+  const latest=exLatest(),ly=latest.getUTCFullYear(),lm=latest.getUTCMonth()+1;
+  const y=exYear(f)??ly,m=exMonth(f);
+  const running=y===ly&&(m===null||m===lm);
+  const dayMs=86400000,startOf=(yy,mm)=>Date.UTC(yy,mm-1,1);
+  const curStart=m===null?Date.UTC(y,0,1):startOf(y,m);
+  const curEnd=running?Date.UTC(ly,lm-1,latest.getUTCDate(),23,59,59,999):(m===null?Date.UTC(y,11,31,23,59,59,999):Date.UTC(y,m,0,23,59,59,999));
+  const lyStart=Date.UTC(new Date(curStart).getUTCFullYear()-1,new Date(curStart).getUTCMonth(),1);
+  const endD=new Date(curEnd),lyEnd=Math.min(Date.UTC(endD.getUTCFullYear()-1,endD.getUTCMonth(),endD.getUTCDate(),23,59,59,999),Date.UTC(endD.getUTCFullYear()-1,endD.getUTCMonth()+1,0,23,59,59,999));
+  const ref=new Date(curEnd),from12=curEnd-365*dayMs,monthNowStart=startOf(ly,lm);
+  const daysTo=t=>Math.round((Date.UTC(ref.getUTCFullYear(),ref.getUTCMonth(),ref.getUTCDate())-Date.UTC(new Date(t).getUTCFullYear(),new Date(t).getUTCMonth(),new Date(t).getUTCDate()))/dayMs);
+  // Linha: Saúde = Saúde Animal; Nutrição = demais departamentos; Todas = tudo. Departamentos de fora por padrão continuam fora.
+  const deps=new Set(multi(f.department)),depOut=multi(f.excludeDepartments).map(norm);
+  const lineOk=d=>{const n=norm(d);return line==='health'?n==='SAUDE ANIMAL':line==='nutrition'?n!=='SAUDE ANIMAL':true;};
+  const depOk=d=>(deps.size?deps.has(String(d)):!depOut.some(x=>norm(d).includes(x)))&&lineOk(d);
+  const allowed=allowedRca(f),ufs=multi(f.uf).map(x=>x.toUpperCase()),cityF=f.city&&f.city!=='Todos'?norm(f.city):null,regionF=f.region&&f.region!=='Todos'?norm(f.region):null;
+  const explicitOwner=multi(f.supervisor).length||multi(f.rca).length;
+  // Responsável pela matriz: Nutrição (principal em "Todas") ou Saúde Animal.
+  const field=line==='health'?'animalHealth':'nutrition',routeField=line==='health'?'animalHealthRoute':'nutritionRoute';
+  const rcaByName=new Map();for(const r of RCA_BY_CODE.values()){const n=norm(r.name);if(n){rcaByName.set(n,r);const first=n.split(/\s+/)[0];if(!rcaByName.has('#'+first))rcaByName.set('#'+first,r);}}
+  const matchRca=name=>{const n=norm(name);if(!n||n.includes('/'))return null;return rcaByName.get(n)||rcaByName.get('#'+n.split(/\s+/)[0])||null;};
+  const territory=new Map();
+  for(const row of ctx.matrix||[]){
+    if(ufs.length&&!ufs.includes(String(row.uf).toUpperCase()))continue;
+    if(cityF&&norm(row.city)!==cityF)continue;
+    if(regionF&&norm(row.region)!==regionF)continue;
+    const owner=String(row[field]||'').trim(),rca=matchRca(owner);
+    if(explicitOwner&&!(rca&&allowed.has(rca.code)))continue;
+    if(rca&&!allowed.has(rca.code))continue;
+    const k=cityKeyW(row.city,row.uf);
+    territory.set(k,{key:k,city:row.city,uf:String(row.uf).toUpperCase(),owner,ownerCode:rca?rca.code:null,ownerSupervisor:rca?.supervisor||'',route:String(row[routeField]||'').trim(),nutrition:String(row.nutrition||'').trim(),health:String(row.animalHealth||'').trim(),status:String(row.status||'').trim(),notes:String(row.notes||'').trim()});
+  }
+  const herd=new Map((ctx.ibge||[]).map(r=>[cityKeyW(r[1],r[2]),{bov:r[3],cows:r[4],hens:r[5],pigs:r[6]}]));
+  let links=[];try{links=await loadPortfolioLinks();}catch{links=[];}const directory=portfolioDirectory(links),principal=c=>c==null?null:portfolioClientKey({client:c},directory);
+  // Vendas.
+  const cities=new Map(),clients=new Map(),deptTotal12=new Map();
+  const cityOf=k=>{if(!cities.has(k))cities.set(k,{key:k,city:'',uf:'',cur:0,ly:0,rev12:0,last:null,lastSale:null,curMonth:0,byRca:new Map(),prods:new Map(),deps12:new Map(),depsCur:new Set()});return cities.get(k);};
+  let curTotal=0,lyTotal=0;
+  for(const s of SALES){
+    const t=s.date.getTime();if(t>curEnd)continue;
+    if(!s.city||!allowed.has(s.rca)||!depOk(s.department))continue;
+    if(ufs.length&&!ufs.includes(String(s.uf||'').toUpperCase()))continue;
+    if(cityF&&norm(s.city)!==cityF)continue;
+    if(regionF&&norm(s.region||'')!==regionF)continue;
+    const k=cityKeyW(s.city,s.uf),c=cityOf(k);c.city=c.city||s.city;c.uf=c.uf||String(s.uf||'').toUpperCase();
+    if(!c.last||t>c.last){c.last=t;c.lastSale=s;}
+    if(t>=from12){c.rev12+=s.value;c.deps12.set(s.department,(c.deps12.get(s.department)||0)+s.value);deptTotal12.set(s.department,(deptTotal12.get(s.department)||0)+s.value);}
+    if(t>=monthNowStart)c.curMonth+=s.value;
+    if(t>=curStart){c.cur+=s.value;curTotal+=s.value;c.byRca.set(s.rca,(c.byRca.get(s.rca)||0)+s.value);if(s.product!=null){const p=String(s.product);c.prods.set(p,{name:productLabel(s.productName||p),value:(c.prods.get(p)?.value||0)+s.value});}c.depsCur.add(s.department);}
+    else if(t>=lyStart&&t<=lyEnd){c.ly+=s.value;lyTotal+=s.value;}
+    const id=principal(s.client);
+    if(id!=null){const cl=clients.get(id);if(!cl)clients.set(id,{id,last:t,lastSale:s,bought:t>=curStart,rev12:t>=from12?s.value:0});else{if(t>cl.last){cl.last=t;cl.lastSale=s;}if(t>=curStart)cl.bought=true;if(t>=from12)cl.rev12+=s.value;}}
+  }
+  // Clientes por cidade (cidade da última compra).
+  const clientsBy=new Map();
+  for(const cl of clients.values()){
+    const k=cityKeyW(cl.lastSale.city,cl.lastSale.uf),d=daysTo(cl.last);
+    if(!clientsBy.has(k))clientsBy.set(k,{active:0,positive:0,risk:0,inactive:0,list:[]});
+    const g=clientsBy.get(k);
+    if(d<90){g.active++;if(cl.bought)g.positive++;if(d>=60)g.risk++;}else if(d<180)g.inactive++;
+    if(d<180){const owner=CLIENTS.get(cl.id)?.rca??cl.lastSale.rca;g.list.push({id:String(cl.id),name:CLIENTS.get(cl.id)?.name||directory.get(cl.id)?.name||('Cliente '+cl.id),rca:RCA_BY_CODE.get(owner)?.name||(owner==null?'—':'RCA '+owner),last:new Date(cl.last).toISOString(),days:d,band:d<60?'Ativo':d<90?'Em risco':'Inativo',avg12:cl.rev12/12,bought:cl.bought});}
+  }
+  // Departamentos principais da linha (5% ou mais do faturamento de 12 meses).
+  const total12=[...deptTotal12.values()].reduce((a,b)=>a+b,0);
+  const mainDeps=[...deptTotal12].filter(([d,v])=>d&&total12&&v/total12>=0.05).sort((a,b)=>b[1]-a[1]).map(([d])=>d);
+  const growth=(a,b)=>b>0?(a/b-1)*100:(a>0?null:null);
+  const situation=(c,t)=>{if(t&&!t.owner)return 'none';if(!c||!c.last||daysTo(c.last)>=90)return 'lost';const g=growth(c.cur,c.ly);if(g==null)return c.cur>0?'up':'stable';return g>growthPct?'up':g<-growthPct?'down':'stable';};
+  const keys=new Set([...territory.keys(),...cities.keys()]);
+  const rows=[];
+  for(const k of keys){
+    const t=territory.get(k),c=cities.get(k),cg=clientsBy.get(k)||{active:0,positive:0,risk:0,inactive:0,list:[]},h=herd.get(k);
+    const ownerSales=t&&t.ownerCode!=null&&c?(c.byRca.get(t.ownerCode)||0):null;
+    const outsideShare=t&&c&&c.cur>0&&t.ownerCode!=null?(c.cur-ownerSales)/c.cur*100:null;
+    const missing=t&&c&&c.deps12.size?mainDeps.filter(d=>!c.deps12.has(d)):[];
+    const last=c?.lastSale;
+    rows.push({key:k,city:t?.city||c?.city||k.split('|')[0],uf:t?.uf||c?.uf||k.split('|')[1],inTerritory:!!t,owner:t?.owner||'',ownerSupervisor:t?.ownerSupervisor||'',route:t?.route||'',nutrition:t?.nutrition||'',health:t?.health||'',
+      revenue:c?.cur||0,lastYear:c?.ly||0,growth:c?growth(c.cur,c.ly):null,situation:situation(c,t),avg12:(c?.rev12||0)/12,lastDays:c?.last?daysTo(c.last):null,
+      lastOrder:last?{date:last.date.toISOString(),client:CLIENTS.get(principal(last.client))?.name||CLIENTS.get(last.client)?.name||('Cliente '+last.client),rca:RCA_BY_CODE.get(last.rca)?.name||String(last.rca??'—')}:null,
+      soldMonth:(c?.curMonth||0)>0,active:cg.active,positive:cg.positive,coverage:cg.active?cg.positive/cg.active*100:null,risk:cg.risk,inactive:cg.inactive,clients:cg.list.sort((a,b)=>b.avg12-a.avg12),
+      deps:c?[...c.deps12.keys()].filter(Boolean).sort((a,b)=>c.deps12.get(b)-c.deps12.get(a)):[],missing,outsideShare,
+      outside:t&&c&&t.ownerCode!=null?[...c.byRca].filter(([r,v])=>r!==t.ownerCode&&v>0).map(([r,v])=>({rca:RCA_BY_CODE.get(r)?.name||('RCA '+r),value:v})):[],
+      top3:c?[...c.prods.values()].sort((a,b)=>b.value-a.value).slice(0,3):[],
+      bov:h?h.bov:null,cows:h?h.cows:null,hens:h?h.hens:null,pigs:h?h.pigs:null,perThousand:h&&h.bov>0?(c?.cur||0)/(h.bov/1000):null});
+  }
+  rows.sort((a,b)=>b.revenue-a.revenue||a.city.localeCompare(b.city,'pt-BR'));
+  const terr=rows.filter(r=>r.inTerritory);
+  const lost=terr.filter(r=>r.avg12>0&&r.lastDays!=null&&r.lastDays>=90);
+  // Oportunidades (só cidades do território), pelo valor.
+  const withHerd=terr.filter(r=>r.bov>0),medianBov=withHerd.length?withHerd.map(r=>r.bov).sort((a,b)=>a-b)[Math.floor(withHerd.length/2)]:0;
+  const pts=withHerd.map(r=>r.perThousand||0).sort((a,b)=>a-b),lowCut=pts.length?pts[Math.floor(pts.length/3)]:0;
+  const opp={
+    lost:lost.slice().sort((a,b)=>b.avg12-a.avg12),
+    falling:terr.filter(r=>r.situation==='down').sort((a,b)=>(b.lastYear-b.revenue)-(a.lastYear-a.revenue)),
+    noSaleMonth:terr.filter(r=>!r.soldMonth&&r.owner).sort((a,b)=>b.avg12-a.avg12),
+    missingDept:terr.filter(r=>r.missing.length&&r.deps.length).sort((a,b)=>b.avg12-a.avg12),
+    cattle:withHerd.filter(r=>r.bov>=medianBov&&(r.perThousand||0)<=lowCut).sort((a,b)=>b.bov-a.bov),
+    outside:terr.flatMap(r=>r.outside.map(o=>({key:r.key,city:r.city,uf:r.uf,owner:r.owner,seller:o.rca,value:o.value}))).sort((a,b)=>b.value-a.value)
+  };
+  // Território por RCA.
+  const byOwner=new Map();
+  for(const r of terr){const k=r.owner||'Sem responsável';if(!byOwner.has(k))byOwner.set(k,{name:k,supervisor:r.ownerSupervisor,cities:0,withSale:0,revenue:0,lastYear:0});const g=byOwner.get(k);g.cities++;if(r.revenue>0)g.withSale++;g.revenue+=r.revenue;g.lastYear+=r.lastYear;}
+  const owners=[...byOwner.values()].map(g=>({...g,coverage:g.cities?g.withSale/g.cities*100:null,growth:growth(g.revenue,g.lastYear)})).sort((a,b)=>(a.name==='Sem responsável')-(b.name==='Sem responsável')||b.revenue-a.revenue);
+  const act=[...clientsBy.values()].reduce((a,g)=>a+g.active,0),pos=[...clientsBy.values()].reduce((a,g)=>a+g.positive,0);
+  const matrixRows=ctx.matrix||[],pendingLine=matrixRows.filter(r=>{const o=String(r[field]||'').trim();return !o||o.includes('/')||norm(r.status)!=='CONFERIDO';}).length;
+  const supervisorOptions=[...new Set([...RCA_BY_CODE.values()].filter(r=>r.active!==false).map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&(r.supervisor||'Sem supervisor')===name).length}));
+  const rcaOptions=[...RCA_BY_CODE.values()].filter(r=>r.active!==false).map(r=>({code:String(r.code),name:r.name,supervisor:r.supervisor||''})).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  const depOptions=[...new Set(SALES.filter(s=>s.year>=y-1).map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  return {line,growthPct,running,period:{start:new Date(curStart).toISOString(),end:new Date(curEnd).toISOString(),lyStart:new Date(lyStart).toISOString(),lyEnd:new Date(lyEnd).toISOString(),year:y,month:m},latest:latest.toISOString(),
+    kpis:{revenue:curTotal,lastYear:lyTotal,growth:growth(curTotal,lyTotal),territory:terr.length,territoryWithSale:terr.filter(r=>r.revenue>0).length,active:act,positive:pos,clientCoverage:act?pos/act*100:null,lost:lost.length,bov:terr.reduce((a,r)=>a+(r.bov||0),0),hasHerd:herd.size>0},
+    rows,opp,owners,mainDeps,matrix:{count:matrixRows.length,inScope:terr.length,confirmed:matrixRows.length-pendingLine,pending:pendingLine,owners:new Set(matrixRows.map(r=>String(r[field]||'').trim()).filter(Boolean)).size},
+    ibgeYear:ctx.ibgeYear||null,supervisorOptions,rcaOptions,depOptions};
+}
 function cidades(filters, selectedCity=null){
   const rows=filterSales(filters);
   const cityMap=new Map();
@@ -2701,26 +2870,6 @@ async function produtosV2(f){
     kpis:{revenue:total,margin,products:list.length,mix:clientsAll.size?pairsOfClients/clientsAll.size:null,clients:clientsAll.size,to80,discount:discOf(finTotal),qty:server?finTotal.qty:null},
     departments,suppliers,ranking,moves:{up,down,started,stopped},matrix,rcas,depList,cross:crossPairs,depOptions,supervisorOptions};
 }
-function exCities(f){
-  const y=exYear(f),limit=exDayLimit(f),rows=filterSales(f);
-  const key=s=>norm(s.city)+'|'+s.uf,cur=new Map();
-  for(const s of rows){if(!s.city)continue;const k=key(s);if(!cur.has(k))cur.set(k,{city:s.city,uf:s.uf,revenue:0,dept:new Map()});const c=cur.get(k);c.revenue+=s.value;c.dept.set(s.department||'Sem departamento',(c.dept.get(s.department||'Sem departamento')||0)+s.value);}
-  let growth=null;
-  if(y!==null){
-    const prev=new Map();for(const s of exCut(filterSales({...f,year:String(y-1)}),limit)){if(!s.city)continue;const k=key(s);if(!prev.has(k))prev.set(k,{city:s.city,uf:s.uf,revenue:0});prev.get(k).revenue+=s.value;}
-    const keys=new Set([...cur.keys(),...prev.keys()]);
-    const diff=[...keys].map(k=>{const c=cur.get(k),p=prev.get(k);return {city:(c||p).city,uf:(c||p).uf,current:c?.revenue||0,previous:p?.revenue||0,change:(c?.revenue||0)-(p?.revenue||0),growth:exGrowth(c?.revenue||0,p?.revenue||0)};});
-    growth={label:'mesmo período de '+(y-1),up:diff.filter(d=>d.change>0).sort((a,b)=>b.change-a.change).slice(0,8),down:diff.filter(d=>d.change<0).sort((a,b)=>a.change-b.change).slice(0,8)};
-  }
-  // Cidades que compravam e pararam: venda nos 12 meses anteriores, nenhuma nos últimos 90 dias.
-  const ref=exLatest(),d90=new Date(ref.getTime()-90*86400000),d365=new Date(ref.getTime()-455*86400000),last=new Map();
-  for(const s of filterSales({...f,year:'Todos',month:'Todos'})){if(!s.city||s.date>ref)continue;const k=key(s);if(!last.has(k))last.set(k,{city:s.city,uf:s.uf,last:s.date,revenue12:0});const c=last.get(k);if(s.date>c.last)c.last=s.date;if(s.date>=d365&&s.date<d90)c.revenue12+=s.value;}
-  const stopped=[...last.values()].filter(c=>c.last<d90&&c.revenue12>0).map(c=>({city:c.city,uf:c.uf,last:c.last.toISOString(),days:Math.floor((ref-c.last)/86400000),revenue:c.revenue12})).sort((a,b)=>b.revenue-a.revenue).slice(0,15);
-  const depts=new Set();cur.forEach(c=>c.dept.forEach((v,d)=>depts.add(d)));
-  const departments=[...depts].sort();
-  const mix=[...cur.values()].sort((a,b)=>b.revenue-a.revenue).slice(0,12).map(c=>({city:c.city,uf:c.uf,revenue:c.revenue,shares:departments.map(d=>c.revenue?(c.dept.get(d)||0)/c.revenue*100:0)}));
-  return {growth,stopped,departments,mix};
-}
 function exGoals(f){
   const y=exYear(f)||exLatest().getUTCFullYear(),latest=exLatest();
   const upTo=y<latest.getUTCFullYear()?12:y>latest.getUTCFullYear()?0:latest.getUTCMonth()+1;
@@ -2748,7 +2897,7 @@ async function pageExtras(page,f){
   if(page==='pedidos')return exOrders(f);
   if(page==='carteira')return await carteiraV2(f);
   if(page==='produtos')return await produtosV2(f);
-  if(page==='cidades')return exCities(f);
+  if(page==='cidades')return null;
   if(page==='metas')return exGoals(f);
   if(page==='history')return exHistory();
   return null;
@@ -2811,7 +2960,7 @@ onmessage=async(e)=>{
       else if(msg.page==='overview')payload=overview(f);
       else if(msg.page==='carteira')payload=portfolioGrouped(f,await loadPortfolioLinks());
       else if(msg.page==='produtos')payload=produtos(f);
-      else if(msg.page==='cidades')payload=msg.coverageContext?{area:coverageArea(f,msg.coverageContext)}:cidades(f,msg.selectedCity);
+      else if(msg.page==='cidades')payload={city:await cidadesV2(f,msg.cityContext)};
       else if(msg.page==='metas')payload=metasPage(f);
       else if(msg.page==='pedidos')payload=ordersPage(f);
       else payload={};

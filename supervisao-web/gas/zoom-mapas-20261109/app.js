@@ -569,7 +569,8 @@ function updateAdvancedFilterCount(){
 
 function queryPage(){
   // A marca da Visão Geral acompanha a tela atual (a Visão equipes não passa por renderPage).
-  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'||state.page==='carteira'||state.page==='produtos'));
+  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'||state.page==='carteira'||state.page==='produtos'||state.page==='cidades'));
+  document.body.classList.toggle('cd-page',state.module==='commercial'&&state.page==='cidades');
   document.body.classList.toggle('mp-page',state.module==='commercial'&&state.page==='produtos');
   document.body.classList.toggle('ct-page',state.module==='commercial'&&state.page==='carteira');
   document.body.classList.toggle('tv-page',state.module==='commercial'&&state.page==='teams');
@@ -579,7 +580,7 @@ function queryPage(){
   if(state.module==='logistics'){logShow();return;}
   state.commercialPage=state.page;
   $('#logFilters')?.classList.add('hidden');
-  mountCoverageFilters(state.page==='cidades'&&state.cityView==='coverage');
+  state.cityView='sales';mountCoverageFilters(false);if(state.module!=='commercial'||state.page!=='cidades')cdUnmountFilters();
   $('.filterbar')?.classList.toggle('hidden',['history','bi_settings'].includes(state.page));
   if(state.page==='bi_settings'){if(state.user?.perfil!=='ADMIN')return;++state.requestId;destroyCharts();biSettings();return;}
   if(state.page==='users'){++state.requestId;destroyCharts();$('#pageTitle').textContent='Configurações · Usuários';$('#pageSubtitle').textContent='Perfis, áreas e recortes de informação';setStatus('',false);renderUsers();return;}
@@ -589,7 +590,8 @@ function queryPage(){
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
   if(state.page==='teams'){queryTeams(requestId);return;}
-  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
+  if(state.page==='cidades'&&!(state.coverage&&CD.context)){renderCidades({});cdEnsureContext().then(()=>{if(state.page==='cidades'&&requestId===state.requestId)queryPage();});return;}
+  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),...(state.page==='cidades'?cdFilters():{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,cityContext:state.page==='cidades'?cdContext():null,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
   if(state.page==='history'){$('#pageTitle').textContent='Histórico comercial';$('#pageSubtitle').textContent='Evolução e comparação de indicadores';$('#periodChip').textContent='Desde jun/2017';return;}
@@ -648,8 +650,8 @@ function sectionHeading(title,sub=''){return `<div class="section-heading"><div>
 
 function renderPage(page,payload){
   // Visão Geral tem cabeçalho e visual próprios; as outras telas continuam como antes.
-  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos'||page==='carteira'||page==='produtos');
-  mountCoverageFilters(page==='cidades'&&state.cityView==='coverage');
+  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos'||page==='carteira'||page==='produtos'||page==='cidades');
+  mountCoverageFilters(false);
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')Promise.resolve(renderMacroHistory(payload)).then(()=>{if(state.page==='history')renderPageExtras('history',payload);});
   else if(page==='overview')renderOverview(payload);
@@ -658,7 +660,7 @@ function renderPage(page,payload){
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
   else if(page==='pedidos')renderOrders(payload);
-  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&page!=='carteira'&&page!=='produtos'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
+  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&page!=='carteira'&&page!=='produtos'&&page!=='cidades')applyPageLook(page,payload);
   biRender(page,payload);
   if(page!=='history')renderPageExtras(page,payload);
 }
@@ -1110,7 +1112,7 @@ async function ovExport(mode){
     cut.width=Math.round(top.width*k);cut.height=Math.round((bottom.bottom-top.top)*k);
     cut.getContext('2d').drawImage(canvas,Math.round((top.left-box.left)*k),Math.round((top.top-box.top)*k),cut.width,cut.height,0,0,cut.width,cut.height);
     const blob=await new Promise((resolve,reject)=>cut.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
-    const name=state.page==='teams'?tvImageName():state.page==='produtos'?'rebanho-mix-produtos-'+String(MP.p?.extras?.month||'')+'.png':state.page==='carteira'?'rebanho-carteira-'+String(CT.p?.extras?.reference||'').slice(0,10)+'.png':'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
+    const name=state.page==='teams'?tvImageName():state.page==='cidades'?'rebanho-cidades-'+String(CD.p?.city?.period?.end||'').slice(0,10)+'.png':state.page==='produtos'?'rebanho-mix-produtos-'+String(MP.p?.extras?.month||'')+'.png':state.page==='carteira'?'rebanho-carteira-'+String(CT.p?.extras?.reference||'').slice(0,10)+'.png':'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
     if(mode==='copy'){
       try{if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);say('Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.');return;}
       catch{say('Este navegador não deixou copiar; a imagem foi baixada.');}
@@ -1148,20 +1150,10 @@ function renderPageExtras(page,payload){
     else if(page==='pedidos'){/* Pedidos: blocos fazem parte da página */}
     else if(page==='carteira'){/* Carteira: blocos fazem parte da página */}
     else if(page==='produtos'){/* Mix e Produtos: blocos fazem parte da página */}
-    else if(page==='cidades'&&state.cityView!=='coverage')exCitiesUi(ex);
+    else if(page==='cidades'){/* Cidades: blocos fazem parte da página */}
     else if(page==='metas')exGoalsUi(ex);
     else if(page==='history')exHistoryUi(ex);
   }catch(error){console.warn('Falha ao desenhar indicadores adicionais',error);}
-}
-
-function exCitiesUi(ex){
-  const g=ex.growth,cols=[{label:'Cidade'},{label:'Ano anterior',num:true},{label:'Atual',num:true},{label:'Diferença',num:true},{label:'Variação',num:true}];
-  const rows=list=>list.map(d=>[`<strong>${esc(d.city)}</strong> <small>${esc(d.uf)}</small>`,money(d.previous,true),money(d.current,true),`${d.change>0?'+':''}${money(d.change,true)}`,exGrowthChip(d.growth)]);
-  const growth=g?`<div class="ex-grid-2">${exSection('cityUp','Cidades que mais cresceram','Comparado com o '+g.label+'.',exTable(cols,rows(g.up)))}${exSection('cityDown','Cidades que mais caíram','Comparado com o '+g.label+'.',exTable(cols,rows(g.down)))}</div>`:'';
-  const stopped=exSection('cityStopped','Cidades que pararam de comprar','Compraram nos 12 meses anteriores e não têm venda nos últimos 90 dias.',exTable([{label:'Cidade'},{label:'Última venda'},{label:'Dias sem venda',num:true},{label:'Faturamento antes de parar',num:true}],ex.stopped.map(c=>[`<strong>${esc(c.city)}</strong> <small>${esc(c.uf)}</small>`,exDate(c.last),integer(c.days),money(c.revenue,true)]),'Nenhuma cidade parou de comprar neste recorte.'));
-  const palette=['#223d75','#4f7fc0','#23a570','#d6a51f','#cd5b58','#8a6bbf','#7c8a9d'];
-  const mix=`<div class="ex-legend">${ex.departments.map((d,i)=>`<span><i style="background:${palette[i%palette.length]}"></i>${esc(d)}</span>`).join('')}</div><div class="ex-mix">${ex.mix.map(c=>`<div class="ex-mix-row"><span><strong>${esc(c.city)}</strong> <small>${esc(c.uf)} · ${money(c.revenue,true)}</small></span><div class="ex-mix-bar">${c.shares.map((v,i)=>v>0?`<i style="flex:${v};background:${palette[i%palette.length]}" title="${esc(ex.departments[i])}: ${pct(v)}"></i>`:'').join('')}</div></div>`).join('')}</div>`;
-  exInsert(`${growth}<div class="ex-grid-2">${stopped}${exSection('cityMix','Departamentos em cada cidade','Participação de cada departamento no faturamento das 12 maiores cidades.',mix)}</div>`,null);
 }
 
 function exGoalsUi(ex){
@@ -1442,47 +1434,219 @@ function mpDrawCross(){
   $$('[data-mp-pair]').forEach(b=>b.onclick=()=>{MP.pair=Number(b.dataset.mpPair);mpDrawCross();});
 }
 
-function renderCidades(p){
-  if(state.cityView==='coverage'){renderCoverageView(p);return;}
-  renderCidadesSales(p);
+// ===== Cidades (página única no visual das páginas novas) =====
+// Situação no mapa: crescendo/caindo a partir deste percentual contra o mesmo período do ano anterior. Mude aqui.
+const CIDADES_FAIXA_ESTAVEL=10;
+const CD={line:'all',mode:'situation',pick:'',sort:'revenue',dir:-1,query:'',limit:25,opp:'lost',oppLimit:20,clientsOpen:false,clientLimit:20,context:null,loading:null,error:''};
+const CD_SITUATION={up:['Crescendo','#2f9e6e'],stable:['Estável','#5b7fd1'],down:['Caindo','#e08a2e'],lost:['Sem venda há 90+ dias','#c94a43'],none:['Sem responsável','#c9d0dc']};
+const CD_MODES=[['situation','Situação'],['revenue','Faturamento'],['growth','Variação'],['coverage','Cobertura'],['potential','Potencial'],['owner','Responsável']];
+const CD_OWNER_COLORS=['#1f5fbf','#d1495b','#2a9d8f','#e9a03b','#7b4fbf','#3c8d2f','#c55f9e','#5c6b7a'];
+const CD_OPPS=[['lost','Cidades perdidas','venderam nos últimos 12 meses e estão há 90+ dias sem venda · pela média mensal'],['falling','Caindo','abaixo do mesmo período do ano anterior · pela perda em R$'],['noSaleMonth','Sem venda no mês','cidades do território que ainda não compraram no mês atual · pela média mensal'],['missingDept','Departamento ausente','compram algum departamento e não compram outro dos principais da linha · pela média mensal'],['cattle','Muito gado, pouca venda','rebanho acima da mediana e R$ por mil cabeças no terço mais baixo · pelo rebanho'],['outside','Fora do território','vendas de um RCA na área de outro · pelo valor']];
+function cdFilters(){
+  const f={line:CD.line};
+  if(!normalizeMulti(state.filters.supervisor).length)f.excludeSupervisors=TV_SUPERVISOES_FORA_POR_PADRAO;
+  if(!normalizeMulti(state.filters.department).length)f.excludeDepartments=MP_DEPARTAMENTOS_FORA_POR_PADRAO;
+  return f;
 }
-function renderCidadesSales(p){
-  const cities=p.cities||[];
-  const selected=p.selected;
-  const revenue=(selected?.revenue ?? cities.reduce((a,x)=>a+x.revenue,0));
-  $('#content').innerHTML=`
-    <div class="grid kpi-grid five">
-      ${kpi(selected?'Cidade selecionada':'Cidades atendidas',selected?esc(selected.city):integer(cities.filter(x=>x.revenue>0).length),selected?selected.uf:'Com faturamento no recorte')}
-      ${kpi('Faturamento',money(revenue,true),selected?selected.city:'Área filtrada')}
-      ${kpi('Maior cidade',cities[0]?esc(cities[0].city):'—',cities[0]?money(cities[0].revenue,true):'Sem dados')}
-      ${kpi('Menor cidade',cities.length?esc([...cities].filter(x=>x.revenue>0).sort((a,b)=>a.revenue-b.revenue)[0]?.city||'—'):'—','Entre cidades com venda')}
-      ${kpi('Produtos no foco',integer(p.products?.length),'Top itens analisados')}
+function cdContext(){
+  const c=CD.context||{};
+  return {line:CD.line,growthPct:CIDADES_FAIXA_ESTAVEL,matrix:(state.coverage?.cities||[]).map(r=>({uf:r.uf,city:r.city,nutrition:r.nutrition,animalHealth:r.animalHealth,nutritionRoute:r.nutritionRoute,animalHealthRoute:r.animalHealthRoute,status:r.status,notes:r.notes,region:r.region})),ibge:c.ibge||[],ibgeYear:c.ibgeYear||null};
+}
+// Matriz de cobertura e rebanho do IBGE: carregados uma vez; depois a página só recalcula.
+function cdEnsureContext(){
+  if(state.coverage&&CD.context)return Promise.resolve(true);
+  if(!CD.loading)CD.loading=Promise.all([
+    state.coverage?Promise.resolve(state.coverage):api('/api/coverage').then(d=>{state.coverage=d;return d;}).catch(e=>{CD.error='Matriz de cobertura indisponível: '+(e?.message||e);state.coverage={cities:[]};}),
+    api('/api/ibgeHerd').then(d=>{CD.context={ibge:d.rows||[],ibgeYear:d.year||null,ibgeUpdated:d.updatedAt||null};}).catch(e=>{CD.context={ibge:[],ibgeYear:null,ibgeError:e?.message||String(e)};})
+  ]).finally(()=>{CD.loading=null;});
+  return CD.loading.then(()=>false);
+}
+function cdMountFilters(){
+  const main=$('.filterbar-main');if(!main)return;
+  let box=$('#cityFilters');
+  if(!box){box=document.createElement('div');box.id='cityFilters';box.className='cd-filters';const anchor=$('#toggleAdvancedFilters');if(anchor)main.insertBefore(box,anchor);else main.append(box);}
+  const p=CD.p?.city||{},sOpts=p.supervisorOptions||[],sSel=normalizeMulti(state.filters.supervisor),sChecked=n=>sSel.length?sSel.includes(n):!tvDefaultOut(n);
+  const rca=normalizeMulti(state.filters.rca);
+  box.innerHTML=`<div class="filter-group"><label for="cdLine">Linha</label><select id="cdLine"><option value="all">Todas</option><option value="nutrition">Nutrição</option><option value="health">Saúde</option></select></div>
+  <div class="filter-group cd-sup-group"><label>Supervisão</label><details class="tv-sup" id="tvSupervisors"><summary>${esc(sOpts.length?tvSupervisorSummary(sOpts):'todas, sem Balcão Rebanho')} <span aria-hidden="true">▾</span></summary><div class="tv-sup-menu"><fieldset><legend class="sr-only">Supervisões</legend>${sOpts.map(o=>`<label><input type="checkbox" data-teams-supervisor="${esc(o.name)}" ${sChecked(o.name)?'checked':''}><span>${esc(o.name)}</span><small>${integer(o.count)} RCAs</small></label>`).join('')}</fieldset><div class="tv-sup-actions"><button type="button" id="teamsSelectAll">Marcar todas</button><button type="button" id="teamsClearSupervisors">Limpar</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="primary" id="teamsApplySupervisors">Aplicar</button></div></div></details></div>
+  <div class="filter-group"><label for="cdRca">RCA</label><select id="cdRca"><option value="">Todos</option>${(p.rcaOptions||[]).map(r=>`<option value="${esc(r.code)}" ${rca.length===1&&rca[0]===r.code?'selected':''}>${esc(r.name)}</option>`).join('')}${rca.length>1?'<option value="__multi" selected>Vários (Mais filtros)</option>':''}</select></div>`;
+  $('#cdLine').value=CD.line;
+  $('#cdLine').onchange=e=>{CD.line=e.target.value;CD.pick='';queryPage();};
+  $('#cdRca').onchange=e=>{const v=e.target.value;if(v==='__multi')return;state.filters.rca=v?[v]:[];CD.pick='';syncUiFromFilters();queryPage();};
+  bindTeamsSupervisors();
+}
+function cdUnmountFilters(){$('#cityFilters')?.remove();$('#coverageShared')?.remove();$('.filterbar')?.classList.remove('coverage-context');}
+function cdFmtBov(v){if(v==null)return '—';return v>=1000?(v/1000).toLocaleString('pt-BR',{maximumFractionDigits:v>=100000?0:1})+' mil':integer(v);}
+function cdVar(v){if(v==null||!Number.isFinite(Number(v)))return '<span class="ov-s">—</span>';const n=Number(v);return `<span class="mp-var ${n>0.05?'up':n<-0.05?'down':''}">${n>0?'▲':n<0?'▼':'■'} ${Math.abs(n).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span>`;}
+function cdSit(s){const [l,c]=CD_SITUATION[s]||['—','#c9d0dc'];return `<span class="cd-sit"><i style="background:${c}"></i>${esc(l)}</span>`;}
+function cdPeriodLabel(p){const per=p.period||{};if(per.month==null)return String(per.year)+(p.running?' até '+ovDate(per.end):'');return MONTH_NAMES[per.month-1]+'/'+String(per.year).slice(2)+(p.running?' até dia '+new Date(per.end).getUTCDate():'');}
+function renderCidades(p){
+  CD.p=p;const c=p.city;ovEnsureTopTools();
+  const label=$('#activeMenuLabel');if(label)label.textContent='Cidades';
+  const mt=$('#ovMarginToggle');if(mt)mt.hidden=true;
+  const cut=$('#ovCutoff');if(cut)cut.innerHTML='Corte dos dados: <b>'+esc(ovDate(c?.latest))+'</b>';
+  cdMountFilters();
+  $('#content').className='cd-report';
+  if(!c){$('#content').innerHTML=`<section class="ov-card"><p class="ov-s">${esc(CD.error||'Carregando matriz de cobertura e dados do IBGE…')}</p></section>`;return;}
+  const k=c.kpis,per=cdPeriodLabel(c),lyLabel=c.period.month==null?String(c.period.year-1):MONTH_NAMES[c.period.month-1]+'/'+String(c.period.year-1).slice(2);
+  if(!CD.pick||!c.rows.some(r=>r.key===CD.pick))CD.pick=(c.rows.find(r=>r.inTerritory&&r.revenue>0)||c.rows[0])?.key||'';
+  const herdNote=CD.context?.ibgeError?'IBGE indisponível: '+CD.context.ibgeError:!k.hasHerd?'Rebanho do IBGE ainda não carregado (use “Atualizar dados do IBGE” no fim da página).':'cabeças de gado no território · IBGE '+(c.ibgeYear||'');
+  $('#content').innerHTML=`${CD.error?`<p class="mp-warn">${esc(CD.error)}</p>`:''}
+  <section class="ov-hero cd-hero" aria-label="Cidades">
+    <div class="cd-hero-grid">
+      <div><p class="ov-k">Faturamento · ${esc(per)}</p><p class="cd-hv-lg">${money(k.revenue,true)}</p><p class="ov-hs">${cdVar(k.growth)} vs ${esc(lyLabel)}${c.running?' até o mesmo dia':''}</p></div>
+      <div><p class="ov-k">Cobertura do território</p><p class="ov-hv">${pct(k.territory?k.territoryWithSale/k.territory*100:null)}</p><p class="ov-hs">${integer(k.territoryWithSale)} de ${integer(k.territory)} cidades com venda</p></div>
+      <div><p class="ov-k">Cobertura de clientes</p><p class="ov-hv">${pct(k.clientCoverage)}</p><p class="ov-hs">${integer(k.positive)} positivados ÷ ${integer(k.active)} ativos (compraram nos últimos 89 dias)</p></div>
+      <div><p class="ov-k">Cidades perdidas</p><p class="ov-hv">${integer(k.lost)}</p><p class="ov-hs">venderam em 12 meses · 90+ dias sem venda</p></div>
+      <div><p class="ov-k">Potencial</p><p class="ov-hv">${k.hasHerd?cdFmtBov(k.bov):'—'}</p><p class="ov-hs">${esc(herdNote)}</p></div>
     </div>
-    ${sectionHeading('Pontos críticos do recorte','Mudam conforme período, RCA, departamento e cidade selecionada.')}
-    <div class="grid insight-grid">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Sem alerta crítico forte',value:'—',text:'O recorte não apresentou uma queda relevante automática.'}]).map(insight).join('')}</div>
-    <div class="grid city-layout">
-      <div class="panel"><div class="panel-title-row"><div><h2>Faturamento por município</h2><div class="panel-sub">Tons mais escuros indicam maior faturamento. Clique para filtrar.</div></div><button id="allCitiesBtn" class="btn secondary small">Ver todos</button></div><div id="cityMap"></div><div class="map-revenue-legend"><span>Menor faturamento</span><i></i><i></i><i></i><i></i><span>Maior faturamento</span></div></div>
-      <div class="panel"><div class="panel-title-row"><div><h2>${selected?esc(selected.city+' - '+selected.uf):'Cidades da área'}</h2><div class="panel-sub">Ranking por faturamento.</div></div></div><div id="cityList" class="city-list"></div></div>
-    </div>
-    ${sectionHeading('Evolução mensal do faturamento',selected?`Histórico de ${selected.city} no ano selecionado.`:'Histórico da área no ano selecionado.')}
-    <div class="panel"><div class="chart-wrap"><canvas id="cityMonthly"></canvas></div></div>
-    <div class="grid equal-col" style="margin-top:12px">
-      <div class="panel"><div class="panel-title-row"><div><h2>Principais produtos</h2><div class="panel-sub">${selected?'Na cidade selecionada.':'Na área filtrada.'}</div></div></div><div id="cityProducts" class="metric-list"></div></div>
-      <div class="panel"><div class="panel-title-row"><div><h2>Principais clientes</h2><div class="panel-sub">${selected?'Na cidade selecionada.':'Na área filtrada.'}</div></div></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="align-right">Faturamento</th><th class="align-right">Produtos</th></tr></thead><tbody id="cityClients"></tbody></table></div></div>
-    </div>
-  `;
-  $('#content').insertAdjacentHTML('afterbegin','<div class="city-view-switch" role="group" aria-label="Visualização de cidades"><button type="button" class="active" data-city-view="sales">Faturamento</button><button type="button" data-city-view="coverage">Cobertura territorial</button></div>');
-  $$('.city-view-switch button').forEach(b=>b.addEventListener('click',()=>{state.cityView=b.dataset.cityView;queryPage()}));
-  const max=cities[0]?.revenue||1;
-  $('#cityList').innerHTML=cities.slice(0,100).map(c=>`<div class="city-row ${selected?.key===c.key?'active':''}" data-city="${esc(c.key)}"><div><strong>${esc(c.city)} - ${esc(c.uf)}</strong><div class="progress" style="margin-top:5px;width:150px"><i style="width:${Math.max(2,c.revenue/max*100)}%"></i></div></div><span>${money(c.revenue,true)}</span></div>`).join('');
-  $$('.city-row').forEach(row=>row.addEventListener('click',()=>{state.selectedCity=row.dataset.city;queryPage()}));
-  $('#allCitiesBtn').addEventListener('click',()=>{state.selectedCity='Todos';queryPage()});
-  const monthly=p.monthly||[];
-  chart($('#cityMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:[{data:monthly.map(x=>x.revenue),borderColor:'#1E2655',backgroundColor:'rgba(30,38,85,.08)',fill:true,tension:.32,pointRadius:4,borderWidth:2.5}]},{scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},y:{beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>money(v,true)}}}});
-  const pmax=p.products?.[0]?.revenue||1;
-  $('#cityProducts').innerHTML=(p.products||[]).slice(0,10).map(x=>`<div class="metric-line"><div><div class="name">${esc(x.name)}</div><div class="progress"><i style="width:${x.revenue/pmax*100}%"></i></div></div><div class="value">${money(x.revenue,true)}</div></div>`).join('');
-  $('#cityClients').innerHTML=(p.clients||[]).slice(0,20).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td class="align-right">${money(x.revenue)}</td><td class="align-right">${integer(x.products)}</td></tr>`).join('');
-  renderCityMap(cities,selected?.key);
+  </section>
+  <div class="cd-main">
+    <section class="ov-card cd-map-card"><div class="ov-head"><p class="ov-k">Mapa do território</p><nav class="cd-modes" aria-label="Colorir por">${CD_MODES.map(([key,l])=>`<button type="button" data-cd-mode="${key}" aria-pressed="${CD.mode===key}">${esc(l)}</button>`).join('')}</nav></div>
+      <div id="cdMap" class="cd-map" role="img" aria-label="Mapa dos municípios"></div>
+      <div id="cdLegend" class="cd-legend"></div>
+      <p class="ov-s cd-map-note">Rolar a página não dá zoom no mapa: use os botões + e − ou Ctrl + rolagem. Clique num município para abrir a ficha.</p>
+    </section>
+    <aside class="ov-card cd-card" id="cdCard"></aside>
+  </div>
+  <section class="ov-card cd-table-card"><div class="ov-head"><p class="ov-k">Cidades · clique para abrir a ficha</p><input id="cdSearch" class="mp-search" type="search" placeholder="Buscar cidade" autocomplete="off" aria-label="Buscar cidade"></div><div id="cdTable"></div></section>
+  <div class="cd-bottom">
+    <section class="ov-card cd-opp" id="cdOpp"></section>
+    <section class="ov-card cd-owners"><div class="ov-head"><p class="ov-k">Território por RCA</p><p class="ov-s">responsável pela matriz · ${esc(c.line==='health'?'linha Saúde Animal':'linha Nutrição')}</p></div><div class="ov-table-wrap"><table class="ov-table mp-table cd-owner-table"><thead><tr><th data-sort-ready="1">RCA</th><th data-sort-ready="1" class="num">Cidades</th><th data-sort-ready="1" class="num">Com venda</th><th data-sort-ready="1" class="num">Cobertura</th><th data-sort-ready="1" class="num">Faturamento</th><th data-sort-ready="1" class="num">vs ano ant.</th></tr></thead><tbody>${c.owners.map(o=>`<tr class="${o.name==='Sem responsável'?'ct-orphan':''}"><td><b>${esc(o.name)}</b>${o.supervisor?`<small class="ov-s ct-code">${esc(o.supervisor)}</small>`:''}</td><td class="num">${integer(o.cities)}</td><td class="num">${integer(o.withSale)}</td><td class="num">${o.name==='Sem responsável'?'—':pct(o.coverage)}</td><td class="num">${money(o.revenue,true)}</td><td class="num">${cdVar(o.growth)}</td></tr>`).join('')||'<tr><td colspan="6">Matriz sem cidades neste recorte.</td></tr>'}</tbody></table></div></section>
+  </div>
+  <span data-capture-end></span>
+  <details class="ov-card cd-check ov-noprint"><summary>Conferência da matriz</summary>
+    <div class="cd-check-grid"><div><span class="ov-s">Municípios na matriz</span><b>${integer(c.matrix.count)}</b></div><div><span class="ov-s">No recorte</span><b>${integer(c.matrix.inScope)}</b></div><div><span class="ov-s">Conferidos na linha</span><b>${integer(c.matrix.confirmed)}</b></div><div><span class="ov-s">Em revisão</span><b>${integer(c.matrix.pending)}</b></div><div><span class="ov-s">RCAs na linha</span><b>${integer(c.matrix.owners)}</b></div></div>
+    <p class="ov-s">Em revisão = sem responsável, com mais de um nome ou com situação diferente de “Conferido”. Rebanho: IBGE, Pesquisa da Pecuária Municipal ${esc(c.ibgeYear||'(não carregado)')}${CD.context?.ibgeUpdated?' · atualizado em '+esc(ovDate(CD.context.ibgeUpdated)):''}.</p>
+    <div class="cd-check-actions"><button type="button" class="btn secondary small" id="cdMatrixRefresh">Atualizar matriz</button>${state.user?.perfil==='ADMIN'?'<button type="button" class="btn secondary small" id="cdIbgeRefresh">Atualizar dados do IBGE</button>':''}<span id="cdCheckNote" class="ov-s" aria-live="polite"></span></div>
+  </details>`;
+  $$('[data-cd-mode]').forEach(b=>b.onclick=()=>{CD.mode=b.dataset.cdMode;$$('[data-cd-mode]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));cdPaintMap();});
+  $('#cdSearch').value=CD.query;$('#cdSearch').oninput=e=>{CD.query=e.target.value;CD.limit=25;cdDrawTable();};
+  $('#cdMatrixRefresh').onclick=async e=>{const b=e.currentTarget;b.disabled=true;$('#cdCheckNote').textContent='Atualizando a matriz…';try{state.coverage=await api('/api/coverage',{method:'POST',body:JSON.stringify({force:true})});queryPage();}catch(err){$('#cdCheckNote').textContent='Não foi possível: '+(err?.message||err);b.disabled=false;}};
+  const ib=$('#cdIbgeRefresh');if(ib)ib.onclick=async e=>{const b=e.currentTarget;b.disabled=true;$('#cdCheckNote').textContent='Buscando no IBGE… pode levar até 1 minuto.';try{const r=await api('/api/ibgeRefresh',{method:'POST'});$('#cdCheckNote').textContent='IBGE atualizado: '+integer(r.count)+' municípios, pesquisa de '+r.year+'.';CD.context=null;await cdEnsureContext();queryPage();}catch(err){$('#cdCheckNote').textContent='O IBGE não respondeu: '+(err?.message||err)+'. Veja as instruções para colar o arquivo manualmente.';b.disabled=false;}};
+  cdDrawCard();cdDrawTable();cdDrawOpp();cdRenderMap();
+}
+function cdRow(key){return CD.p?.city?.rows.find(r=>r.key===key)||null;}
+function cdOpen(key,scroll){CD.pick=key;CD.clientsOpen=false;CD.clientLimit=20;cdDrawCard();cdPaintMap();if(scroll)$('#cdCard')?.scrollIntoView({behavior:'smooth',block:'nearest'});}
+function cdDrawCard(){
+  const host=$('#cdCard'),r=cdRow(CD.pick),c=CD.p?.city;if(!host)return;
+  if(!r){host.innerHTML='<p class="ov-s">Clique num município do mapa ou numa linha da tabela.</p>';return;}
+  const lyLabel=c.period.month==null?String(c.period.year-1):MONTH_NAMES[c.period.month-1]+'/'+String(c.period.year-1).slice(2);
+  const missing=r.missing||[],has=r.deps||[];
+  const list=r.clients||[],shown=list.slice(0,CD.clientLimit);
+  host.innerHTML=`<div class="cd-card-head"><div><p class="ov-k">Ficha da cidade</p><p class="cd-card-title">${esc(r.city)} · ${esc(r.uf)}</p>
+    <p class="ov-s">${r.inTerritory?`Responsável: <b>${esc(r.owner||'sem responsável')}</b>${c.line==='all'&&r.health&&r.health!==r.owner?` · Saúde: <b>${esc(r.health)}</b>`:''}${r.route?' · Rota: '+esc(r.route):''}`:'Fora da matriz de cobertura'}</p></div>${cdSit(r.situation)}</div>
+  <div class="cd-card-grid">
+    <div><span class="ov-s">Faturamento</span><b>${money(r.revenue,true)}</b><small>${cdVar(r.growth)} vs ${esc(lyLabel)}</small></div>
+    <div><span class="ov-s">Cobertura de clientes</span><b>${r.coverage==null?'—':pct(r.coverage)}</b><small>${integer(r.positive)} de ${integer(r.active)} ativos</small></div>
+    <div><span class="ov-s">Em risco / inativos</span><b>${integer(r.risk)} / ${integer(r.inactive)}</b><small>60–89 dias / 90–179 dias</small></div>
+    <div><span class="ov-s">Potencial</span><b>${r.bov==null?'—':cdFmtBov(r.bov)+' cab.'}</b><small>${r.perThousand==null?'sem dado do IBGE':money(r.perThousand,true)+' por mil cabeças'}</small></div>
+  </div>
+  <div><p class="cd-card-k">Departamentos (12 meses)</p><div class="cd-chips">${has.map(d=>`<span class="cd-chip ok">${esc(d)}</span>`).join('')}${missing.map(d=>`<span class="cd-chip no">não compra: ${esc(d)}</span>`).join('')||''}${!has.length&&!missing.length?'<span class="ov-s">Sem compras em 12 meses.</span>':''}</div></div>
+  <div><p class="cd-card-k">Principais produtos</p><p class="ov-s">${r.top3.length?r.top3.map(x=>esc(x.name)+' ('+money(x.value,true)+')').join(' · '):'Sem venda no período.'}</p></div>
+  <div><p class="cd-card-k">Último pedido</p><p class="ov-s">${r.lastOrder?esc(ovDate(r.lastOrder.date))+' · '+esc(r.lastOrder.client)+' · '+esc(r.lastOrder.rca):'Sem venda registrada.'}</p></div>
+  ${r.outside?.length?`<div><p class="cd-card-k">Vendido por RCA de fora</p><p class="ov-s">${r.outside.map(o=>esc(o.rca)+' ('+money(o.value,true)+')').join(' · ')}</p></div>`:''}
+  <button type="button" class="cd-link" id="cdClients">${CD.clientsOpen?'Fechar lista de clientes':'Ver clientes da cidade ('+integer(list.length)+') →'}</button>
+  ${CD.clientsOpen?`<div class="ov-table-wrap"><table class="ov-table mp-table cd-client-table"><thead><tr><th data-sort-ready="1">Cliente</th><th data-sort-ready="1">RCA</th><th data-sort-ready="1">Situação</th><th data-sort-ready="1" class="num">Dias</th><th data-sort-ready="1" class="num">Média 12m</th></tr></thead><tbody>${shown.map(x=>`<tr><td><b>${esc(x.name)}</b><small class="ov-s ct-code">Cód. ${esc(x.id)}${x.bought?' · comprou no período':''}</small></td><td>${esc(x.rca)}</td><td>${esc(x.band)}</td><td class="num">${pdDaysChip(x.days)}</td><td class="num">${money(x.avg12,true)}</td></tr>`).join('')||'<tr><td colspan="5">Nenhum cliente ativo, em risco ou inativo recente.</td></tr>'}</tbody></table></div>${pdMore('cdClientsMore',shown.length,list.length,20,'clientes')}`:''}`;
+  $('#cdClients').onclick=()=>{CD.clientsOpen=!CD.clientsOpen;cdDrawCard();};
+  const more=$('#cdClientsMore');if(more)more.onclick=()=>{CD.clientLimit+=20;cdDrawCard();};
+}
+function cdDrawTable(){
+  const c=CD.p?.city,host=$('#cdTable');if(!c||!host)return;
+  const q=normalize(CD.query);
+  const cols=[['city','Cidade',''],['owner','RCA',''],['situation','Situação',''],['revenue','Faturamento','num'],['growth','vs ano ant.','num'],['active','Ativos','num'],['positive','Positivados','num'],['coverage','Cobertura','num'],['risk','Em risco','num'],['missing','Deptos ausentes',''],['outsideShare','% RCA de fora','num']];
+  let rows=c.rows.filter(r=>(r.inTerritory||r.revenue>0)&&(!q||normalize(r.city).includes(q)||normalize(r.owner).includes(q)));
+  const val=(r,k)=>k==='missing'?r.missing.length:k==='situation'?['up','stable','down','lost','none'].indexOf(r.situation):r[k];
+  rows=rows.slice().sort((a,b)=>{const x=val(a,CD.sort),y=val(b,CD.sort);if(typeof x==='string'||typeof y==='string')return String(x??'').localeCompare(String(y??''),'pt-BR')*CD.dir;return ((x??-Infinity)-(y??-Infinity))*CD.dir;});
+  const shown=rows.slice(0,CD.limit);
+  host.innerHTML=`<div class="ov-table-wrap cd-table-wrap"><table class="ov-table mp-table cd-table"><thead><tr>${cols.map(([k,l,cl])=>`<th data-sort-ready="1" class="${cl}"><button type="button" class="ct-sort ${CD.sort===k?'on':''}" data-cd-sort="${k}">${esc(l)}${CD.sort===k?(CD.dir<0?' ▼':' ▲'):''}</button></th>`).join('')}</tr></thead><tbody>${shown.map(r=>`<tr class="cd-row ${r.key===CD.pick?'on':''} ${r.inTerritory?'':'cd-out'}" data-cd-city="${esc(r.key)}"><td><b>${esc(r.city)}</b> <small class="ov-s">${esc(r.uf)}${r.inTerritory?'':' · fora da matriz'}</small></td><td>${esc(r.owner||'—')}</td><td>${cdSit(r.situation)}</td><td class="num"><b>${money(r.revenue,true)}</b></td><td class="num">${cdVar(r.growth)}</td><td class="num">${integer(r.active)}</td><td class="num">${integer(r.positive)}</td><td class="num">${r.coverage==null?'—':pct(r.coverage)}</td><td class="num">${integer(r.risk)}</td><td class="cd-missing">${r.missing.length?esc(r.missing.join(', ')):'—'}</td><td class="num">${r.outsideShare==null?'—':pct(r.outsideShare)}</td></tr>`).join('')||`<tr><td colspan="${cols.length}">Nenhuma cidade encontrada.</td></tr>`}</tbody></table></div>${pdMore('cdMore',shown.length,rows.length,25,'cidades')}`;
+  $$('[data-cd-sort]').forEach(b=>b.onclick=()=>{const k=b.dataset.cdSort;if(CD.sort===k)CD.dir*=-1;else{CD.sort=k;CD.dir=['city','owner','situation'].includes(k)?1:-1;}cdDrawTable();});
+  $$('[data-cd-city]').forEach(tr=>tr.onclick=()=>{cdOpen(tr.dataset.cdCity,true);$$('.cd-row').forEach(x=>x.classList.toggle('on',x===tr));});
+  const more=$('#cdMore');if(more)more.onclick=()=>{CD.limit+=25;cdDrawTable();};
+}
+function cdDrawOpp(){
+  const c=CD.p?.city,host=$('#cdOpp');if(!c||!host)return;
+  const tab=CD_OPPS.find(x=>x[0]===CD.opp)||CD_OPPS[0],list=c.opp[tab[0]]||[],shown=list.slice(0,CD.oppLimit);
+  const city=r=>`<b>${esc(r.city)}</b> <small class="ov-s">${esc(r.uf)}</small>`;
+  const tables={
+    lost:[['Cidade','RCA','Última venda','Dias sem venda','Média mensal 12m','Potencial'],r=>[city(r),esc(r.owner||'—'),ovDate(new Date(Date.parse(c.period.end)-r.lastDays*86400000).toISOString()),integer(r.lastDays),money(r.avg12,true),r.bov==null?'—':cdFmtBov(r.bov)+' cab.']],
+    falling:[['Cidade','RCA','Faturamento','Ano anterior','Perda','Variação'],r=>[city(r),esc(r.owner||'—'),money(r.revenue,true),money(r.lastYear,true),money(r.lastYear-r.revenue,true),cdVar(r.growth)]],
+    noSaleMonth:[['Cidade','RCA','Última venda','Dias sem venda','Média mensal 12m','Potencial'],r=>[city(r),esc(r.owner||'—'),r.lastDays==null?'—':ovDate(new Date(Date.parse(c.period.end)-r.lastDays*86400000).toISOString()),r.lastDays==null?'—':integer(r.lastDays),money(r.avg12,true),r.bov==null?'—':cdFmtBov(r.bov)+' cab.']],
+    missingDept:[['Cidade','RCA','Compra','Não compra','Média mensal 12m',''],r=>[city(r),esc(r.owner||'—'),esc(r.deps.join(', ')),'<b class="r">'+esc(r.missing.join(', '))+'</b>',money(r.avg12,true),'']],
+    cattle:[['Cidade','RCA','Rebanho','R$ por mil cab.','Faturamento',''],r=>[city(r),esc(r.owner||'—'),cdFmtBov(r.bov)+' cab.',r.perThousand==null?'—':money(r.perThousand,true),money(r.revenue,true),'']],
+    outside:[['Cidade','Responsável','Vendeu','Valor','',''],r=>[city(r),esc(r.owner||'—'),esc(r.seller),money(r.value,true),'','']]
+  };
+  const [head,row]=tables[tab[0]];
+  host.innerHTML=`<div class="ov-head"><p class="ov-k">Oportunidades</p><p class="ov-s">só cidades da matriz de cobertura</p></div>
+  <nav class="ct-tabs" aria-label="Oportunidades">${CD_OPPS.map(([key,l])=>`<button type="button" data-cd-opp="${key}" aria-pressed="${key===tab[0]}">${esc(l)} <b>${integer((c.opp[key]||[]).length)}</b></button>`).join('')}</nav>
+  <p class="ov-s">${esc(tab[2])}</p>
+  ${list.length?`<div class="ov-table-wrap"><table class="ov-table mp-table cd-opp-table"><thead><tr>${head.map((h,i)=>h?`<th data-sort-ready="1" class="${i>=3&&tab[0]!=='missingDept'?'num':''}">${esc(h)}</th>`:'').join('')}</tr></thead><tbody>${shown.map(r=>`<tr data-cd-city="${esc(r.key)}" class="cd-row">${row(r).map((v,i)=>head[i]?`<td class="${i>=3&&tab[0]!=='missingDept'?'num':''}">${v}</td>`:'').join('')}</tr>`).join('')}</tbody></table></div>${pdMore('cdOppMore',shown.length,list.length,20,'linhas')}`:'<p class="ov-s">Nada nesta lista.</p>'}
+  ${tab[0]==='cattle'&&!c.kpis.hasHerd?'<p class="mp-warn">Esta lista depende do rebanho do IBGE, que ainda não foi carregado.</p>':''}`;
+  $$('[data-cd-opp]').forEach(b=>b.onclick=()=>{CD.opp=b.dataset.cdOpp;CD.oppLimit=20;cdDrawOpp();});
+  $$('#cdOpp [data-cd-city]').forEach(tr=>tr.onclick=()=>cdOpen(tr.dataset.cdCity,true));
+  const more=$('#cdOppMore');if(more)more.onclick=()=>{CD.oppLimit+=20;cdDrawOpp();};
+}
+// ----- Mapa -----
+const CD_GEO=new Map();
+const CD_UF_CODES={RO:'11',AC:'12',AM:'13',RR:'14',PA:'15',AP:'16',TO:'17',MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29',MG:'31',ES:'32',RJ:'33',SP:'35',PR:'41',SC:'42',RS:'43',MS:'50',MT:'51',GO:'52',DF:'53'};
+function cdBandLabels(q,n,fmt){return Array.from({length:n},(_,i)=>i===0?'até '+fmt(q[0]||0):i===n-1?'acima de '+fmt(q[n-2]||0):fmt(q[i-1]||0)+' a '+fmt(q[i]||0));}
+function cdQuantiles(values,n){const v=values.filter(x=>x>0).sort((a,b)=>a-b);if(!v.length)return [];return Array.from({length:n-1},(_,i)=>v[Math.min(v.length-1,Math.floor(v.length*(i+1)/n))]);}
+function cdScale(){
+  const c=CD.p?.city,rows=c?.rows||[],mode=CD.mode;
+  if(mode==='situation')return {color:r=>r?(!r.inTerritory&&!(r.revenue>0)?null:CD_SITUATION[r.situation][1]):null,legend:Object.values(CD_SITUATION).map(([l,col])=>[col,l]).concat([['#ffffff','Fora da matriz e sem venda']])};
+  if(mode==='revenue'){const pal=['#dbe6f7','#a9c1ea','#6f95d6','#3d68b8','#1d3f86'],q=cdQuantiles(rows.map(r=>r.revenue),5);const band=v=>q.filter(x=>v>x).length;
+    return {color:r=>!r||!(r.revenue>0)?'#eceff4':pal[band(r.revenue)],legend:[['#eceff4','Sem venda']].concat(q.length?(()=>{const l=cdBandLabels(q,pal.length,v=>money(v,true));return pal.map((col,i)=>[col,l[i]]);})():[]),note:'faixas com o mesmo número de cidades'};}
+  if(mode==='growth'){const bins=[[-Infinity,-30,'#b2362f','queda de mais de 30%'],[-30,-CIDADES_FAIXA_ESTAVEL,'#e58a6e','queda de '+CIDADES_FAIXA_ESTAVEL+'% a 30%'],[-CIDADES_FAIXA_ESTAVEL,CIDADES_FAIXA_ESTAVEL,'#dfe5ee','estável (±'+CIDADES_FAIXA_ESTAVEL+'%)'],[CIDADES_FAIXA_ESTAVEL,30,'#86c9a5','alta de '+CIDADES_FAIXA_ESTAVEL+'% a 30%'],[30,Infinity,'#2a8a5c','alta de mais de 30%']];
+    return {color:r=>{if(!r||(!(r.revenue>0)&&!(r.lastYear>0)))return r?.inTerritory?'#f4f5f8':null;if(r.growth==null)return '#2a8a5c';return bins.find(b=>r.growth>b[0]&&r.growth<=b[1])?.[2]||'#dfe5ee';},legend:bins.map(b=>[b[2],b[3]]).concat([['#f4f5f8','sem venda nos dois períodos']])};}
+  if(mode==='coverage'){const bins=[[0,25,'#f3c9c4'],[25,50,'#f2b98e'],[50,75,'#9fcfb3'],[75,101,'#2f9e6e']];
+    return {color:r=>!r||r.coverage==null?(r?.inTerritory?'#eceff4':null):bins.find(b=>r.coverage>=b[0]&&r.coverage<b[1])?.[2],legend:[['#eceff4','sem clientes ativos'],[bins[0][2],'até 25%'],[bins[1][2],'25% a 50%'],[bins[2][2],'50% a 75%'],[bins[3][2],'75% ou mais']]};}
+  if(mode==='potential'){const pal=['#f4ecd9','#e5cf9c','#cfa760','#a97a35','#6f4c1c'],q=cdQuantiles(rows.filter(r=>r.inTerritory).map(r=>r.bov||0),5);const band=v=>q.filter(x=>v>x).length;
+    return {color:r=>!r||!(r.bov>0)?(r?.inTerritory?'#eceff4':null):pal[band(r.bov)],legend:[['#eceff4','sem dado do IBGE']].concat(q.length?(()=>{const l=cdBandLabels(q,pal.length,v=>cdFmtBov(v)+' cab.');return pal.map((col,i)=>[col,l[i]]);})():[]),note:'cabeças de gado (bovinos)'};}
+  // Responsável: até 8 cores; acima disso, por supervisor.
+  const owners=[...new Set(rows.filter(r=>r.inTerritory&&r.owner).map(r=>r.owner))];
+  const bySup=owners.length>CD_OWNER_COLORS.length,keyOf=r=>bySup?(r.ownerSupervisor||'Sem supervisor'):r.owner;
+  const groups=[...new Set(rows.filter(r=>r.inTerritory&&r.owner).map(keyOf))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const color=new Map(groups.map((g,i)=>[g,CD_OWNER_COLORS[i%CD_OWNER_COLORS.length]]));
+  return {color:r=>!r||!r.inTerritory?null:!r.owner?'#c9d0dc':color.get(keyOf(r)),legend:groups.map(g=>[color.get(g),g]).concat([['#c9d0dc','Sem responsável']]),note:bySup?'mais de 8 RCAs: cores por supervisor':''};
+}
+function cdLegend(scale){
+  const host=$('#cdLegend');if(!host)return;
+  host.innerHTML=scale.legend.map(([col,l])=>`<span><i style="background:${col}"></i>${esc(l)}</span>`).join('')+(scale.note?`<small>${esc(scale.note)}</small>`:'');
+}
+function cdPaintMap(){
+  const layers=CD.layers||[],c=CD.p?.city;if(!c)return;
+  const scale=cdScale(),byKey=new Map(c.rows.map(r=>[r.key,r]));
+  for(const {layer,key} of layers){const r=byKey.get(key),fill=scale.color(r),on=key===CD.pick;layer.setStyle({fillColor:fill||'#ffffff',fillOpacity:fill?.92:.6,color:on?'#0f1b3d':'#8b97ab',weight:on?2.6:.5});if(on)layer.bringToFront?.();}
+  cdLegend(scale);
+}
+async function cdRenderMap(){
+  if(state.map){try{state.map.remove()}catch{}state.map=null;}
+  const el=$('#cdMap'),c=CD.p?.city;if(!el||!c)return;
+  try{await centralLeaflet();}catch(error){if(el.isConnected)el.textContent=error.message;return;}
+  if(!el.isConnected)return;
+  const map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:11,scrollWheelZoom:false,preferCanvas:true,zoomSnap:.25});state.map=map;
+  // Zoom só pelos botões ou com Ctrl + rolagem; rolagem comum desce a página.
+  el.addEventListener('wheel',e=>{if(!e.ctrlKey)return;e.preventDefault();map.setZoom(map.getZoom()+(e.deltaY<0?.5:-.5));},{passive:false});
+  const ufs=[...new Set(c.rows.filter(r=>r.inTerritory||r.revenue>0).map(r=>r.uf).filter(uf=>CD_UF_CODES[uf]))];
+  const byKey=new Map(c.rows.map(r=>[r.key,r]));CD.layers=[];const bounds=[];
+  const key=(name,uf)=>aliasCity(name)+'|'+uf;
+  for(const uf of ufs){
+    try{
+      if(!CD_GEO.has(uf)){const res=await fetch(`https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-${CD_UF_CODES[uf]}-mun.json`);if(!res.ok)continue;CD_GEO.set(uf,await res.json());}
+      if(!el.isConnected||state.map!==map)return;
+      const layer=L.geoJSON(CD_GEO.get(uf),{renderer:L.canvas(),style:{weight:.5,color:'#8b97ab',fillColor:'#ffffff',fillOpacity:.6},onEachFeature:(feat,l)=>{
+        const name=feat.properties?.name||feat.properties?.NOME||'',k=key(name,uf),r=byKey.get(k);
+        CD.layers.push({layer:l,key:k});
+        l.bindTooltip(`<b>${esc(r?.city||name)} · ${uf}</b>${r?'<br>'+money(r.revenue,true)+' · '+esc((CD_SITUATION[r.situation]||['—'])[0]):'<br>sem venda e fora da matriz'}`,{sticky:true});
+        if(r)l.on('click',()=>{cdOpen(k,false);$$('.cd-row').forEach(x=>x.classList.toggle('on',x.dataset.cdCity===k));});
+      }}).addTo(map);
+      try{bounds.push(layer.getBounds());}catch{}
+    }catch{}
+  }
+  const terr=CD.layers.filter(x=>byKey.get(x.key)?.inTerritory).map(x=>x.layer.getBounds?.()).filter(Boolean);
+  const fit=terr.length?terr:bounds;
+  if(fit.length){let b=L.latLngBounds(fit[0].getSouthWest(),fit[0].getNorthEast());for(let i=1;i<fit.length;i++)b.extend(fit[i]);map.invalidateSize();map.fitBounds(b,{padding:[12,12]});CD.bounds=b;}
+  cdPaintMap();
 }
 let centralLeafletPending=null;
 function centralLeaflet() {
@@ -1501,51 +1665,6 @@ function centralLeaflet() {
  });
  return centralLeafletPending;
 }
-async function renderCityMap(cities,selectedKey){
-  if(state.map){try{state.map.remove()}catch{}state.map=null}
-  const el=$('#cityMap'); if(!el)return;
-  try{await centralLeaflet();}catch(error){if(el.isConnected)el.textContent=error.message;return;}
-  if(!el.isConnected)return;
-  state.map=L.map(el,{zoomControl:true,attributionControl:false,minZoom:4,maxZoom:10,scrollWheelZoom:true}).setView([-8.5,-40.5],5);
-  const codes={RO:'11',AC:'12',AM:'13',RR:'14',PA:'15',AP:'16',TO:'17',MA:'21',PI:'22',CE:'23',RN:'24',PB:'25',PE:'26',AL:'27',SE:'28',BA:'29',MG:'31',ES:'32',RJ:'33',SP:'35',PR:'41',SC:'42',RS:'43',MS:'50',MT:'51',GO:'52',DF:'53'};
-  const cityMap=new Map(cities.map(c=>[`${aliasCity(c.city)}|${c.uf}`,c]));
-  const sortedValues=cities.map(c=>Number(c.revenue)||0).sort((a,b)=>a-b);
-  const max=Math.max(1,...sortedValues);
-  const colorAt=value=>{
-    const t=Math.max(0,Math.min(1,(Number(value)||0)/max));
-    const start=[226,237,252],end=[29,66,145],rgb=start.map((v,i)=>Math.round(v+(end[i]-v)*Math.pow(t,.68)));
-    return '#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
-  };
-  const states=[...new Set(cities.map(c=>c.uf).filter(uf=>codes[uf]))];
-  const bounds=[];
-  for(const uf of states){
-    try{
-      const res=await fetch(`https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-${codes[uf]}-mun.json`);
-      if(!res.ok)continue; const geo=await res.json();
-      const layer=L.geoJSON(geo,{
-        style:f=>{
-          const name=f.properties?.name||f.properties?.NOME||'';
-          const c=cityMap.get(`${aliasCity(name)}|${uf}`);
-          const selected=c&&c.key===selectedKey;
-          return {color:selected?'#F2D49B':'#28476c',weight:selected?2.8:.75,fillColor:c?colorAt(c.revenue):'#243b60',fillOpacity:selected?1:(c?.95:.8)};
-        },
-        onEachFeature:(f,l)=>{
-          const name=f.properties?.name||f.properties?.NOME||'';
-          const c=cityMap.get(`${aliasCity(name)}|${uf}`);
-          if(c){
-            l.bindTooltip(`<b>${esc(c.city)} - ${uf}</b><br>${money(c.revenue)}`,{sticky:true});
-            l.on('click',()=>{state.selectedCity=c.key;queryPage()});
-          }
-        }
-      }).addTo(state.map);
-      try{bounds.push(layer.getBounds())}catch{}
-    }catch{}
-  }
-  if(bounds.length){
-    let b=bounds[0]; for(let i=1;i<bounds.length;i++)b.extend(bounds[i]); state.map.fitBounds(b,{padding:[12,12]});
-  }
-}
-
 // ===== Pedidos & Previsão (visual das páginas novas; sem imagem) =====
 const PD_STATUS=[['PENDENTE','Pendente','pend'],['LIBERADO','Liberado','lib'],['BLOQUEADO','Bloqueado','blk']];
 const PD_CLIENTS_PAGE=15,PD_ORDERS_PAGE=20,PD_CHASE_PAGE=10;
