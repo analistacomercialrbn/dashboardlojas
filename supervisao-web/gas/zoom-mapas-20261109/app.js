@@ -569,7 +569,8 @@ function updateAdvancedFilterCount(){
 
 function queryPage(){
   // A marca da Visão Geral acompanha a tela atual (a Visão equipes não passa por renderPage).
-  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'||state.page==='carteira'));
+  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'||state.page==='carteira'||state.page==='produtos'));
+  document.body.classList.toggle('mp-page',state.module==='commercial'&&state.page==='produtos');
   document.body.classList.toggle('ct-page',state.module==='commercial'&&state.page==='carteira');
   document.body.classList.toggle('tv-page',state.module==='commercial'&&state.page==='teams');
   document.body.classList.toggle('pd-page',state.module==='commercial'&&state.page==='pedidos');
@@ -588,7 +589,7 @@ function queryPage(){
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
   if(state.page==='teams'){queryTeams(requestId);return;}
-  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
+  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
   if(state.page==='history'){$('#pageTitle').textContent='Histórico comercial';$('#pageSubtitle').textContent='Evolução e comparação de indicadores';$('#periodChip').textContent='Desde jun/2017';return;}
@@ -647,7 +648,7 @@ function sectionHeading(title,sub=''){return `<div class="section-heading"><div>
 
 function renderPage(page,payload){
   // Visão Geral tem cabeçalho e visual próprios; as outras telas continuam como antes.
-  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos'||page==='carteira');
+  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos'||page==='carteira'||page==='produtos');
   mountCoverageFilters(page==='cidades'&&state.cityView==='coverage');
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')Promise.resolve(renderMacroHistory(payload)).then(()=>{if(state.page==='history')renderPageExtras('history',payload);});
@@ -657,7 +658,7 @@ function renderPage(page,payload){
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
   else if(page==='pedidos')renderOrders(payload);
-  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&page!=='carteira'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
+  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&page!=='carteira'&&page!=='produtos'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
   biRender(page,payload);
   if(page!=='history')renderPageExtras(page,payload);
 }
@@ -1109,7 +1110,7 @@ async function ovExport(mode){
     cut.width=Math.round(top.width*k);cut.height=Math.round((bottom.bottom-top.top)*k);
     cut.getContext('2d').drawImage(canvas,Math.round((top.left-box.left)*k),Math.round((top.top-box.top)*k),cut.width,cut.height,0,0,cut.width,cut.height);
     const blob=await new Promise((resolve,reject)=>cut.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
-    const name=state.page==='teams'?tvImageName():state.page==='carteira'?'rebanho-carteira-'+String(CT.p?.extras?.reference||'').slice(0,10)+'.png':'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
+    const name=state.page==='teams'?tvImageName():state.page==='produtos'?'rebanho-mix-produtos-'+String(MP.p?.extras?.month||'')+'.png':state.page==='carteira'?'rebanho-carteira-'+String(CT.p?.extras?.reference||'').slice(0,10)+'.png':'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
     if(mode==='copy'){
       try{if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);say('Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.');return;}
       catch{say('Este navegador não deixou copiar; a imagem foi baixada.');}
@@ -1146,22 +1147,11 @@ function renderPageExtras(page,payload){
     if(page==='overview'){/* Visão Geral: comparativos ficam na faixa azul */}
     else if(page==='pedidos'){/* Pedidos: blocos fazem parte da página */}
     else if(page==='carteira'){/* Carteira: blocos fazem parte da página */}
-    else if(page==='produtos')exProductsUi(ex);
+    else if(page==='produtos'){/* Mix e Produtos: blocos fazem parte da página */}
     else if(page==='cidades'&&state.cityView!=='coverage')exCitiesUi(ex);
     else if(page==='metas')exGoalsUi(ex);
     else if(page==='history')exHistoryUi(ex);
   }catch(error){console.warn('Falha ao desenhar indicadores adicionais',error);}
-}
-
-function exProductsUi(ex){
-  const a=ex.abc,total=(a.A.revenue+a.B.revenue+a.C.revenue)||1;
-  const abc=`${exCards([['Classe A',integer(a.A.count)+' produtos',pct(a.A.revenue/total*100)+' do faturamento (até 80%)','good'],['Classe B',integer(a.B.count)+' produtos',pct(a.B.revenue/total*100)+' do faturamento (80% a 95%)'],['Classe C',integer(a.C.count)+' produtos',pct(a.C.revenue/total*100)+' do faturamento (últimos 5%)','warn']])}<div class="ex-stack" role="img" aria-label="Curva ABC"><i class="good" style="flex:${a.A.count}">A</i><i style="flex:${a.B.count}">B</i><i class="warn" style="flex:${a.C.count}">C</i></div><p class="ex-note">Largura da barra = quantidade de produtos em cada classe. ${integer(a.A.count)} de ${integer(ex.totalProducts)} produtos fazem 80% do faturamento.</p>`;
-  const mv=ex.movers,moverRows=list=>list.map(d=>[`<strong>${esc(d.name)}</strong>`,money(d.previous,true),money(d.current,true),`${d.change>0?'+':''}${money(d.change,true)}`,exGrowthChip(d.growth)]);
-  const moverCols=[{label:'Produto'},{label:mv?.label||'Anterior',num:true},{label:'Atual',num:true},{label:'Diferença',num:true},{label:'Variação',num:true}];
-  const movers=mv?`<div class="ex-grid-2">${exSection('prodUp','Produtos que mais cresceram','Comparado com '+mv.label+(state.filters.month!=='Todos'?' (mesmo dia, se o mês estiver em andamento)':'')+'.',exTable(moverCols,moverRows(mv.up)))}${exSection('prodDown','Produtos que mais caíram','Comparado com '+mv.label+'.',exTable(moverCols,moverRows(mv.down)))}</div>`:'';
-  const pen=exTable([{label:'Produto'},{label:'Classe'},{label:'Clientes',num:true},{label:'% dos clientes compradores',num:true}],ex.penetration.map(p=>[`<strong>${esc(p.name)}</strong>`,`<span class="ex-abc ${p.abc}">${p.abc}</span>`,integer(p.clients),`${exShareBar(p.share)} ${pct(p.share)}`]));
-  const cross=exTable([{label:'Par de produtos'},{label:'Clientes que compram os dois',num:true},{label:'De quem compra o 1º, quantos levam o 2º',num:true},{label:'De quem compra o 2º, quantos levam o 1º',num:true}],ex.cross.map(c=>[`<strong>${esc(c.a)}</strong> <span class="ex-plus">+</span> <strong>${esc(c.b)}</strong>`,integer(c.clients),`${exShareBar(c.ofA)} ${pct(c.ofA)}`,`${exShareBar(c.ofB)} ${pct(c.ofB)}`]),'Poucos clientes compraram dois produtos juntos neste recorte.');
-  exInsert(`${exSection('prodAbc','Curva ABC','Quantos produtos concentram o faturamento do recorte.',abc)}${movers}${exSection('prodPenetration','Presença nos clientes','Produtos comprados pelo maior número de clientes.',pen)}${exSection('prodCross','Venda cruzada','Pares de produtos comprados pelos mesmos clientes no período. Use para oferecer o par a quem só compra um deles.',cross)}`,null);
 }
 
 function exCitiesUi(ex){
@@ -1325,26 +1315,131 @@ function ctDrawEvolution(rows){
   },[lastLabels]);
 }
 
+// ===== Mix e Produtos (visual das páginas novas) =====
+// Cresceram/caíram: só produtos que venderam pelo menos este valor no mês anterior. Mude aqui.
+const MIX_MINIMO_MES_ANTERIOR=10000;
+// Departamentos que começam desmarcados no filtro desta página. Marcando, eles entram normalmente.
+const MP_DEPARTAMENTOS_FORA_POR_PADRAO=['Máquinas e Equipamentos'];
+const MP={p:null,tab:'departments',sort:'revenue',dir:-1,query:'',all:false,matrix:'',pair:0};
+function mpDepOut(name){const n=normalize(name);return MP_DEPARTAMENTOS_FORA_POR_PADRAO.some(x=>n.includes(normalize(x)));}
+function mpFilters(){
+  const f={};
+  if(!normalizeMulti(state.filters.supervisor).length)f.excludeSupervisors=TV_SUPERVISOES_FORA_POR_PADRAO;
+  if(!normalizeMulti(state.filters.department).length)f.excludeDepartments=MP_DEPARTAMENTOS_FORA_POR_PADRAO;
+  f.excludeRcaNames=TV_FORA_DA_PAGINA;f.minPrev=MIX_MINIMO_MES_ANTERIOR;
+  return f;
+}
+function mpVar(v){if(v==null||!Number.isFinite(Number(v)))return '<span class="ov-s">—</span>';const n=Number(v);return `<span class="mp-var ${n>0.05?'up':n<-0.05?'down':''}">${n>0?'▲':n<0?'▼':'■'} ${Math.abs(n).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span>`;}
+function mpPct(v){return v==null?'—':pct(v);}
+function mpMonth(key){const [y,m]=String(key||'').split('-');return m?MONTH_NAMES[Number(m)-1]+'/'+String(y).slice(2):'';}
 function renderProdutos(p){
-  $('#content').innerHTML=`
-    <div class="grid kpi-grid four">
-      ${kpi('Produtos faturados',integer(p.kpis?.products),'SKUs com venda no recorte')}
-      ${kpi('Clientes',integer(p.kpis?.clients),'Clientes que compraram produtos')}
-      ${kpi('Produto líder',p.top?.[0]?money(p.top[0].revenue,true):'—',p.top?.[0]?.name||'Sem dados')}
-      ${kpi('Menor faturamento',p.bottom?.[0]?money(p.bottom[0].revenue,true):'—',p.bottom?.[0]?.name||'Sem dados')}
+  MP.p=p;ovEnsureTopTools();
+  const label=$('#activeMenuLabel');if(label)label.textContent='Mix e Produtos';
+  const mt=$('#ovMarginToggle');if(mt)mt.hidden=true;
+  const ex=p.extras||{};
+  const cut=$('#ovCutoff');if(cut)cut.innerHTML='Atualização: <b>'+esc(ex.updatedAt?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(ex.updatedAt)):ovDate(ex.latest))+'</b>';
+  $('#content').className='mp-report';
+  if(!ex.kpis){$('#content').innerHTML=`<section class="ov-card"><p class="ov-s">${esc(ex.error?'Não foi possível montar Mix e Produtos: '+ex.error:'Sem vendas neste recorte.')}</p></section>`;return;}
+  const k=ex.kpis,canMargin=ex.canMargin;
+  const sOpts=ex.supervisorOptions||[],sSel=normalizeMulti(state.filters.supervisor),sChecked=n=>sSel.length?sSel.includes(n):!tvDefaultOut(n);
+  const dOpts=ex.depOptions||[],dSel=normalizeMulti(state.filters.department),dChecked=n=>dSel.length?dSel.includes(n):!mpDepOut(n);
+  const dSummary=dSel.length?(dSel.length===1?dSel[0]:integer(dSel.length)+' de '+integer(dOpts.length)):(dOpts.some(mpDepOut)?'todos, sem '+dOpts.filter(mpDepOut).join(', '):'todos');
+  const sup=`<details class="tv-sup" id="tvSupervisors"><summary>Supervisão: ${esc(tvSupervisorSummary(sOpts))} <span aria-hidden="true">▾</span></summary><div class="tv-sup-menu"><fieldset><legend class="sr-only">Supervisões</legend>${sOpts.map(o=>`<label><input type="checkbox" data-teams-supervisor="${esc(o.name)}" ${sChecked(o.name)?'checked':''}><span>${esc(o.name)}</span><small>${integer(o.count)} RCAs</small></label>`).join('')}</fieldset><div class="tv-sup-actions"><button type="button" id="teamsSelectAll">Marcar todas</button><button type="button" id="teamsClearSupervisors">Limpar</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="primary" id="teamsApplySupervisors">Aplicar</button></div></div></details>`;
+  const dep=`<details class="tv-sup" id="mpDepartments"><summary>Departamentos: ${esc(dSummary)} <span aria-hidden="true">▾</span></summary><div class="tv-sup-menu"><fieldset><legend class="sr-only">Departamentos</legend>${dOpts.map(o=>`<label><input type="checkbox" data-mp-department="${esc(o)}" ${dChecked(o)?'checked':''}><span>${esc(o)}</span></label>`).join('')}</fieldset><div class="tv-sup-actions"><button type="button" id="mpDepAll">Marcar todos</button><button type="button" id="mpDepClear">Limpar</button><span id="mpDepNote" aria-live="polite"></span><button type="button" class="primary" id="mpDepApply">Aplicar</button></div></div></details>`;
+  const period=mpMonth(ex.month)+(ex.running?' até dia '+ex.cutDay:'');
+  const cmp=ex.running?'até o mesmo dia':'mês inteiro';
+  $('#content').innerHTML=`<div class="tv-toolbar mp-toolbar">${sup}${dep}<span class="ov-s mp-period">${esc(period)}${ex.fallback?' · “Todos os meses” não se aplica aqui: mostrando o mês mais recente':''}</span></div>
+  ${ex.serverError?`<p class="mp-warn">Margem, desconto, quantidade e fornecedor não carregaram agora (${esc(ex.serverError)}). Os demais números estão corretos; tente “Atualizar bases” ou recarregue a página.</p>`:''}
+  <section class="ov-hero mp-hero" aria-label="Mix e Produtos">
+    <div class="mp-hero-grid">
+      <div><p class="ov-k">Faturamento · ${esc(period)}</p><p class="mp-hv-lg">${money(k.revenue,true)}</p><p class="ov-hs">${money(k.revenue)}</p></div>
+      ${canMargin?`<div><p class="ov-k">Margem</p><p class="ov-hv">${mpPct(k.margin)}</p><p class="ov-hs">lucro ÷ faturamento</p></div>`:''}
+      <div><p class="ov-k">Produtos vendidos</p><p class="ov-hv">${integer(k.products)}</p><p class="ov-hs">para ${integer(k.clients)} clientes</p></div>
+      <div><p class="ov-k">Mix por cliente</p><p class="ov-hv">${k.mix==null?'—':dec(k.mix)}</p><p class="ov-hs">produtos diferentes por cliente</p></div>
+      <div><p class="ov-k">Concentração</p><p class="ov-hv">${integer(k.to80)}</p><p class="ov-hs">produtos fazem 80% do faturamento (classe A)</p></div>
     </div>
-    <div class="grid equal-col">
-      <div class="panel"><div class="panel-title-row"><div><h2>Produtos com maior faturamento</h2><div class="panel-sub">Top 10 do recorte.</div></div></div><div class="chart-wrap tall"><canvas id="prodTop"></canvas></div></div>
-      <div class="panel"><div class="panel-title-row"><div><h2>Menores faturamentos</h2><div class="panel-sub">Produtos vendidos com menor resultado no período.</div></div></div><div class="chart-wrap tall"><canvas id="prodBottom"></canvas></div></div>
-    </div>
-    ${sectionHeading('Dois principais produtos por RCA','Ajuda a identificar dependência e concentração do faturamento.')}
-    <div class="table-wrap"><table><thead><tr><th>RCA</th><th>1º produto</th><th class="align-right">Fat. 1º</th><th>2º produto</th><th class="align-right">Fat. 2º</th><th class="align-right">Concentração Top 2</th></tr></thead><tbody id="top2Table"></tbody></table></div>
-  `;
-  const top=[...(p.top||[])].reverse();
-  chart($('#prodTop'),'bar',{labels:top.map(x=>x.name),datasets:[{data:top.map(x=>x.revenue),backgroundColor:'#1E2655',borderRadius:6,barThickness:15}]},{indexAxis:'y'});
-  const bottom=[...(p.bottom||[])].reverse();
-  chart($('#prodBottom'),'bar',{labels:bottom.map(x=>x.name),datasets:[{data:bottom.map(x=>x.revenue),backgroundColor:'#8991B7',borderRadius:6,barThickness:15}]},{indexAxis:'y'});
-  $('#top2Table').innerHTML=(p.top2||[]).map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.first?.name||'—')}</td><td class="align-right">${money(x.first?.revenue||0)}</td><td>${esc(x.second?.name||'—')}</td><td class="align-right">${x.second?money(x.second.revenue):'—'}</td><td class="align-right">${pct(x.share)}</td></tr>`).join('');
+    <p class="ov-hs mp-hero-note">Clientes contados pelo cliente principal. Comparações: ${esc(mpMonth(ex.previousMonth))} e ${esc(mpMonth(ex.lastYearMonth))}, ${esc(cmp)}.</p>
+  </section>
+  <section class="ov-card mp-groups"><div class="ov-head"><nav class="ct-tabs" aria-label="Agrupar por"><button type="button" data-mp-tab="departments" aria-pressed="${MP.tab==='departments'}">Departamentos</button><button type="button" data-mp-tab="suppliers" aria-pressed="${MP.tab==='suppliers'}">Fornecedores</button></nav><p class="ov-s">variação ${esc(cmp)} · desconto médio = desconto ÷ (faturamento + desconto)</p></div><div class="ov-table-wrap" id="mpGroups"></div></section>
+  <section class="ov-card mp-rank"><div class="ov-head"><p class="ov-k">Ranking de produtos</p><input id="mpSearch" class="mp-search" type="search" placeholder="Buscar produto" autocomplete="off" aria-label="Buscar produto"></div><div class="ov-table-wrap" id="mpRanking"></div><div id="mpRankMore"></div></section>
+  <section class="mp-moves" id="mpMoves"></section>
+  ${canMargin?'<section class="ov-card mp-matrix" id="mpMatrix"></section>':''}
+  <section class="ov-card mp-rcas"><div class="ov-head"><p class="ov-k">Por RCA</p><p class="ov-s">sem Cecé e sem RCAs fora da equipe · penetração = % dos clientes ativos do RCA (comprou nos últimos 89 dias) que compraram o departamento no mês</p></div><div class="ov-table-wrap" id="mpRcas"></div></section>
+  <section class="ov-card mp-cross" id="mpCross"></section>
+  <span data-capture-end></span>`;
+  bindTeamsSupervisors();mpBindDepartments();
+  $$('[data-mp-tab]').forEach(b=>b.onclick=()=>{MP.tab=b.dataset.mpTab;$$('[data-mp-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));mpDrawGroups();});
+  $('#mpSearch').value=MP.query;$('#mpSearch').oninput=e=>{MP.query=e.target.value;mpDrawRanking();};
+  mpDrawGroups();mpDrawRanking();mpDrawMoves();mpDrawMatrix();mpDrawRcas();mpDrawCross();
+}
+function mpBindDepartments(){
+  const options=$$('[data-mp-department]');if(!options.length)return;
+  const update=()=>{const n=options.filter(i=>i.checked).length;$('#mpDepNote').textContent=n?integer(n)+' marcados':'Marque ao menos um';$('#mpDepApply').disabled=!n;};
+  options.forEach(i=>i.onchange=update);
+  $('#mpDepAll').onclick=()=>{options.forEach(i=>i.checked=true);update();};
+  $('#mpDepClear').onclick=()=>{options.forEach(i=>i.checked=false);update();};
+  $('#mpDepApply').onclick=()=>{
+    const selected=options.filter(i=>i.checked).map(i=>i.dataset.mpDepartment);if(!selected.length)return;
+    const standard=options.map(i=>i.dataset.mpDepartment).filter(n=>!mpDepOut(n));
+    const same=selected.length===standard.length&&standard.every(n=>selected.includes(n));
+    state.filters.department=same?[]:selected;syncUiFromFilters();queryPage();
+  };
+  update();
+}
+function mpDrawGroups(){
+  const ex=MP.p?.extras,host=$('#mpGroups');if(!ex||!host)return;
+  const rows=MP.tab==='suppliers'?ex.suppliers:ex.departments,canMargin=ex.canMargin;
+  host.innerHTML=`<table class="ov-table mp-table"><thead><tr><th data-sort-ready="1">${MP.tab==='suppliers'?'Fornecedor':'Departamento'}</th><th data-sort-ready="1" class="num">Faturamento</th>${canMargin?'<th data-sort-ready="1" class="num">Margem</th>':''}<th data-sort-ready="1" class="num">Desconto médio</th><th data-sort-ready="1" class="num">Clientes</th><th data-sort-ready="1" class="num">vs ${esc(mpMonth(ex.previousMonth))}</th><th data-sort-ready="1" class="num">vs ${esc(mpMonth(ex.lastYearMonth))}</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td class="num"><b>${money(r.revenue,true)}</b></td>${canMargin?`<td class="num">${mpPct(r.margin)}</td>`:''}<td class="num">${mpPct(r.discount)}</td><td class="num">${integer(r.clients)}</td><td class="num">${mpVar(r.vsPrev)}</td><td class="num">${mpVar(r.vsYear)}</td></tr>`).join('')||'<tr><td colspan="7">Sem vendas neste recorte.</td></tr>'}</tbody></table>`;
+}
+function mpDrawRanking(){
+  const ex=MP.p?.extras,host=$('#mpRanking');if(!ex||!host)return;
+  const q=normalize(MP.query),canMargin=ex.canMargin;
+  const cols=[['name','Produto',''],['department','Departamento',''],['supplier','Fornecedor',''],['abc','ABC',''],['revenue','Faturamento','num'],['qty','Quantidade','num'],...(canMargin?[['margin','Margem','num']]:[]),['clients','Clientes','num'],['growth','vs '+mpMonth(ex.previousMonth),'num']];
+  let rows=(ex.ranking||[]).filter(r=>!q||normalize(r.name).includes(q)||normalize(String(r.code)).includes(q));
+  rows=rows.slice().sort((a,b)=>{const x=a[MP.sort],y=b[MP.sort];if(typeof x==='string'||typeof y==='string')return String(x??'').localeCompare(String(y??''),'pt-BR')*MP.dir;return ((x??-Infinity)-(y??-Infinity))*MP.dir;});
+  const shown=MP.all?rows:rows.slice(0,20);
+  host.innerHTML=`<table class="ov-table mp-table mp-ranking"><thead><tr><th data-sort-ready="1" class="num">#</th>${cols.map(([k,l,c])=>`<th data-sort-ready="1" class="${c}"><button type="button" class="ct-sort ${MP.sort===k?'on':''}" data-mp-sort="${k}">${esc(l)}${MP.sort===k?(MP.dir<0?' ▼':' ▲'):''}</button></th>`).join('')}</tr></thead><tbody>${shown.map((r,i)=>`<tr><td class="num ov-s">${i+1}</td><td><b>${esc(r.name)}</b><small class="ov-s ct-code">Cód. ${esc(r.code)}</small></td><td>${esc(r.department)}</td><td>${esc(r.supplier)}</td><td><span class="ex-abc ${r.abc}">${r.abc}</span></td><td class="num"><b>${money(r.revenue,true)}</b></td><td class="num">${r.qty==null?'—':integer(r.qty)}</td>${canMargin?`<td class="num">${mpPct(r.margin)}</td>`:''}<td class="num">${integer(r.clients)}</td><td class="num">${r.previous>0?mpVar(r.growth):'<span class="ov-s">novo</span>'}</td></tr>`).join('')||`<tr><td colspan="${cols.length+1}">Nenhum produto encontrado.</td></tr>`}</tbody></table>`;
+  $('#mpRankMore').innerHTML=rows.length>20?`<button type="button" class="pd-more" id="mpAll">${MP.all?'Mostrar só os 20 primeiros':'Ver todos os '+integer(rows.length)+' produtos'}</button>`:'';
+  const all=$('#mpAll');if(all)all.onclick=()=>{MP.all=!MP.all;mpDrawRanking();};
+  $$('[data-mp-sort]').forEach(b=>b.onclick=()=>{const k=b.dataset.mpSort;if(MP.sort===k)MP.dir*=-1;else{MP.sort=k;MP.dir=['name','department','supplier','abc'].includes(k)?1:-1;}mpDrawRanking();});
+}
+function mpMoveList(title,sub,items,row,empty){
+  const shown=items.slice(0,8);
+  return `<section class="ov-card mp-move"><div class="ov-head"><p class="ov-k">${esc(title)} · ${integer(items.length)}</p><p class="ov-s">${esc(sub)}</p></div>${shown.length?`<ol class="mp-move-list">${shown.map(row).join('')}</ol>${items.length>8?`<details class="mp-more"><summary>Ver os outros ${integer(items.length-8)}</summary><ol class="mp-move-list" start="9">${items.slice(8,80).map(row).join('')}</ol></details>`:''}`:`<p class="ov-s">${esc(empty)}</p>`}</section>`;
+}
+function mpDrawMoves(){
+  const ex=MP.p?.extras,host=$('#mpMoves');if(!ex||!host)return;
+  const m=ex.moves,prev=mpMonth(ex.previousMonth),min=money(ex.minPrev,true);
+  const diff=x=>`<li><span><b>${esc(x.name)}</b><small class="ov-s">${money(x.previous,true)} → ${money(x.current,true)}</small></span><span class="mp-diff ${x.change>0?'up':'down'}">${x.change>0?'+':''}${money(x.change,true)}<small>${mpVar(x.growth)}</small></span></li>`;
+  host.innerHTML=mpMoveList('Cresceram','vs '+prev+(ex.running?' até o mesmo dia':'')+' · vendiam ao menos '+min+' · pela diferença em R$',m.up,diff,'Nenhum produto cresceu entre os que vendiam ao menos '+min+'.')+
+    mpMoveList('Caíram','vs '+prev+(ex.running?' até o mesmo dia':'')+' · vendiam ao menos '+min+' · pela diferença em R$',m.down,diff,'Nenhum produto caiu entre os que vendiam ao menos '+min+'.')+
+    mpMoveList('Começaram a vender','sem nenhuma venda em '+prev+' inteiro',m.started,x=>`<li><span><b>${esc(x.name)}</b><small class="ov-s">${integer(x.clients)} clientes</small></span><span class="mp-diff up">${money(x.current,true)}</span></li>`,'Nenhum produto novo neste mês.')+
+    mpMoveList('Pararam de vender','venderam nos 3 meses anteriores e nada neste mês'+(ex.running?' (mês em andamento)':''),m.stopped,x=>`<li><span><b>${esc(x.name)}</b><small class="ov-s">última venda ${ovDate(x.last)}</small></span><span class="mp-diff down">${money(x.previous3,true)}<small>nos 3 meses</small></span></li>`,'Nenhum produto parou de vender.');
+}
+function mpDrawMatrix(){
+  const ex=MP.p?.extras,host=$('#mpMatrix');if(!ex||!host)return;
+  const mx=ex.matrix;if(!mx){host.innerHTML='<p class="ov-s">Matriz indisponível: margem não carregada.</p>';return;}
+  const cells=[['aHigh','Vende muito · margem alta','proteger e manter abastecido','g'],['aLow','Vende muito · margem baixa','rever preço e desconto','y'],['bcHigh','Vende pouco · margem alta','oportunidade: empurrar','b'],['bcLow','Vende pouco · margem baixa','avaliar se vale manter','r']];
+  const pick=mx.groups[MP.matrix]||null;
+  host.innerHTML=`<div class="ov-head"><p class="ov-k">Matriz ABC × margem</p><p class="ov-s">vende muito = classe A (80% do faturamento) · corte da margem: ${mpPct(mx.cut)} (margem do recorte) · clique num grupo para ver os produtos</p></div>
+  <div class="mp-matrix-grid">${cells.map(([k,t,h,c])=>`<button type="button" class="mp-cell ${c} ${MP.matrix===k?'on':''}" data-mp-matrix="${k}"><b>${integer(mx.groups[k].length)}</b><span>${esc(t)}</span><small>${esc(h)} · ${money(mx.groups[k].reduce((a,p)=>a+p.revenue,0),true)}</small></button>`).join('')}</div>
+  ${mx.noMargin?`<p class="ov-s">${integer(mx.noMargin)} produtos sem lucro informado ficaram fora da matriz.</p>`:''}
+  ${pick?`<div class="ov-table-wrap"><table class="ov-table mp-table"><thead><tr><th data-sort-ready="1">Produto</th><th data-sort-ready="1">ABC</th><th data-sort-ready="1" class="num">Faturamento</th><th data-sort-ready="1" class="num">Margem</th></tr></thead><tbody>${pick.map(p=>`<tr><td><b>${esc(p.name)}</b></td><td><span class="ex-abc ${p.abc}">${p.abc}</span></td><td class="num">${money(p.revenue,true)}</td><td class="num">${mpPct(p.margin)}</td></tr>`).join('')||'<tr><td colspan="4">Nenhum produto neste grupo.</td></tr>'}</tbody></table></div>`:''}`;
+  $$('[data-mp-matrix]').forEach(b=>b.onclick=()=>{MP.matrix=MP.matrix===b.dataset.mpMatrix?'':b.dataset.mpMatrix;mpDrawMatrix();});
+}
+function mpDrawRcas(){
+  const ex=MP.p?.extras,host=$('#mpRcas');if(!ex||!host)return;
+  const deps=ex.depList||[],canMargin=ex.canMargin;
+  host.innerHTML=`<table class="ov-table mp-table mp-rca"><thead><tr><th data-sort-ready="1">RCA</th><th data-sort-ready="1">Supervisor</th><th data-sort-ready="1" class="num">Faturamento</th>${canMargin?'<th data-sort-ready="1" class="num">Margem</th>':''}<th data-sort-ready="1" class="num">Desconto médio</th><th data-sort-ready="1" class="num">Mix por cliente</th><th data-sort-ready="1">2 principais produtos</th>${deps.map(d=>`<th data-sort-ready="1" class="num" title="Penetração: ${esc(d)}">${esc(d)}</th>`).join('')}</tr></thead><tbody>${(ex.rcas||[]).map(r=>`<tr><td><b>${esc(r.name)}</b><small class="ov-s ct-code">${integer(r.active)} clientes ativos</small></td><td>${esc(r.supervisor)}</td><td class="num"><b>${money(r.revenue,true)}</b></td>${canMargin?`<td class="num">${mpPct(r.margin)}</td>`:''}<td class="num">${mpPct(r.discount)}</td><td class="num">${r.mix==null?'—':dec(r.mix)}</td><td class="mp-top2"><b>${pct(r.top2Share)}</b><small class="ov-s">${r.top2.map(t=>esc(t.name)+' ('+pct(t.share)+')').join(' · ')}</small></td>${deps.map(d=>`<td class="num">${mpPct(r.penetration[d])}</td>`).join('')}</tr>`).join('')||'<tr><td colspan="8">Nenhum RCA neste recorte.</td></tr>'}</tbody></table>`;
+}
+function mpDrawCross(){
+  const ex=MP.p?.extras,host=$('#mpCross');if(!ex||!host)return;
+  const pairs=ex.cross||[],sel=pairs[MP.pair]||null;
+  const list=(title,rows)=>`<div><p class="ov-k">${esc(title)} · ${integer(rows.length)}</p>${rows.length?`<div class="ov-table-wrap"><table class="ov-table mp-table"><thead><tr><th data-sort-ready="1">Cliente</th><th data-sort-ready="1">RCA</th><th data-sort-ready="1" class="num">Comprou (3 meses)</th></tr></thead><tbody>${rows.slice(0,50).map(c=>`<tr><td><b>${esc(c.name)}</b><small class="ov-s ct-code">Cód. ${esc(c.id)}</small></td><td>${esc(c.rca)}</td><td class="num">${money(c.value,true)}</td></tr>`).join('')}</tbody></table></div>${rows.length>50?`<p class="ov-s">Mostrando os 50 que mais compraram de ${integer(rows.length)}.</p>`:''}`:'<p class="ov-s">Ninguém nesta situação.</p>'}</div>`;
+  host.innerHTML=`<div class="ov-head"><p class="ov-k">Venda cruzada</p><p class="ov-s">pares mais comprados pelos mesmos clientes nos últimos 3 meses · sem pares da mesma linha (mesmas 2 primeiras palavras) · clique num par</p></div>
+  ${pairs.length?`<div class="mp-pairs">${pairs.map((p,i)=>`<button type="button" class="mp-pair ${i===MP.pair?'on':''}" data-mp-pair="${i}"><span><b>${esc(p.a.name)}</b> + <b>${esc(p.b.name)}</b></span><small>${integer(p.both)} clientes compram os dois</small></button>`).join('')}</div>
+  ${sel?`<div class="mp-cross-lists">${list('Compram '+sel.a.name+', mas não '+sel.b.name,sel.onlyA)}${list('Compram '+sel.b.name+', mas não '+sel.a.name,sel.onlyB)}</div>`:''}`:'<p class="ov-s">Poucos clientes compraram dois produtos de linhas diferentes neste recorte.</p>'}`;
+  $$('[data-mp-pair]').forEach(b=>b.onclick=()=>{MP.pair=Number(b.dataset.mpPair);mpDrawCross();});
 }
 
 function renderCidades(p){
