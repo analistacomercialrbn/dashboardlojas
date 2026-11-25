@@ -569,7 +569,8 @@ function updateAdvancedFilterCount(){
 
 function queryPage(){
   // A marca da Visão Geral acompanha a tela atual (a Visão equipes não passa por renderPage).
-  document.body.classList.toggle('ov-page',state.module==='commercial'&&state.page==='overview');
+  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'));
+  document.body.classList.toggle('tv-page',state.module==='commercial'&&state.page==='teams');
   if(state.module==='hub')return;
   if(state.module==='administration'){renderUsers();return;}
   if(state.module==='logistics'){logShow();return;}
@@ -666,9 +667,8 @@ const TEAM_INDICATORS={
   margin:{label:'Margem bruta',unit:'margem sobre faturamento',explanation:'Lucro bruto total ÷ faturamento. Se faltar lucro em alguma venda, a margem fica indisponível.'},
   ticket:{label:'Ticket médio',unit:'por cliente principal',explanation:'Faturamento do mês ÷ clientes principais com compra. Soma as compras dos cadastros vinculados dentro do RCA.'}
 };
-const TEAMS={indicator:'revenue',group:'other',search:'',payload:null,key:'',loadedAt:0,paused:false,model:null};
+const TEAMS={indicator:'revenue',group:'all',search:'',payload:null,key:'',loadedAt:0,paused:false,model:null};
 
-function teamsFilters(){return {...state.filters,teamGroup:TEAMS.group};}
 function teamsKey(){return JSON.stringify([state.user?.login,state.user?.accessVersion,teamsFilters(),state.serverUpdatedAt]);}
 function teamsGroupLabel(group){return group==='health'?'Equipe Saúde':'Demais equipes';}
 
@@ -708,10 +708,6 @@ function teamsRanking(rows,indicator){
   });
 }
 
-function teamsTabs(payload){
-  return `<nav class="teams-group-tabs" aria-label="Equipe do ranking">${['other','health'].map(group=>`<button type="button" data-teams-group="${group}" aria-pressed="${TEAMS.group===group}">${esc(teamsGroupLabel(group))}${payload?.groupCounts?`<small>${integer(payload.groupCounts[group]||0)} ativos</small>`:''}</button>`).join('')}<span>Somente RCAs ativos</span></nav><nav class="teams-indicator-tabs" aria-label="Indicador do ranking">${Object.entries(TEAM_INDICATORS).filter(([key])=>key!=='margin'||payload?.canMargin!==false).map(([key,config])=>`<button type="button" data-teams-indicator="${key}" aria-pressed="${TEAMS.indicator===key}">${esc(config.label)}</button>`).join('')}</nav>`;
-}
-
 async function queryTeams(requestId){
   const current=()=>state.page==='teams'&&state.requestId===requestId&&(!state.module||state.module==='commercial');
   if(!/^20\d{2}$/.test(String(state.filters.year))||!/^([1-9]|1[0-2])$/.test(String(state.filters.month))){
@@ -738,16 +734,128 @@ async function queryTeams(requestId){
   }
 }
 
+// ===== Visão equipes (relatório por aba, no visual da Visão Geral) =====
+// RCAs que não aparecem nesta página (nem no ranking, nem nos números da equipe). Edite a lista para mudar.
+const TV_FORA_DA_PAGINA=['Cecé'];
+// Supervisões que começam desmarcadas no filtro desta página. Marcando no filtro, elas entram normalmente.
+const TV_SUPERVISOES_FORA_POR_PADRAO=['Balcão Rebanho'];
+const TV_GROUPS=[['all','Visão geral'],['health','Saúde'],['other','Nutrição']];
+const TV_QUESTIONS={revenue:'Quem está no ritmo da meta?',clients:'Quem mais positivou clientes?',mix:'Quem vende mais produtos por cliente?',margin:'Quem tem a melhor margem?',ticket:'Quem tem o maior ticket médio?'};
+function tvGroupLabel(group){return (TV_GROUPS.find(([k])=>k===group)||TV_GROUPS[0])[1];}
+function tvDefaultOut(name){const n=normalize(name);return TV_SUPERVISOES_FORA_POR_PADRAO.some(x=>normalize(x)===n);}
+function teamsFilters(){
+  const f={...state.filters,teamGroup:TEAMS.group,excludeRcaNames:TV_FORA_DA_PAGINA};
+  if(!normalizeMulti(state.filters.supervisor).length)f.excludeSupervisors=TV_SUPERVISOES_FORA_POR_PADRAO;
+  return f;
+}
+function tvSupervisorSummary(options){
+  const selected=normalizeMulti(state.filters.supervisor);
+  if(!selected.length){const out=options.filter(o=>tvDefaultOut(o.name)).map(o=>o.name);return out.length?'todas, sem '+out.join(', '):'todas';}
+  return selected.length===1?selected[0]:integer(selected.length)+' de '+integer(options.length);
+}
+// Barra de equipes + filtro compacto de supervisão + abas dos indicadores.
+function teamsTabs(payload){
+  const options=payload?.supervisorOptions||[],selected=normalizeMulti(state.filters.supervisor);
+  const checked=name=>selected.length?selected.includes(name):!tvDefaultOut(name);
+  const sup=options.length?`<details class="tv-sup" id="tvSupervisors"><summary>Supervisão: ${esc(tvSupervisorSummary(options))} <span aria-hidden="true">▾</span></summary><div class="tv-sup-menu"><fieldset><legend class="sr-only">Supervisões do ranking</legend>${options.map(o=>`<label><input type="checkbox" data-teams-supervisor="${esc(o.name)}" ${checked(o.name)?'checked':''}><span>${esc(o.name)}</span><small>${integer(o.count)}</small></label>`).join('')}</fieldset><div class="tv-sup-actions"><button type="button" id="teamsSelectAll">Marcar todas</button><button type="button" id="teamsClearSupervisors">Limpar</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="primary" id="teamsApplySupervisors">Aplicar</button></div></div></details>`:'<span class="tv-sup-off">Supervisão: carregando…</span>';
+  return `<div class="tv-toolbar">${sup}<nav class="tv-groups" aria-label="Equipe">${TV_GROUPS.map(([k,label])=>`<button type="button" data-teams-group="${k}" aria-pressed="${TEAMS.group===k}">${esc(label)}</button>`).join('')}</nav></div>
+  <nav class="tv-tabs" aria-label="Indicador">${Object.entries(TEAM_INDICATORS).filter(([key])=>key!=='margin'||payload?.canMargin!==false).map(([key,c])=>`<button type="button" data-teams-indicator="${key}" aria-pressed="${TEAMS.indicator===key}">${esc(c.label)}</button>`).join('')}</nav>`;
+}
 function bindTeamsTabs(){
   $$('[data-teams-indicator]').forEach(button=>button.onclick=()=>{
     TEAMS.indicator=button.dataset.teamsIndicator;TEAMS.search='';
-    if(TEAMS.payload&&TEAMS.key===teamsKey())renderTeams(TEAMS.payload);
-    else queryPage();
+    if(TEAMS.payload&&TEAMS.key===teamsKey())renderTeams(TEAMS.payload);else queryPage();
   });
   $$('[data-teams-group]').forEach(button=>button.onclick=()=>{
     if(TEAMS.group===button.dataset.teamsGroup)return;
     TEAMS.group=button.dataset.teamsGroup;TEAMS.search='';TEAMS.model=null;queryPage();
   });
+  bindTeamsSupervisors();
+}
+function bindTeamsSupervisors(){
+  const options=$$('[data-teams-supervisor]');if(!options.length)return;
+  const update=()=>{const n=options.filter(i=>i.checked).length;$('#teamsSelectionNote').textContent=n?integer(n)+' marcadas':'Marque ao menos uma';$('#teamsApplySupervisors').disabled=!n;};
+  options.forEach(i=>i.onchange=update);
+  $('#teamsSelectAll').onclick=()=>{options.forEach(i=>i.checked=true);update();};
+  $('#teamsClearSupervisors').onclick=()=>{options.forEach(i=>i.checked=false);update();};
+  $('#teamsApplySupervisors').onclick=()=>{
+    const selected=options.filter(i=>i.checked).map(i=>i.dataset.teamsSupervisor);if(!selected.length)return;
+    // Seleção igual ao padrão (todas menos o Balcão) volta a ser "padrão"; qualquer outra fica explícita.
+    const standard=options.map(i=>i.dataset.teamsSupervisor).filter(n=>!tvDefaultOut(n));
+    const same=selected.length===standard.length&&standard.every(n=>selected.includes(n));
+    state.filters.supervisor=same?[]:selected;TEAMS.search='';syncUiFromFilters();queryPage();
+  };
+  update();
+}
+
+function tvScale(model){
+  if(model.revenue)return Math.min(150,Math.max(110,...model.eligible.map(r=>Number(r.score)||0)));
+  return Math.max(1,...model.eligible.map(r=>Math.max(0,Number(r.score)||0)),...model.ranked.map(r=>Number(r.goals?.[model.indicator])||0))*1.08;
+}
+function tvBar(row,model,scale){
+  const w=v=>v==null||!Number.isFinite(Number(v))?0:Math.max(0,Math.min(100,Number(v)/scale*100));
+  const goal=model.revenue?(row.goals?.revenue?100:null):row.goals?.[model.indicator];
+  const actual=model.revenue?row.attainment:row[model.indicator];
+  return `<div class="tv-bar tone-${row.tone}" aria-hidden="true">${model.revenue?`<i class="p" style="width:${w(row.projectedAttainment)}%"></i>`:''}<i class="a" style="width:${w(actual)}%"></i>${goal?`<span class="g" style="left:${w(goal)}%"></span>`:''}</div>`;
+}
+function tvMain(row,model){return model.revenue?pct(row.projectedAttainment):teamsValue(row[model.indicator],model.indicator);}
+function tvDetail(row,model){
+  if(model.revenue)return row.goals?.revenue?'Faturado '+pct(row.attainment)+' da meta':'sem meta';
+  const goal=row.goals?.[model.indicator];return goal?'Meta '+teamsValue(goal,model.indicator)+' · '+pct(row.ratio)+' atingido':'';
+}
+function tvImageName(){
+  const slug=v=>normalize(v).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  return 'rebanho-equipes-'+slug(TEAM_INDICATORS[TEAMS.indicator].label)+'-'+slug(tvGroupLabel(TEAMS.group))+'-'+state.filters.year+'-'+String(state.filters.month).padStart(2,'0')+'.png';
+}
+
+function renderTeams(payload){
+  if(TEAMS.indicator==='margin'&&!payload.canMargin)TEAMS.indicator='revenue';
+  ovEnsureTopTools();
+  const label=$('#activeMenuLabel');if(label)label.textContent='Visão equipes';
+  const mt=$('#ovMarginToggle');if(mt)mt.hidden=true;
+  const model=teamsModel(payload);TEAMS.model=model;
+  const {indicator,config,revenue,ranked,eligible}=model,cal=payload.calendar||{};
+  const cut=$('#ovCutoff b');if(cut)cut.textContent=ovDate(cal.cutoff||cal.lastBilled||'');
+  const withGoal=ranked.filter(r=>r.goals?.revenue>0),goal=withGoal.reduce((s,r)=>s+r.goals.revenue,0);
+  const actual=withGoal.reduce((s,r)=>s+(r.revenue||0),0),projected=withGoal.reduce((s,r)=>s+(r.projected||0),0);
+  const attainment=goal?actual/goal*100:null,projection=goal&&cal.factor!=null?projected/goal*100:null;
+  const indicatorGoals=ranked.filter(r=>r.goals?.[indicator]>0).length;
+  const [y,m]=String(cal.month||'').split('-'),monthLabel=m?MONTH_NAMES[Number(m)-1]+' '+y:'';
+  const days=cal.closed?'mês encerrado':cal.future?'mês futuro':integer(cal.remainingToday??cal.remaining)+' dias úteis até o fim do mês';
+  const tones={green:0,yellow:0,red:0,muted:0};ranked.forEach(r=>{tones[r.tone in tones?r.tone:'muted']++;});
+  const toneText=revenue?{green:'projeção ≥ 100%',yellow:'de 90% a 99,9%',red:'abaixo de 90%',muted:'sem meta'}
+    :indicatorGoals?{green:'meta alcançada / grupo de cima',yellow:'perto da meta / grupo do meio',red:'abaixo / grupo de baixo',muted:'sem resultado'}
+    :{green:'grupo de cima',yellow:'grupo do meio',red:'grupo de baixo',muted:'sem resultado'};
+  const outSups=normalizeMulti(state.filters.supervisor).length?[]:(payload.supervisorOptions||[]).filter(o=>tvDefaultOut(o.name)).map(o=>o.name);
+  const scopeParts=['Supervisão: '+tvSupervisorSummary(payload.supervisorOptions||[])];
+  for(const [key,name] of [['rca','RCA'],['department','Departamento'],['uf','UF'],['region','Região'],['city','Cidade']]){const v=normalizeMulti(state.filters[key]);if(v.length)scopeParts.push(name+': '+v.join(', '));}
+  const top=eligible.slice(0,3),rest=ranked.filter(r=>!top.includes(r)),scale=tvScale(model);
+  const medals=['gold','silver','bronze'];
+  const facts=revenue?[['Da meta',pct(attainment),'faturado de '+integer(withGoal.length)+' RCAs com meta'],['Projeção',pct(projection),cal.closed?'mês encerrado':'pelo ritmo de dias úteis']]
+    :[[config.label+' da equipe',teamsValue(payload.summary?.[indicator],indicator),config.unit],...(indicatorGoals?[['Com meta',integer(indicatorGoals)+' RCAs','meta cadastrada no indicador']]:[])];
+  const read=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(payload.updatedAt));
+  const legend=revenue?'Barra escura: faturado · barra clara: projeção até o fim do mês · risco: meta (100%).':'Barra: resultado comparado com o maior do recorte'+(indicatorGoals?' · risco: meta do RCA.':'.');
+  const outs=['Somente RCAs ativos',outSups.length?outSups.join(', ')+' fora do ranking':'',TV_FORA_DA_PAGINA.length?TV_FORA_DA_PAGINA.join(', ')+' fora da página':''].filter(Boolean).join('; ');
+  $('#content').className='teams-view tv-report';
+  $('#content').innerHTML=`${teamsTabs(payload)}
+  <p class="tv-scope">${esc(scopeParts.join(' · '))}</p>
+  <section class="tv-hero">
+    <div class="tv-hero-top">
+      <div class="tv-hero-title"><p class="ov-k">${esc(tvGroupLabel(TEAMS.group))} · ${esc(monthLabel)}</p><h2>${esc(TV_QUESTIONS[indicator]||config.label)}</h2><p class="tv-hs">${revenue?'Ordem pela projeção de atingimento':'Ordem pelo resultado real · empates na mesma posição'} · ${esc(days)}</p></div>
+      <div class="tv-hero-facts"><div><p class="ov-k">RCAs no ranking</p><p class="tv-hv">${integer(ranked.length)}</p><p class="tv-hs">${esc(outSups.length?'sem '+outSups.join(', '):'todas as supervisões marcadas')}</p></div>${facts.map(([l,v,n])=>`<div><p class="ov-k">${esc(l)}</p><p class="tv-hv">${esc(v)}</p><p class="tv-hs">${esc(n)}</p></div>`).join('')}</div>
+    </div>
+    <div><div class="tv-dist">${['green','yellow','red','muted'].filter(t=>tones[t]).map(t=>`<i class="${t}" style="flex:${tones[t]}"></i>`).join('')}</div>
+      <div class="tv-dist-legend">${['green','yellow','red','muted'].map(t=>`<span class="${tones[t]?'':'is-zero'}"><b class="${t}">● ${integer(tones[t])}</b> ${esc(toneText[t])}</span>`).join('')}</div></div>
+  </section>
+  ${top.length?`<div class="tv-podium">${top.map((r,i)=>`<article class="tv-pod ${medals[i]}"><div class="tv-pod-top"><span class="tv-medal">${integer(r.rank)}º</span><div class="tv-pod-name"><strong>${esc(r.name)}</strong><small>RCA ${esc(r.code)} · ${esc(r.supervisor)}</small></div><div class="tv-pod-value"><strong class="tone-${r.tone}">${tvMain(r,model)}</strong><small>${revenue?'projeção':esc(config.unit)}</small></div></div>${tvBar(r,model,scale)}${tvDetail(r,model)?`<p class="ov-s">${esc(tvDetail(r,model))}</p>`:''}</article>`).join('')}</div>`:''}
+  <section class="tv-rank">${rest.length?`<div class="ov-table-wrap"><table class="tv-table"><thead><tr><th data-sort-ready="1">Pos.</th><th data-sort-ready="1">Vendedor</th><th data-sort-ready="1" class="bar">${revenue?'Faturado e projeção × meta':'Resultado'+(indicatorGoals?' × meta':'')}</th><th data-sort-ready="1" class="num">${revenue?'Faturado':'Resultado'}</th><th data-sort-ready="1" class="num">${revenue?'Projeção':indicatorGoals?'% da meta':''}</th></tr></thead><tbody>${rest.map(r=>{
+      const noGoal=revenue&&!r.goals?.revenue;
+      return `<tr class="tone-${r.tone}"><td class="pos">${r.rank?integer(r.rank)+'º':'—'}</td><td><b>${esc(r.name)}</b> <span class="ov-s">· RCA ${esc(r.code)} · ${esc(r.supervisor)}</span></td><td class="bar">${tvBar(r,model,scale)}</td>${noGoal?'<td class="num ov-s" colspan="2">sem meta</td>':`<td class="num">${revenue?pct(r.attainment):teamsValue(r[indicator],indicator)}</td><td class="num"><b class="tone-${r.tone}">${revenue?pct(r.projectedAttainment):indicatorGoals&&r.goals?.[indicator]?pct(r.ratio):''}</b></td>`}</tr>`;}).join('')}</tbody></table></div>`:'<p class="ov-s tv-empty">'+(ranked.length?'Todos os RCAs do recorte estão no pódio.':'Nenhum RCA ativo neste recorte. Confira a equipe, a supervisão e os filtros.')+'</p>'}
+    <div class="tv-foot"><p class="ov-s">${esc(legend)} ${esc(outs)}.</p><p class="ov-s">Leitura: ${esc(read)}</p></div>
+  </section>
+  <span data-capture-end></span>
+  <details class="teams-method panel ov-noprint"><summary>Como os indicadores e a projeção são calculados</summary><p><strong>Equipes:</strong> Saúde reúne os especialistas identificados na coluna Saúde Animal da matriz de cobertura que não atendem Nutrição, Aves ou Suínos; Nutrição reúne os demais; Visão geral junta todos. Só entram RCAs com cadastro ativo na base auxiliar, inclusive os sem venda.</p><p><strong>Faturamento:</strong> apenas FECHADO, pela data de faturamento. Projeção = faturado ÷ dias úteis decorridos × dias úteis do mês. % da meta e projeção da equipe consideram só os RCAs com meta.</p><p><strong>Positivações:</strong> clientes principais com venda no mês. <strong>Mix:</strong> produtos distintos por cliente principal. <strong>Ticket:</strong> faturamento ÷ clientes principais com compra. <strong>Margem bruta:</strong> soma de Vl Lucro ÷ soma do faturamento.</p><p><strong>Cores:</strong> com meta, verde ≥ 100%, amarelo de 90% a 99,9% e vermelho abaixo de 90%; sem meta, terço de cima, do meio e de baixo do ranking.</p><p><strong>Calendário:</strong> segunda a sexta, feriados nacionais e datas adicionais cadastradas em FERIADOS na base auxiliar.</p></details>`;
+  bindTeamsTabs();
 }
 
 function teamsModel(payload,indicator=TEAMS.indicator,search=TEAMS.search){
@@ -766,13 +874,6 @@ function teamsModel(payload,indicator=TEAMS.indicator,search=TEAMS.search){
   return {payload,indicator,revenue,config,ranked,eligible,visible,leader,cards,group:payload.teamGroup||TEAMS.group,search,filters:JSON.parse(JSON.stringify(state.filters))};
 }
 
-function teamsSupervisors(payload){
-  const selected=normalizeMulti(state.filters.supervisor),options=payload.supervisorOptions||[];
-  const marked=selected.length?options.filter(option=>selected.includes(option.name)).length:options.length;
-  const summary=!selected.length||marked===options.length?'Todas as '+integer(options.length)+' supervisões':integer(marked)+' de '+integer(options.length)+' supervisões';
-  return `<details class="panel teams-scope-panel"${TEAMS.scopeOpen?' open':''}><summary class="teams-scope-summary"><span class="teams-scope-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16l-6 8v6l-4-2v-4Z"/></svg></span><span><strong>Filtrar por supervisão</strong><small>${esc(summary)} · posições e cores recalculadas dentro da seleção</small></span><span class="teams-scope-chevron" aria-hidden="true"></span></summary><fieldset class="teams-supervisor-options"><legend class="sr-only">Supervisões do ranking</legend>${options.map(option=>`<label><input type="checkbox" data-teams-supervisor="${esc(option.name)}" ${!selected.length||selected.includes(option.name)?'checked':''}><span>${esc(option.name)}</span><small>${integer(option.count)}</small></label>`).join('')}</fieldset><div class="teams-scope-actions"><button type="button" class="btn secondary small" id="teamsSelectAll">Marcar todas</button><button type="button" class="btn secondary small" id="teamsClearSupervisors">Limpar seleção</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="btn primary small" id="teamsApplySupervisors">Aplicar supervisões</button></div></details>`;
-}
-
 function teamsScopeText(model){
   const filters=model.filters,parts=[teamsGroupLabel(model.group)];
   const supervisors=normalizeMulti(filters.supervisor);
@@ -783,194 +884,6 @@ function teamsScopeText(model){
   if(model.search)parts.push('Busca: '+model.search);
   return parts.join(' · ');
 }
-
-function teamsToneLabels(revenue){
-  return revenue?{green:'Projeção ≥ 100%',yellow:'Projeção de 90% a 99,9%',red:'Projeção abaixo de 90%',muted:'Sem meta ou sem resultado'}
-    :{green:'Faixa superior',yellow:'Faixa intermediária',red:'Faixa inferior',muted:'Sem resultado'};
-}
-
-function teamsDistribution(model){
-  const labels=teamsToneLabels(model.revenue),total=Math.max(1,model.ranked.length);
-  const counts={green:0,yellow:0,red:0,muted:0};model.ranked.forEach(row=>{counts[row.tone in counts?row.tone:'muted']++;});
-  const tones=['green','yellow','red','muted'].filter(tone=>counts[tone]);
-  return `<section class="panel teams-distribution" aria-label="Distribuição dos vendedores por sinalização"><header><h3>${model.revenue?'Como a equipe está em relação à meta':'Como a equipe se distribui'}</h3><p>${integer(model.ranked.length)} RCAs ativos no recorte</p></header><div class="teams-distribution-bar" role="img" aria-label="${esc(tones.map(tone=>labels[tone]+': '+counts[tone]).join('; '))}">${tones.map(tone=>`<i class="tone-${tone}" style="flex:${counts[tone]}"></i>`).join('')}</div><div class="teams-distribution-legend">${['green','yellow','red','muted'].map(tone=>`<span class="${counts[tone]?'':'is-empty'}"><i class="teams-dot ${tone}" aria-hidden="true"></i><strong>${integer(counts[tone])}</strong>${esc(labels[tone])}<small>${pct(counts[tone]/total*100)}</small></span>`).join('')}</div></section>`;
-}
-
-function teamsMainValue(row,model){
-  return model.revenue?pct(row.projectedAttainment):teamsValue(row[model.indicator],model.indicator);
-}
-
-function teamsPodium(model){
-  if(model.eligible.length<3)return '';
-  const medals=['1º','2º','3º'],top=model.eligible.slice(0,3);
-  return `<section class="teams-podium" aria-label="Três primeiros do ranking">${top.map((row,i)=>`<article class="teams-podium-card place-${i+1} teams-tone-${row.tone}"><span class="teams-medal" aria-hidden="true">${medals[i]}</span><div><small>${i===0?'Liderança do ranking':integer(row.rank)+'º lugar'}</small><strong>${esc(row.name)}</strong><span>RCA ${esc(row.code)} · ${esc(row.supervisor)}</span></div><div class="teams-podium-value"><strong>${teamsMainValue(row,model)}</strong><small>${model.revenue?'projetado da meta':esc(model.config.unit)}</small></div></article>`).join('')}</section>`;
-}
-
-function teamsScale(model){
-  const {revenue,indicator,eligible,ranked}=model;
-  if(revenue)return Math.min(150,Math.max(110,...eligible.map(row=>Number(row.score)||0)));
-  return Math.max(1,...eligible.map(row=>Math.max(0,Number(row.score)||0)),...ranked.map(row=>Number(row.goals?.[indicator])||0))*1.08;
-}
-
-function teamsBar(row,model,scale){
-  const width=value=>value==null||!Number.isFinite(Number(value))?0:Math.max(0,Math.min(100,Number(value)/scale*100));
-  const goal=model.revenue?(row.goals?.revenue?100:null):row.goals?.[model.indicator];
-  const actual=model.revenue?row.attainment:row[model.indicator];
-  const ghost=model.revenue?`<i class="teams-bar-projection" style="width:${width(row.projectedAttainment)}%"></i>`:'';
-  const marker=goal?`<span class="teams-bar-goal" style="left:${width(goal)}%"><b>Meta</b></span>`:'';
-  return `<div class="teams-bar" aria-hidden="true"><div class="teams-bar-track">${ghost}<i class="teams-bar-actual" style="width:${width(actual)}%"></i>${marker}</div></div>`;
-}
-
-function teamsRow(row,model,scale){
-  const {revenue,indicator,config}=model,goal=row.goals?.[indicator];
-  const main=revenue?`<strong>${pct(row.projectedAttainment)}</strong><small>${row.projectedAttainment==null?(row.goals?.revenue?'Projeção indisponível':'Sem meta cadastrada'):'projeção da meta'}</small>`
-    :`<strong>${teamsValue(row[indicator],indicator)}</strong><small>${esc(config.unit)}</small>`;
-  const detail=revenue?(row.goals?.revenue?`<span>Faturado <b>${pct(row.attainment)}</b> da meta</span>`:'<span>Sem meta cadastrada</span>')
-    :`<span>${goal?'Meta <b>'+teamsValue(goal,indicator)+'</b> · '+pct(row.ratio)+' atingido':'Sem meta cadastrada'}</span>`;
-  return `<article class="teams-line teams-tone-${row.tone}"><div class="teams-line-place">${row.rank?integer(row.rank)+'º':'—'}</div><div class="teams-line-who"><strong>${esc(row.name)}</strong><small>RCA ${esc(row.code)} · ${esc(row.supervisor)}</small></div><div class="teams-line-bar">${teamsBar(row,model,scale)}${detail}</div><div class="teams-line-value">${main}</div><div class="teams-line-status"><span class="teams-pill tone-${row.tone}"><i class="teams-dot ${row.tone}" aria-hidden="true"></i>${esc(row.status)}</span></div></article>`;
-}
-
-function renderTeams(payload){
-  if(TEAMS.indicator==='margin'&&!payload.canMargin)TEAMS.indicator='revenue';
-  let model=teamsModel(payload);TEAMS.model=model;
-  const {indicator,config,revenue,ranked,cards}=model,calendar=payload.calendar;
-  const withGoals=ranked.filter(row=>row.goals?.[indicator]>0).length,labels=teamsToneLabels(revenue);
-  const cutoff=calendar.cutoff?calendar.cutoff.split('-').reverse().join('/'):'Mês futuro';
-  const title=revenue?'Quem está no ritmo da meta?':'Quem se destaca em '+config.label.toLocaleLowerCase('pt-BR')+'?';
-  const scale=teamsScale(model);
-  $('#content').className='teams-view teams-v2'+(TEAMS.paused?' teams-motion-paused':'');
-  $('#content').innerHTML=`${teamsTabs(payload)}
-    <section class="teams-hero"><div><span class="teams-eyebrow">REBANHO · VISÃO EQUIPES · ${esc(teamsGroupLabel(model.group).toLocaleUpperCase('pt-BR'))}</span><h2>${esc(title)}</h2><p>${esc(config.explanation)}</p></div><div class="teams-period"><span>${esc(calendar.month.slice(5)+'/'+calendar.month.slice(0,4))}</span><strong>${calendar.closed?'Mês encerrado':calendar.future?'Mês futuro':integer(calendar.remainingToday??calendar.remaining)+' dias úteis até o fim do mês'}</strong><small>Corte dos dados: ${esc(cutoff)}</small>${calendar.remainingToday!=null&&calendar.remaining>calendar.remainingToday?'<small>Projeção: '+integer(calendar.remaining)+' dias úteis após o corte</small>':''}</div></section>
-    <div class="teams-summary ${revenue?'':'teams-summary-compact'}">${cards.map(card=>kpi(card.label,esc(card.value),esc(card.note))).join('')}</div>
-    ${teamsDistribution(model)}
-    ${teamsSupervisors(payload)}
-    ${teamsPodium(model)}
-    <section class="panel teams-ranking-panel"><header class="teams-ranking-heading"><div><h3>Ranking de ${esc(config.label.toLocaleLowerCase('pt-BR'))}</h3><p>${revenue?'Maior projeção de atingimento primeiro. Apenas porcentagens. RCAs sem meta aparecem ao final.':'Maior resultado real primeiro. Empates recebem a mesma posição.'}</p></div><div class="teams-ranking-tools"><label class="teams-search"><span class="sr-only">Buscar vendedor ou equipe</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="teamsSearch" type="search" placeholder="Buscar nome, código ou supervisor" value="${esc(TEAMS.search)}"></label><button type="button" class="btn primary small" id="teamsDownload" ${!model.visible.length?'disabled':''}>Baixar imagem</button></div></header>
-      <p class="teams-current-scope">${esc(teamsScopeText(model))}</p>
-      <div class="teams-legend">${revenue?'<span><i class="teams-key-actual"></i>Faturado</span><span><i class="teams-key-projection"></i>Projeção até o fim do mês</span><span><i class="teams-key-goal"></i>Meta (100%)</span>':`<span><i class="teams-key-actual"></i>Resultado</span>${withGoals?'<span><i class="teams-key-goal"></i>Meta mensal</span>':''}`}<button type="button" id="teamsPause" aria-pressed="${TEAMS.paused}">${TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante'}</button></div>
-      ${!revenue?`<p class="teams-rule-note">${withGoals?'Vendedores com meta cadastrada: verde ≥100%, amarelo de 90% a 99,9%, vermelho abaixo de 90%. Para os demais, a cor segue a posição relativa.':'As cores comparam as posições no ranking: terço superior, intermediário e inferior. Não representam atingimento de meta.'}</p>`:''}
-      <div id="teamsRankingRows"></div><p id="teamsExportStatus" class="teams-export-status" role="status"></p>
-      <footer class="teams-ranking-footer"><span id="teamsVisibleCount"></span><span>Leitura: ${esc(new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(payload.updatedAt)))}</span></footer>
-    </section>
-    <details class="teams-method panel"><summary>Como os indicadores e a projeção são calculados</summary><p><strong>Equipes:</strong> Saúde reúne os especialistas identificados na coluna Saúde Animal da matriz de cobertura que não atendem Nutrição, Aves ou Suínos. Os demais ficam no outro grupo. Só entram RCAs com cadastro ativo na base auxiliar, inclusive os sem venda. Supervisão, indicador e filtros são combinados antes do ranking.</p><p><strong>Faturamento:</strong> apenas FECHADO, pela data de faturamento. Projeção = faturado ÷ dias úteis decorridos × dias úteis do mês. Todos usam a mesma data de corte da base. Em meses encerrados, a projeção é igual ao realizado. O resumo de atingimento considera apenas RCAs com meta.</p><p><strong>Positivações:</strong> clientes principais com venda positiva no mês. <strong>Mix:</strong> produtos distintos por cliente principal. <strong>Ticket:</strong> todas as compras faturadas ÷ clientes principais com compra. Os vínculos são consolidados depois de aplicar os filtros e dentro de cada vendedor.</p><p><strong>Margem bruta:</strong> soma de Vl Lucro ÷ soma do faturamento; não é uma média simples de percentuais. A ausência de lucro em uma venda impede o cálculo completo daquele vendedor.</p><p><strong>Barras:</strong> ${revenue?'a parte escura é o faturado; a parte clara, a projeção até o fim do mês; o traço marca a meta (100%).':'o comprimento compara o resultado de cada vendedor com o maior do recorte; o traço marca a meta, quando houver.'} <strong>Cores:</strong> ${esc(Object.values(labels).slice(0,3).join(' · '))}.</p><p><strong>Calendário:</strong> segunda a sexta, feriados nacionais e datas adicionais cadastradas em FERIADOS na base auxiliar.</p>${payload.goalScopeLimited?'<p><strong>Meta e território:</strong> as metas mensais são do vendedor e não têm rateio por estado, região ou cidade. O realizado acompanha os filtros selecionados.</p>':''}<p><strong>Imagem:</strong> inclui todos os vendedores visíveis no ranking, na mesma ordem, com equipe, supervisões, filtros, período e data de corte. O nome contém o indicador e a data do download. A busca restringe a imagem e preserva as posições do ranking completo.</p></details>`;
-  const draw=()=>{
-    model=teamsModel(payload);TEAMS.model=model;
-    $('#teamsRankingRows').innerHTML=`<div class="teams-line-head" aria-hidden="true"><span>Pos.</span><span>Vendedor / supervisão</span><span>${revenue?'Faturado e projeção × meta':'Resultado'+(withGoals?' × meta':'')}</span><span>${revenue?'Projeção':'Realizado'}</span><span>Sinalização</span></div>`+model.visible.map(row=>teamsRow(row,model,scale)).join('')+(model.visible.length?'':'<div class="teams-empty">Nenhum RCA ativo encontrado neste recorte. Confira a equipe, as supervisões e os filtros.</div>');
-    $('#teamsVisibleCount').textContent=integer(model.visible.length)+' de '+integer(ranked.length)+' RCAs ativos';
-    $('#teamsDownload').disabled=!model.visible.length;
-  };
-  draw();bindTeamsTabs();bindTeamsSupervisors();
-  const scope=$('.teams-scope-panel');if(scope)scope.ontoggle=()=>{TEAMS.scopeOpen=scope.open;};
-  $('#teamsSearch').oninput=event=>{TEAMS.search=event.target.value;draw();};
-  $('#teamsDownload').onclick=()=>downloadTeamsImage(TEAMS.model);
-  $('#teamsPause').onclick=()=>{TEAMS.paused=!TEAMS.paused;$('#content').classList.toggle('teams-motion-paused',TEAMS.paused);const b=$('#teamsPause');b.setAttribute('aria-pressed',String(TEAMS.paused));b.textContent=TEAMS.paused?'Ativar sinalização piscante':'Pausar sinalização piscante';};
-}
-
-function bindTeamsSupervisors(){
-  const options=$$('[data-teams-supervisor]');
-  const update=()=>{const count=options.filter(input=>input.checked).length;$('#teamsSelectionNote').textContent=count?integer(count)+' supervisões marcadas':'Marque pelo menos uma supervisão';$('#teamsApplySupervisors').disabled=!count;};
-  options.forEach(input=>input.onchange=update);
-  $('#teamsSelectAll').onclick=()=>{options.forEach(input=>input.checked=true);update();};
-  $('#teamsClearSupervisors').onclick=()=>{options.forEach(input=>input.checked=false);update();};
-  $('#teamsApplySupervisors').onclick=()=>{
-    const selected=options.filter(input=>input.checked).map(input=>input.dataset.teamsSupervisor);
-    if(!selected.length)return;
-    state.filters.supervisor=selected.length===options.length?[]:selected;TEAMS.search='';
-    syncUiFromFilters();queryPage();
-  };
-  update();
-}
-
-function teamsDownloadDate(date=new Date()){
-  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
-  const value=type=>parts.find(part=>part.type===type).value;
-  return value('year')+'-'+value('month')+'-'+value('day');
-}
-
-function teamsImageName(indicator,group,date=new Date()){
-  const slug=value=>normalize(value).toLocaleLowerCase('pt-BR').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-  return 'rebanho-'+slug(TEAM_INDICATORS[indicator].label)+'-'+(group==='health'?'saude':'demais-equipes')+'-'+teamsDownloadDate(date)+'.png';
-}
-
-async function teamsImageCanvas(model,date=new Date()){
-  if(!model?.visible.length)throw new Error('Não há vendedores neste recorte para gerar a imagem.');
-  const {payload,indicator,revenue,config,visible,cards}=model,W=1600;
-  const probe=document.createElement('canvas'),measure=probe.getContext('2d');
-  const lines=(text,width,size=18)=>{
-    measure.font=size+'px Arial';const result=[];let current='';
-    for(const word of String(text).split(/\s+/)){
-      if(measure.measureText(current?current+' '+word:word).width<=width){current=current?current+' '+word:word;continue;}
-      if(current)result.push(current);current='';
-      for(const letter of word){if(current&&measure.measureText(current+letter).width>width){result.push(current);current='';}current+=letter;}
-    }
-    if(current)result.push(current);return result;
-  };
-  const scope=lines(teamsScopeText(model),1480,18),headerH=464+scope.length*26,rowH=100,H=headerH+58+Math.max(1,visible.length)*rowH+200;
-  const scale=Math.min(1.5,12000/H),canvas=document.createElement('canvas');canvas.width=Math.round(W*scale);canvas.height=Math.round(H*scale);
-  const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw new Error('Não foi possível preparar a imagem.');ctx.scale(scale,scale);
-  const text=(value,x,y,size=18,color='#273f63',weight=400)=>{ctx.fillStyle=color;ctx.font=weight+' '+size+'px Arial';ctx.fillText(String(value),x,y);};
-  const wrap=(value,x,y,width,size=18,color='#273f63',weight=400)=>{const list=lines(value,width,size);list.forEach((line,i)=>text(line,x,y+i*(size+6),size,color,weight));return list.length;};
-  const rect=(x,y,w,h,color,r=12)=>{ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();};
-  const dot=(x,y,tone)=>{ctx.fillStyle={green:'#23a570',yellow:'#d6a51f',red:'#cd5b58',muted:'#a7b1bf'}[tone]||'#a7b1bf';ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();};
-  rect(0,0,W,H,'#f2f5fa',0);rect(0,0,W,100,'#ffffff',0);
-  const logoSource=$('.login-logo')?.src||$('.preview-logo')?.src;
-  if(logoSource){
-    const logo=await new Promise(resolve=>{const image=new Image();image.crossOrigin='anonymous';image.onload=()=>resolve(image);image.onerror=()=>resolve(null);image.src=logoSource;});
-    if(logo){const ratio=Math.min(230/logo.naturalWidth,58/logo.naturalHeight);ctx.drawImage(logo,40,20,logo.naturalWidth*ratio,logo.naturalHeight*ratio);}
-    else text('REBANHO',40,62,32,'#223d75',700);
-  }else text('REBANHO',40,62,32,'#223d75',700);
-  text('COMERCIAL · VISÃO EQUIPES',1090,42,18,'#667e9d',700);
-  text('Download: '+teamsDownloadDate(date).split('-').reverse().join('/'),1090,72,17,'#7c8da5');
-  rect(40,124,1520,148,'#203d70',16);
-  text('RANKING DE '+config.label.toLocaleUpperCase('pt-BR'),70,174,32,'#ffffff',700);
-  text(teamsGroupLabel(model.group)+' · Somente RCAs ativos',70,217,23,'#cbdef7',600);
-  text('Período: '+payload.calendar.month.split('-').reverse().join('/'),1190,174,21,'#ffffff',700);
-  text('Corte: '+(payload.calendar.cutoff?payload.calendar.cutoff.split('-').reverse().join('/'):'Mês futuro'),1190,210,18,'#cbdef7');
-  text(payload.calendar.closed?'Mês encerrado':integer(payload.calendar.remainingToday??payload.calendar.remaining)+' dias úteis restantes',1190,244,17,'#cbdef7');
-  scope.forEach((line,i)=>text(line,60,307+i*26,18,'#657995'));
-  const cardY=329+(scope.length-1)*26;
-  const cardWidth=(1520-(cards.length-1)*20)/cards.length;
-  cards.forEach((card,i)=>{const x=40+i*(cardWidth+20),leader=i===cards.length-1;rect(x,cardY,cardWidth,116,'#ffffff');text(card.label.toLocaleUpperCase('pt-BR'),x+20,cardY+29,14,'#74859e',600);wrap(card.value,x+20,cardY+64,cardWidth-40,leader?21:29,'#223d75',700);if(!leader||lines(card.value,cardWidth-40,21).length<2)text(card.note,x+20,cardY+98,14,'#7b8ca4');});
-  const columns=[68,150,730,975,1250];
-  const headers=revenue?['POS.','VENDEDOR / SUPERVISÃO','ATINGIMENTO','PROJEÇÃO','SINALIZAÇÃO']:['POS.','VENDEDOR / SUPERVISÃO','REALIZADO','META MENSAL','SINALIZAÇÃO'];
-  headers.forEach((label,i)=>text(label,columns[i],headerH+33,15,'#73849b',700));
-  visible.forEach((row,i)=>{
-    const y=headerH+58+i*rowH;rect(40,y,1520,92,'#ffffff',10);rect(40,y,5,92,{green:'#23a570',yellow:'#d6a51f',red:'#cd5b58'}[row.tone]||'#a7b1bf',2);
-    text(row.rank?row.rank+'º':'—',columns[0],y+40,24,'#617a9c',700);
-    wrap(row.name,150,y+31,510,21,'#263e63',700);text('RCA '+row.code+' · '+row.supervisor,150,y+75,15,'#7e8ea3');
-    text(revenue?pct(row.attainment):teamsValue(row[indicator],indicator),columns[2],y+42,25,'#2a4a7b',700);
-    text(revenue?'Somente faturados':config.unit,columns[2],y+70,13,'#7e8ea3');
-    if(revenue){
-      text(pct(row.projectedAttainment),columns[3],y+42,25,'#234d89',700);text('Da meta mensal',columns[3],y+70,13,'#7e8ea3');
-    }else{
-      text(teamsValue(row.goals?.[indicator],indicator),columns[3],y+42,21,'#71819b');text(row.goals?.[indicator]?pct(row.ratio)+' atingido':'Sem meta cadastrada',columns[3],y+70,13,'#7e8ea3');
-    }
-    const statusX=columns.at(-1);dot(statusX,y+38,row.tone);wrap(row.status,statusX+20,y+34,1540-statusX-20,17,'#6e8098');
-  });
-  const footY=headerH+58+visible.length*rowH+30;
-  const legends=revenue?['Projeção ≥ 100%','90% a 99,9%','Abaixo de 90%']:['Faixa superior','Faixa intermediária','Faixa inferior'];
-  legends.forEach((label,i)=>{const x=65+i*350;dot(x,footY,['green','yellow','red'][i]);text(label,x+18,footY+6,17,'#637895');});
-  text(visible.length+' de '+model.ranked.length+' RCAs ativos · Ordem e recorte da tela',60,footY+45,17,'#687e9b');
-  const note=revenue?'Atingimento: somente faturados. Ordem pela projeção por dias úteis. Meta mensal = 100%.':model.ranked.some(row=>row.goals?.[indicator]>0)?'Com meta: cores por atingimento. Sem meta: faixas relativas ao ranking.':'Sem metas oficiais: cores pela posição relativa no ranking. Não representam atingimento de meta.';
-  wrap(note,60,footY+80,1480,16,'#7c8ea5');
-  if(payload.calendar.remaining>payload.calendar.remainingToday)text('Projeção considera '+payload.calendar.remaining+' dias úteis após o corte da base.',60,footY+112,15,'#7c8ea5');
-  return canvas;
-}
-
-async function downloadTeamsImage(model){
-  const button=$('#teamsDownload'),status=$('#teamsExportStatus');
-  if(button){button.disabled=true;button.textContent='Gerando imagem…';}if(status)status.textContent='Preparando o ranking completo deste recorte…';
-  try{
-    const date=new Date(),canvas=await teamsImageCanvas(model,date);
-    const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('O navegador não conseguiu gerar a imagem.')),'image/png'));
-    const filename=teamsImageName(model.indicator,model.group,date),url=URL.createObjectURL(blob),link=document.createElement('a');
-    link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
-    if(status)status.textContent='Imagem gerada: '+filename;
-  }catch(error){if(status)status.textContent='Não foi possível gerar a imagem. '+(error?.message||String(error));}
-  finally{if(button){button.disabled=!model?.visible.length;button.textContent='Baixar imagem';}}
-}
-
-
 
 // ===== Visão Geral (relatório único) =====
 // A página inteira vira um relatório no mesmo visual, pronto para virar imagem e ir aos supervisores.
@@ -1164,6 +1077,16 @@ function loadHtml2canvas(){
   html2canvasPromise||=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';s.onload=()=>resolve(window.html2canvas);s.onerror=()=>{html2canvasPromise=null;reject(new Error('Não foi possível carregar o gerador de imagem.'));};document.head.append(s);});
   return html2canvasPromise;
 }
+// Corta o fundo vazio que sobra embaixo (as partes escondidas da foto encurtam a página).
+function ovTrimCanvas(canvas){
+  try{
+    const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height,bg=ctx.getImageData(1,h-2,1,1).data;
+    let last=h-1;
+    for(;last>0;last--){const row=ctx.getImageData(0,last,w,1).data;let blank=true;for(let i=0;i<row.length;i+=16){if(Math.abs(row[i]-bg[0])>6||Math.abs(row[i+1]-bg[1])>6||Math.abs(row[i+2]-bg[2])>6){blank=false;break;}}if(!blank)break;}
+    const keep=Math.min(h,last+48);if(keep>=h-4)return canvas;
+    const out=document.createElement('canvas');out.width=w;out.height=keep;out.getContext('2d').drawImage(canvas,0,0);return out;
+  }catch{return canvas;}
+}
 // Imagem da página inteira (cabeçalho até Departamentos), sem botões nem campos de filtro.
 async function ovExport(mode){
   const target=$('#appView'),buttons=[$('#ovCopy'),$('#ovDownload')];if(!target)return;
@@ -1173,10 +1096,10 @@ async function ovExport(mode){
   try{
     const render=await loadHtml2canvas();
     document.body.classList.add('ov-exporting');window.scrollTo(0,0);
-    const skip=el=>el.nodeType===1&&(el.classList.contains('ov-noprint')||el.matches('.filterbar,.app-menu,.menu-backdrop,#dataStatus,.header-account,.menu-toggle,#refreshData,button,input,select'));
-    const canvas=await render(target,{scale:2,backgroundColor:'#f3f5f9',useCORS:true,logging:false,ignoreElements:skip,windowWidth:Math.max(1200,document.documentElement.clientWidth),height:Math.ceil(($('#content')?.getBoundingClientRect().bottom||target.scrollHeight)-target.getBoundingClientRect().top+24)});
-    const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
-    const name='rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
+    const skip=el=>el.nodeType===1&&(el.classList.contains('ov-noprint')||el.matches('.filterbar,.app-menu,.menu-backdrop,#dataStatus,.header-account,.menu-toggle,#refreshData,button,input,select,.tv-toolbar,.tv-tabs,details'));
+    const canvas=await render(target,{scale:2,backgroundColor:'#f3f5f9',useCORS:true,logging:false,ignoreElements:skip,height:Math.ceil((($('#content [data-capture-end]')||$('#content'))?.getBoundingClientRect().bottom||target.scrollHeight)-target.getBoundingClientRect().top+24)});
+    const blob=await new Promise((resolve,reject)=>ovTrimCanvas(canvas).toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
+    const name=state.page==='teams'?tvImageName():'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
     if(mode==='copy'){
       try{if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);say('Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.');return;}
       catch{say('Este navegador não deixou copiar; a imagem foi baixada.');}

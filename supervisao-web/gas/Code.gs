@@ -5279,8 +5279,14 @@ function teamsView_(user,payload) {
   const catalog=new Map(aux.rcas.map(rca=>[String(rca.code),rca]));
   const activeAllowed=code=>catalog.get(String(code))?.active===true&&userAllowsRca_(user,code);
   const groupAllowed=code=>activeAllowed(code)&&(group==='all'||groups.get(String(code))===group);
+  // Visão equipes pode pedir para deixar RCAs (por nome) e supervisões (por nome) fora da página inteira,
+  // inclusive dos totais da equipe. Sem esses pedidos, nada muda (a Visão Geral não os envia).
+  const excludedNames=teamsList_(f.excludeRcaNames).map(norm_).filter(Boolean),excludedSups=teamsList_(f.excludeSupervisors).map(norm_).filter(Boolean);
+  const nameExcluded=code=>{const n=norm_(catalog.get(String(code))?.name||'');return excludedNames.some(t=>n===t||n.split(/\s+/).includes(t)||n.startsWith(t+' '));};
+  const supExcluded=code=>excludedSups.includes(norm_(catalog.get(String(code))?.supervisor||'Sem supervisor'));
   const sellerAllowed=code=>groupAllowed(code)&&(!sellers.length||sellers.includes(String(code)))&&
-    (!supervisors.length||supervisors.includes(String(catalog.get(String(code))?.supervisor||'Sem supervisor')));
+    (!supervisors.length||supervisors.includes(String(catalog.get(String(code))?.supervisor||'Sem supervisor')))&&
+    !nameExcluded(code)&&!supExcluded(code);
   const supervisorOptions=[...new Set(aux.rcas.filter(person=>activeAllowed(person.code)).map(person=>person.supervisor||'Sem supervisor'))]
     .sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:aux.rcas.filter(person=>groupAllowed(person.code)&&(person.supervisor||'Sem supervisor')===name).length}));
   const groupCounts=Object.fromEntries(['other','health'].map(key=>[key,aux.rcas.filter(person=>activeAllowed(person.code)&&groups.get(String(person.code))===key).length]));
