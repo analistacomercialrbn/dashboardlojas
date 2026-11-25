@@ -294,7 +294,7 @@ const AUTH = {
   passwordChangeSessionSeconds: 600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/952b672f66f5403cb0171e6c947f8a3c4fc3a960/supervisao-web/gas/zoom-mapas-20261109/app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/24fbebdacc3d7aa5d19462256ea793c6afd011e9/supervisao-web/gas/zoom-mapas-20261109/app.html';
 
 function doGet() {
   const timing=centralTiming_('central.interface');
@@ -420,6 +420,8 @@ function dashboardApi(action, payload, token) {
     if(action==='portfolioClients')return portfolioClients_(user);
     if(action==='teamsView')return teamsView_(user,payload);
     if(action==='productsView')return productsView_(user,payload);
+    if(action==='ibgeHerd')return ibgeHerd_(user);
+    if(action==='ibgeRefresh')return ibgeRefresh_(user);
     if(action==='biLayout')return biLayoutApi_(user,payload);
     if(action==='biDiagnostics')return biDiagnostics_(user);
     if (action === 'history') return recoveredMacroHistory_(user);
@@ -5420,4 +5422,49 @@ function productsView_(user,payload) {
   // Recorte de acesso do usuário; margem só para os perfis que já veem margem na Visão equipes.
   const rows=data.rows.filter(row=>userAllowsRca_(user,row[0])).map(row=>canMargin?row:row.slice(0,7).concat([0,0]).concat(row.slice(9)));
   return {ok:true,month,canMargin,rows,departments:data.departments,suppliers:data.suppliers,cities:data.cities,catalog:productsSuppliers_(version),updatedAt:version};
+}
+
+// ===== Cidades: rebanho por município (IBGE, Pesquisa da Pecuária Municipal) =====
+// Guardado na aba IBGE_REBANHO da planilha auxiliar. Esta função só escreve nessa aba.
+const IBGE_SHEET='IBGE_REBANHO';
+const IBGE_UF_CODES={RO:11,AC:12,AM:13,RR:14,PA:15,AP:16,TO:17,MA:21,PI:22,CE:23,RN:24,PB:25,PE:26,AL:27,SE:28,BA:29,MG:31,ES:32,RJ:33,SP:35,PR:41,SC:42,RS:43,MS:50,MT:51,GO:52,DF:53};
+function ibgeHerd_(user) {
+  const sheet=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId).getSheetByName(IBGE_SHEET);
+  if(!sheet||sheet.getLastRow()<2)return {ok:true,year:null,rows:[],updatedAt:null};
+  const values=sheet.getDataRange().getValues(),ix=headerIndex_(values.shift()||[]);
+  const n=v=>{const x=Number(v);return Number.isFinite(x)?x:0;};
+  const rows=values.map(r=>[String(cell_(r,ix,'COD_IBGE')||''),String(cell_(r,ix,'MUNICIPIO')||'').trim(),String(cell_(r,ix,'UF')||'').trim().toUpperCase(),n(cell_(r,ix,'BOVINOS')),n(cell_(r,ix,'VACAS_ORDENHADAS')),n(cell_(r,ix,'GALINACEOS')),n(cell_(r,ix,'SUINOS'))]).filter(r=>r[1]&&r[2]);
+  const year=values.length?String(cell_(values[0],ix,'ANO_PESQUISA')||''):null,updated=values.length?cell_(values[0],ix,'ATUALIZADO_EM'):null;
+  return {ok:true,year,rows,updatedAt:updated instanceof Date?updated.toISOString():String(updated||'')};
+}
+// Lê a resposta da API do SIDRA (primeira linha = nomes das colunas) pelos nomes, não por posição.
+function ibgeSidraRows_(url) {
+  const res=UrlFetchApp.fetch(url,{muteHttpExceptions:true,headers:{Accept:'application/json'}});
+  if(res.getResponseCode()!==200)throw new Error('O IBGE respondeu com erro '+res.getResponseCode()+'.');
+  const data=JSON.parse(res.getContentText());
+  if(!Array.isArray(data)||data.length<2)throw new Error('O IBGE não devolveu dados.');
+  const head=data[0],find=test=>Object.keys(head).find(k=>test(String(head[k]||'')));
+  const muniCode=find(t=>/^Munic[ií]pio \(C[óo]digo\)$/i.test(t)),muniName=find(t=>/^Munic[ií]pio$/i.test(t)),year=find(t=>/^Ano$/i.test(t)),kind=find(t=>/Tipo de rebanho$/i.test(t));
+  if(!muniCode||!muniName||!year)throw new Error('O formato da resposta do IBGE mudou.');
+  return data.slice(1).map(r=>({code:String(r[muniCode]),name:String(r[muniName]),year:String(r[year]),kind:kind?String(r[kind]):'',value:Number(r.V)}));
+}
+function ibgeRefresh_(user) {
+  if(user.perfil!=='ADMIN')throw new Error('Somente o administrador pode atualizar os dados do IBGE.');
+  const ufs=[...new Set(coverageData_().cities.map(r=>r.uf).concat(['CE']))].filter(uf=>IBGE_UF_CODES[uf]);
+  const places='in%20n3%20'+ufs.map(uf=>IBGE_UF_CODES[uf]).join(',');
+  // Tabela 3939: efetivo dos rebanhos por tipo. Tabela 94: vacas ordenhadas.
+  const herd=ibgeSidraRows_('https://apisidra.ibge.gov.br/values/t/3939/n6/'+places+'/v/105/p/last%201/c79/all');
+  const cows=ibgeSidraRows_('https://apisidra.ibge.gov.br/values/t/94/n6/'+places+'/v/107/p/last%201');
+  const byCode=new Map(),value=v=>Number.isFinite(v)?v:0;
+  const row=r=>{if(!byCode.has(r.code)){const m=r.name.match(/^(.*?)\s*-\s*([A-Z]{2})$/);byCode.set(r.code,{code:r.code,city:m?m[1]:r.name,uf:m?m[2]:'',bov:0,cows:0,hens:0,pigs:0,year:r.year});}return byCode.get(r.code);};
+  for(const r of herd){const k=norm_(r.kind),x=row(r);if(k==='BOVINO')x.bov=value(r.value);else if(k==='SUINO - TOTAL')x.pigs=value(r.value);else if(k==='GALINACEOS - TOTAL')x.hens=value(r.value);}
+  for(const r of cows)row(r).cows=value(r.value);
+  const list=[...byCode.values()].filter(x=>x.uf);
+  if(!list.length)throw new Error('O IBGE não devolveu municípios.');
+  const ss=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId);let sheet=ss.getSheetByName(IBGE_SHEET);
+  if(!sheet)sheet=ss.insertSheet(IBGE_SHEET);
+  const now=new Date(),out=[['COD_IBGE','MUNICIPIO','UF','BOVINOS','VACAS_ORDENHADAS','GALINACEOS','SUINOS','ANO_PESQUISA','ATUALIZADO_EM']].concat(list.map(x=>[x.code,x.city,x.uf,x.bov,x.cows,x.hens,x.pigs,x.year,now]));
+  sheet.clearContents();
+  sheet.getRange(1,1,out.length,out[0].length).setValues(out);
+  return {ok:true,count:list.length,year:list[0].year,ufs};
 }
