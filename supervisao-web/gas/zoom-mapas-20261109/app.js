@@ -569,7 +569,8 @@ function updateAdvancedFilterCount(){
 
 function queryPage(){
   // A marca da Visão Geral acompanha a tela atual (a Visão equipes não passa por renderPage).
-  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'));
+  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'||state.page==='carteira'));
+  document.body.classList.toggle('ct-page',state.module==='commercial'&&state.page==='carteira');
   document.body.classList.toggle('tv-page',state.module==='commercial'&&state.page==='teams');
   document.body.classList.toggle('pd-page',state.module==='commercial'&&state.page==='pedidos');
   if(state.module==='hub')return;
@@ -587,7 +588,7 @@ function queryPage(){
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
   if(state.page==='teams'){queryTeams(requestId);return;}
-  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...(state.page==='pedidos'&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
+  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
   if(state.page==='history'){$('#pageTitle').textContent='Histórico comercial';$('#pageSubtitle').textContent='Evolução e comparação de indicadores';$('#periodChip').textContent='Desde jun/2017';return;}
@@ -646,7 +647,7 @@ function sectionHeading(title,sub=''){return `<div class="section-heading"><div>
 
 function renderPage(page,payload){
   // Visão Geral tem cabeçalho e visual próprios; as outras telas continuam como antes.
-  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos');
+  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos'||page==='carteira');
   mountCoverageFilters(page==='cidades'&&state.cityView==='coverage');
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')Promise.resolve(renderMacroHistory(payload)).then(()=>{if(state.page==='history')renderPageExtras('history',payload);});
@@ -656,7 +657,7 @@ function renderPage(page,payload){
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
   else if(page==='pedidos')renderOrders(payload);
-  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
+  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&page!=='carteira'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
   biRender(page,payload);
   if(page!=='history')renderPageExtras(page,payload);
 }
@@ -1108,7 +1109,7 @@ async function ovExport(mode){
     cut.width=Math.round(top.width*k);cut.height=Math.round((bottom.bottom-top.top)*k);
     cut.getContext('2d').drawImage(canvas,Math.round((top.left-box.left)*k),Math.round((top.top-box.top)*k),cut.width,cut.height,0,0,cut.width,cut.height);
     const blob=await new Promise((resolve,reject)=>cut.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
-    const name=state.page==='teams'?tvImageName():'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
+    const name=state.page==='teams'?tvImageName():state.page==='carteira'?'rebanho-carteira-'+String(CT.p?.extras?.reference||'').slice(0,10)+'.png':'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
     if(mode==='copy'){
       try{if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);say('Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.');return;}
       catch{say('Este navegador não deixou copiar; a imagem foi baixada.');}
@@ -1144,28 +1145,12 @@ function renderPageExtras(page,payload){
   try{
     if(page==='overview'){/* Visão Geral: comparativos ficam na faixa azul */}
     else if(page==='pedidos'){/* Pedidos: blocos fazem parte da página */}
-    else if(page==='carteira')exPortfolioUi(ex);
+    else if(page==='carteira'){/* Carteira: blocos fazem parte da página */}
     else if(page==='produtos')exProductsUi(ex);
     else if(page==='cidades'&&state.cityView!=='coverage')exCitiesUi(ex);
     else if(page==='metas')exGoalsUi(ex);
     else if(page==='history')exHistoryUi(ex);
   }catch(error){console.warn('Falha ao desenhar indicadores adicionais',error);}
-}
-
-function exPortfolioUi(ex){
-  const cards=exCards([
-    ['Clientes em risco',integer(ex.risk.length),'60 a 89 dias sem comprar · '+money(ex.riskRevenue,true)+' nos últimos 12 meses','warn'],
-    ['Recuperados no período',integer(ex.recovered),'estavam 90+ dias sem comprar e voltaram · '+money(ex.recoveredRevenue,true),'good'],
-    ...(ex.concentration?[['Concentração',pct(ex.concentration.top20pct),'do faturamento vem de '+integer(ex.concentration.top20count)+' clientes (20% maiores) · top 10: '+pct(ex.concentration.top10)]]:[])
-  ]);
-  const cols=[{label:'Cliente'},{label:'RCA'},{label:'Última compra'},{label:'Dias',num:true},{label:'Fat. 12 meses',num:true}];
-  const row=r=>[`<strong>${esc(r.name)}</strong>`,esc(r.rcaName),exDate(r.last),integer(r.days),money(r.revenue12)];
-  const first=exTable(cols,ex.risk.slice(0,10).map(row),'Nenhum cliente entre 60 e 89 dias sem comprar.');
-  const rest=ex.risk.length>10?`<details class="ex-more"><summary>Ver os outros ${integer(ex.risk.length-10)} clientes em risco</summary>${exTable(cols,ex.risk.slice(10,200).map(row))}</details>`:'';
-  exInsert(cards,'#content > .kpi-grid');
-  const anchor=[...$$('#content .section-heading')].find(h=>/Clientes inativos para ação/.test(h.textContent));
-  const html=exSection('portfolioRisk','Clientes em risco — agir antes de virarem inativos','Entre 60 e 89 dias sem comprar na data de '+exDate(ex.reference)+'. Ordenados pelo faturamento dos últimos 12 meses.',first+rest);
-  if(anchor)anchor.insertAdjacentHTML('beforebegin',html);else exInsert(html,null);
 }
 
 function exProductsUi(ex){
@@ -1208,165 +1193,136 @@ function exHistoryUi(ex){
   const root=$('#content');if(root)root.insertAdjacentHTML('afterbegin',html);
 }
 
-function drawPortfolioEvolution(rows) {
-  if (!rows.length) return;
-  const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const labels = rows.map(({month,partial}) => {
-    const [year,m] = month.split('-');
-    return monthNames[Number(m)-1] + '/' + year.slice(2) + (partial?'*':'');
-  });
-  const valueLabels = {
-    id:'portfolioValueLabels',
-    afterDatasetsDraw(instance) {
-      const {ctx,chartArea:area} = instance;
-      if (area.width / rows.length < 35) return;
-      const occupied = [];
-      ctx.save();
-      ctx.font = '600 10px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      instance.data.datasets.forEach((dataset,index)=>{
-        if (!instance.isDatasetVisible(index)) return;
-        ctx.fillStyle = dataset.borderColor;
-        instance.getDatasetMeta(index).data.forEach(({x,y},point)=>{
-          const label = integer(dataset.data[point]);
-          const half = ctx.measureText(label).width/2+3;
-          for (const center of [y-12,y+13]) {
-            if (x-half<area.left||x+half>area.right||center-6<area.top||center+6>area.bottom) continue;
-            if (occupied.some(box=>Math.abs(center-box.y)<12&&Math.abs(x-box.x)<half+box.half)) continue;
-            ctx.fillText(label,x,center);
-            occupied.push({x,y:center,half});
-            break;
-          }
-        });
-      });
-      ctx.restore();
-    }
-  };
-  const series = [
-    ['active','Ativos','#1E4F8B','Última compra há até 89 dias.'],
-    ['short','Inativos de curto prazo','#A46612','Sem comprar há 90 a 179 dias.'],
-    ['long','Inativos de longo prazo','#B43E51','Sem comprar há 180 dias ou mais.'],
-    ['positive','Positivações do mês','#207B51','Compraram no mês. Cada cliente conta uma vez.']
-  ];
-  const instance = chart($('#portfolioEvolutionChart'),'line',{
-    labels,
-    datasets:series.map(([key,label,color])=>({
-      label,data:rows.map(row=>row[key]),borderColor:color,backgroundColor:color,
-      borderWidth:2.5,pointRadius:rows.length>24?2.5:4,pointHoverRadius:6,
-      cubicInterpolationMode:'monotone'
-    }))
-  },{
-    interaction:{mode:'index',intersect:false},
-    plugins:{
-      legend:{display:false},
-      tooltip:{callbacks:{
-        title:items=>labels[items[0].dataIndex]+(rows[items[0].dataIndex].partial?' · mês parcial':''),
-        label:item=>item.dataset.label+' · '+integer(item.raw)
-      }}
-    },
-    scales:{
-      x:{offset:true,grid:{display:false},ticks:{maxTicksLimit:16,maxRotation:45}},
-      y:{beginAtZero:true,ticks:{precision:0,callback:value=>integer(value)},grid:{color:'#EEF0F5'}}
-    }
-  },[valueLabels]);
-  const legend = $('#portfolioEvolutionLegend');
-  legend.innerHTML = series.map(([,label,color,description],index)=>`
-    <button type="button" class="portfolio-legend-item" data-series="${index}" aria-pressed="true"
-      aria-controls="portfolioEvolutionChart" style="--series-color:${color}">
-      <span class="portfolio-legend-dot" aria-hidden="true"></span>
-      <span><strong>${esc(label)}</strong><small>${esc(description)}</small></span>
-    </button>`).join('');
-  $$('[data-series]',legend).forEach(button=>{
-    button.onclick=()=>{
-      const index=Number(button.dataset.series);
-      const visible=!instance.isDatasetVisible(index);
-      instance.setDatasetVisibility(index,visible);
-      button.setAttribute('aria-pressed',String(visible));
-      instance.update();
-    };
-  });
+// ===== Carteira (visual das páginas novas) =====
+// Clientes caindo: queda do mês anterior contra a média dos 3 meses antes dele. Mude aqui o percentual.
+const CARTEIRA_QUEDA_PERCENTUAL=50;
+const CT_PAGE=20;
+const CT_TABS=[
+  ['pending','Pendentes do mês','compraram nos últimos 3 meses e ainda não compraram neste mês'],
+  ['risk','Em risco','de 60 a 89 dias sem comprar'],
+  ['falling','Caindo',''],
+  ['late','Atrasados no ciclo','sem comprar há mais que o dobro do intervalo normal deles · ainda ativos · pelo menos 3 compras em 12 meses'],
+  ['recoverable','Inativos recuperáveis','inativos de curto prazo: de 90 a 179 dias sem comprar'],
+  ['orphan','Sem dono','o RCA da carteira está fora da equipe (ATIVO = N na aba RCA) ou o cliente não tem RCA · ativos e inativos curto · para redistribuir'],
+  ['single','Só um departamento','ativos que compraram de um único departamento nos últimos 6 meses']
+];
+const CT_COLS=[['name','RCA',''],['supervisor','Supervisor',''],['active','Ativos','num'],['positive','Positivados','num'],['coverage','Cobertura','num'],['newC','Novos','num'],['risk','Em risco','num'],['short','Inativos curto','num'],['long','Inativos longo','num'],['valueAtRisk','Valor em risco','num']];
+const CT={p:null,tab:'pending',limit:CT_PAGE,sort:'active',dir:-1};
+function ctDelta(now,prev,{suffix='',good=1,points=false}={}){
+  if(prev==null||now==null||!Number.isFinite(Number(prev)))return '<span class="ov-s">sem base de comparação</span>';
+  const d=Number(now)-Number(prev);
+  const text=points?Math.abs(d).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' p.p.':integer(Math.abs(d));
+  const tone=d===0?'flat':(d>0)===(good>0)?'up':'down';
+  return `<span class="ct-delta ${tone}">${d>0?'▲':d<0?'▼':'■'} ${text}</span>${suffix?` <span class="ov-s">${esc(suffix)}</span>`:''}`;
 }
-
+function ctMonthLabel(key){const [y,m]=String(key||'').split('-');return m?MONTH_NAMES[Number(m)-1].slice(0,3)+'/'+String(y).slice(2):'';}
 function renderCarteira(p){
-  const k=p.kpis||{};
-  const inactiveTotal=Number(k.short||0)+Number(k.long||0);
-  const evolution=p.evolution||[];
-  const ratio=k.newClients ? (Number(k.short||0)/Number(k.newClients||1)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x' : '—';
-  $('#content').innerHTML=`
-    <div class="grid kpi-grid">
-      ${kpi('Positivados',integer(k.clients),'Compraram no período')}
-      ${kpi('Novos',integer(k.newClients),'Primeira compra no período')}
-      ${kpi('Inativos • curto',integer(k.short),'90 a 179 dias no fechamento anterior')}
-      ${kpi('Inativos • longo',integer(k.long),'180 dias ou mais no fechamento anterior')}
-      ${kpi('Mix por cliente',dec(k.mix),'Média de produtos distintos por cliente principal')}
-      ${kpi('Ticket médio por cliente',k.ticket==null?'—':money(k.ticket),'Faturamento ÷ clientes que compraram no recorte')}
-      ${kpi('Produtos ativos no recorte',integer(k.products),'Itens faturados')}
+  CT.p=p;ovEnsureTopTools();
+  const label=$('#activeMenuLabel');if(label)label.textContent='Carteira';
+  const mt=$('#ovMarginToggle');if(mt)mt.hidden=true;
+  const ex=p.extras||{};
+  const cut=$('#ovCutoff');if(cut)cut.innerHTML='Referência: <b>'+esc(ovDate(ex.reference))+'</b>';
+  $('#content').className='ct-report';
+  if(!ex.totals){$('#content').innerHTML=`<section class="ov-card"><p class="ov-s">${esc(ex.error?'Não foi possível montar a carteira: '+ex.error:'Carteira sem dados de vendas.')}</p></section>`;return;}
+  const t=ex.totals,prevLabel=ovDate(ex.previousClose),monthName=MONTH_NAMES[Number(String(ex.currentMonth).slice(5,7))-1]||'mês atual';
+  const prevMonthName=MONTH_NAMES[new Date(ex.previousMonth).getUTCMonth()]||'mês anterior';
+  const options=ex.supervisorOptions||[],selected=normalizeMulti(state.filters.supervisor);
+  const checked=name=>selected.length?selected.includes(name):!tvDefaultOut(name);
+  const sup=options.length?`<details class="tv-sup" id="tvSupervisors"><summary>Supervisão: ${esc(tvSupervisorSummary(options))} <span aria-hidden="true">▾</span></summary><div class="tv-sup-menu"><fieldset><legend class="sr-only">Supervisões</legend>${options.map(o=>`<label><input type="checkbox" data-teams-supervisor="${esc(o.name)}" ${checked(o.name)?'checked':''}><span>${esc(o.name)}</span><small>${integer(o.count)} ativos</small></label>`).join('')}</fieldset><div class="tv-sup-actions"><button type="button" id="teamsSelectAll">Marcar todas</button><button type="button" id="teamsClearSupervisors">Limpar</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="primary" id="teamsApplySupervisors">Aplicar</button></div></div></details>`:'';
+  const scope=['Supervisão: '+tvSupervisorSummary(options)];
+  for(const [key,name] of [['rca','RCA'],['department','Departamento'],['uf','UF'],['region','Região'],['city','Cidade']]){const v=normalizeMulti(state.filters[key]);if(v.length)scope.push(name+': '+v.join(', '));}
+  const conc=ex.concentration;
+  $('#content').innerHTML=`<div class="tv-toolbar">${sup}<span class="ov-s ct-scope">${esc(scope.slice(1).join(' · '))}</span></div>
+  <section class="ov-hero ct-hero" aria-label="Carteira">
+    <div class="ct-hero-grid">
+      <div><p class="ov-k">Carteira ativa</p><p class="ct-hv-lg">${integer(t.active)}</p><p class="ov-hs">${ctDelta(t.active,t.activePrev,{suffix:'vs '+prevLabel})}</p></div>
+      <div><p class="ov-k">Positivados em ${esc(monthName)}</p><p class="ov-hv">${integer(t.positive)}</p><p class="ov-hs">${integer(t.positivePrev)} em ${esc(prevMonthName)} inteiro</p></div>
+      <div><p class="ov-k">Cobertura</p><p class="ov-hv">${pct(t.coverage)}</p><p class="ov-hs">${ctDelta(t.coverage,t.coveragePrev,{points:true,suffix:'vs '+prevMonthName+' fechado'})}</p></div>
+      <div><p class="ov-k">Inativos</p><p class="ov-hv">${integer(t.inactive)}</p><p class="ov-hs">${integer(t.short)} curto · ${integer(t.long)} longo · ${ctDelta(t.inactive,t.inactivePrev,{good:-1,suffix:'vs '+prevLabel})}</p></div>
     </div>
-
-    <section class="panel">
-      <div class="panel-title-row"><div><h2>Evolução mensal da carteira</h2>
-        <p class="panel-sub">Os cadastros vinculados contam como um cliente principal dentro dos filtros. Ativos e inativos são contados na data de corte de cada mês. Toque em uma cor para ocultar ou exibir a linha.</p></div></div>
-      ${evolution.length?'<div id="portfolioEvolutionLegend" class="portfolio-evolution-legend" role="group" aria-label="Legenda do gráfico"></div><div class="chart-wrap portfolio-evolution-chart"><canvas id="portfolioEvolutionChart" role="img" aria-label="Ativos, inativos de curto e longo prazo e positivações por mês"></canvas></div>':'<p>Sem histórico de vendas para o ano selecionado.</p>'}
-      ${evolution.at(-1)?.partial?`<p class="small-note">* Mês parcial até ${fmtDate(evolution.at(-1).cutoff)}.</p>`:''}
-    </section>
-
-    <div class="panel carteira-movement-panel">
-      <div class="panel-title-row"><div><h2>Movimento da carteira</h2><div class="panel-sub">Positivados e novos: período selecionado. Inativos: fechamento do mês anterior. Clique nas faixas para filtrar a lista.</div></div></div>
-      <div class="chart-wrap short"><canvas id="portfolioMovementChart"></canvas></div>
+    <p class="ov-hs ct-hero-note">Ativo = comprou nos últimos 89 dias (não é o “ativo” do cadastro). Cobertura = positivados no mês ÷ carteira ativa. Referência ${esc(ovDate(ex.reference))}, comparada com o fechamento de ${esc(prevLabel)}.</p>
+  </section>
+  <section class="ov-card ct-move"><div class="ov-head"><p class="ov-k">Movimento de ${esc(monthName)}</p><p class="ov-s">de ${esc(prevLabel)} até ${esc(ovDate(ex.reference))}</p></div>
+    <div class="ct-eq">
+      <div><span class="ov-s">Ativos em ${esc(prevLabel)}</span><b>${integer(t.activePrev)}</b></div><i>+</i>
+      <div class="g"><span class="ov-s">Novos</span><b>${integer(t.newC)}</b><small>primeira compra da base</small></div><i>+</i>
+      <div class="g"><span class="ov-s">Recuperados</span><b>${integer(t.recovered)}</b><small>estavam inativos e voltaram</small></div><i>−</i>
+      <div class="r"><span class="ov-s">Inativaram</span><b>${integer(t.lost)}</b><small>passaram de 89 dias</small></div><i>=</i>
+      <div class="ct-eq-total"><span class="ov-s">Ativos hoje</span><b>${integer(t.active)}</b></div>
     </div>
-
-    <div class="grid two-col carteira-secondary">
-      <div class="panel"><div class="panel-title-row"><div><h2>Inativos por RCA</h2><div class="panel-sub">Cada cliente é atribuído ao RCA da última compra dentro do recorte. Clique em uma faixa ou RCA para filtrar a lista.</div></div></div><div class="chart-wrap tall"><canvas id="inactiveChart"></canvas></div></div>
-      <div class="panel"><div class="panel-title-row"><div><h2>Leitura da carteira</h2><div class="panel-sub">Data de corte: ${fmtDate(k.cutoff)}</div></div></div>
-        <div class="metric-list">
-          <div class="metric-line"><div class="name">Relação curto / novos</div><div class="value">${ratio}</div></div>
-          <div class="metric-line"><div class="name">Inativos totais</div><div class="value">${integer(inactiveTotal)}</div></div>
-          <div class="metric-line"><div class="name">Clientes ativos no período</div><div class="value">${integer(k.clients)}</div></div>
-        </div>
-        <div class="small-note" style="margin-top:18px">As faixas não se sobrepõem: curto prazo considera de 90 a 179 dias sem compra e longo prazo 180 dias ou mais, no fechamento do mês anterior. A relação curto / novos é mostrada em vezes (x), não em percentual.</div>
-      </div>
-    </div>
-    ${sectionHeading('Clientes inativos para ação','Ordenados pelo maior faturamento dos 12 meses anteriores à data de corte.')}
-    <div id="inactiveSelections" class="inactive-selections"></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>RCA</th><th>Última compra</th><th class="align-right">Dias</th><th class="align-right">Fat. 12m</th><th>Faixa</th></tr></thead><tbody id="inactiveTable"></tbody></table></div>
-  `;
-
-  drawPortfolioEvolution(evolution);
-  const pickInactive=(rca,band)=>{state.inactivePick=state.inactivePick||{};if(rca!==undefined)state.inactivePick.rca=state.inactivePick.rca===String(rca)?'':String(rca);if(band!==undefined)state.inactivePick.band=state.inactivePick.band===band?'':band;drawInactiveList(p);};
-  chart($('#portfolioMovementChart'),'bar',{
-    labels:['Positivados','Novos','Inativados'],
-    datasets:[
-      {label:'Positivados',data:[k.clients,null,null],backgroundColor:'#6176B5',borderRadius:8,stack:'carteira'},
-      {label:'Novos',data:[null,k.newClients,null],backgroundColor:'#2D8B62',borderRadius:8,stack:'carteira'},
-      {label:'Inativos • curto',data:[null,null,k.short],backgroundColor:'#CC4D5B',borderRadius:8,stack:'carteira'},
-      {label:'Inativos • longo',data:[null,null,k.long],backgroundColor:'#D89B35',borderRadius:8,stack:'carteira'}
-    ]
-  },{
-    onClick:(_e,els)=>{if(els.length&&els[0].datasetIndex>=2)pickInactive(undefined,els[0].datasetIndex===2?'short':'long');},
-    plugins:{
-      legend:{display:true,position:'top',align:'start',onClick:(e,item)=>{if(item.datasetIndex>=2)pickInactive(undefined,item.datasetIndex===2?'short':'long');},labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},
-      tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:true,callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}
-    },
-    indexAxis:'y',
-    layout:{padding:{right:56}},
-    scales:{
-      y:{stacked:true,grid:{display:false},border:{display:false},ticks:{color:'#4D556B',font:{size:11,weight:'600'}}},
-      x:{stacked:true,beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>integer(v)}}
-    }
-  },[{id:'movementTotals',afterDatasetsDraw(c){
-    // Número ao lado de cada barra (inclusive quando é zero), para leitura sem passar o mouse.
-    const ctx=c.ctx,totals=[k.clients,k.newClients,(k.short||0)+(k.long||0)],y=c.scales.y,x=c.scales.x;
-    ctx.save();ctx.font='700 12px Inter,system-ui,sans-serif';ctx.fillStyle='#1f3354';ctx.textBaseline='middle';ctx.textAlign='left';
-    totals.forEach((v,i)=>ctx.fillText(integer(v||0),x.getPixelForValue(v||0)+8,y.getPixelForValue(i)));ctx.restore();
-  }}]);
-
-  const rows=(p.byRca||[]).slice(0,18).reverse();
-  const inactiveChart=chart($('#inactiveChart'),'bar',{labels:rows.map(x=>x.name),datasets:[
-    {label:'Longo prazo',data:rows.map(x=>x.long),backgroundColor:'#D89B35',borderRadius:6},
-    {label:'Curto prazo',data:rows.map(x=>x.short),backgroundColor:'#C94A55',borderRadius:6}
-  ]},{indexAxis:'y',onClick:(_e,els)=>{if(els.length){const x=els[0];state.inactivePick={rca:String(rows[x.index].rca),band:x.datasetIndex===0?'long':'short'};drawInactiveList(p);}},plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${integer(ctx.raw)}`}}},scales:{x:{grid:{color:'#EEF0F5'},ticks:{callback:v=>integer(v)}}}});
-  inactiveChart.canvas.addEventListener('click',event=>{const box=inactiveChart.canvas.getBoundingClientRect(),x=(event.clientX-box.left)*inactiveChart.width/box.width,y=(event.clientY-box.top)*inactiveChart.height/box.height;if(x>=inactiveChart.chartArea.left)return;const scale=inactiveChart.scales.y,index=Math.round(scale.getValueForPixel(y));if(rows[index])pickInactive(rows[index].rca,undefined);});
-  drawInactiveList(p);
+    <p class="ov-s">Taxa de perda: <b class="r">${pct(t.lossRate)}</b> dos ativos de ${esc(prevLabel)} viraram inativos · Taxa de recuperação: <b class="g">${pct(t.recoveryRate)}</b> dos inativos voltaram a comprar · A base de clientes começa em ago/2024: “novo” é quem não tem nenhuma compra antes disso.</p>
+  </section>
+  <section class="ov-card ct-evo"><div class="ov-head"><p class="ov-k">Evolução da carteira</p><p class="ov-s">situação no fim de cada mês · passe o mouse para ver os números</p></div>
+    <div class="ct-chart"><canvas id="ctEvolution" role="img" aria-label="Ativos, inativos curto e longo e cobertura nos últimos 12 meses"></canvas></div>
+    ${ex.evolution?.at(-1)?.partial?`<p class="ov-s">${esc(ctMonthLabel(ex.evolution.at(-1).month))} até ${esc(ovDate(ex.reference))}.</p>`:''}
+  </section>
+  <section class="ov-card ct-rcas"><div class="ov-head"><p class="ov-k">Carteira por RCA</p><p class="ov-s">dono do cliente = RCA da aba CLIENTES (sem RCA lá, vale o da última compra) · clique no título da coluna para ordenar</p></div>
+    <div class="ov-table-wrap"><table class="ov-table ct-table" id="ctRcaTable"></table></div>
+    <p class="ov-s">Valor em risco = média mensal de compra (12 meses) dos clientes em risco e dos inativos de curto prazo.</p>
+  </section>
+  <section class="ov-card ct-lists" id="ctLists"></section>
+  <section class="ov-card ct-foot"><div class="ct-foot-row">
+    <div><span class="ov-s">Concentração (12 meses)</span><b>${conc?integer(conc.to80)+' clientes':'—'}</b><small>${conc?'fazem 80% do faturamento, de '+integer(conc.clients)+' que compraram':''}</small></div>
+    <div><span class="ov-s">10 maiores clientes</span><b>${conc?pct(conc.top10):'—'}</b><small>do faturamento de 12 meses</small></div>
+    <div><span class="ov-s">Compra média por cliente</span><b>${t.avgPurchase==null?'—':money(t.avgPurchase,true)}</b><small>faturado em ${esc(monthName)} ÷ positivados</small></div>
+    <div><span class="ov-s">Mix por cliente</span><b>${t.mix==null?'—':dec(t.mix)}</b><small>produtos diferentes por positivado no mês</small></div>
+  </div></section>
+  <span data-capture-end></span>`;
+  bindTeamsSupervisors();
+  ctDrawTable();ctDrawLists();ctDrawEvolution(ex.evolution||[]);
+}
+function ctCell(key,v){
+  if(key==='coverage')return v==null?'—':pct(v);
+  if(key==='valueAtRisk')return money(v,true);
+  return integer(v);
+}
+function ctDrawTable(){
+  const ex=CT.p?.extras,host=$('#ctRcaTable');if(!ex||!host)return;
+  const t=ex.totals,rows=(ex.byRca||[]).slice().sort((a,b)=>{
+    if(a.key==='__sem_dono'&&b.key!=='__sem_dono')return 1;if(b.key==='__sem_dono'&&a.key!=='__sem_dono')return -1;
+    const x=a[CT.sort],y=b[CT.sort];
+    if(CT.sort==='name'||CT.sort==='supervisor')return String(x).localeCompare(String(y),'pt-BR')*CT.dir;
+    return ((Number(x)||0)-(Number(y)||0))*CT.dir;
+  });
+  const head=`<thead><tr>${CT_COLS.map(([k,l,c])=>`<th class="${c}" data-sort-ready="1"><button type="button" class="ct-sort ${CT.sort===k?'on':''}" data-ct-sort="${k}" aria-label="Ordenar por ${esc(l)}">${esc(l)}${CT.sort===k?(CT.dir<0?' ▼':' ▲'):''}</button></th>`).join('')}</tr></thead>`;
+  const body=rows.map(r=>`<tr class="${r.key==='__sem_dono'?'ct-orphan':''}"><td><b>${esc(r.name)}</b></td><td class="ov-s">${esc(r.supervisor)}</td>${CT_COLS.slice(2).map(([k,,c])=>`<td class="${c}">${ctCell(k,r[k])}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${CT_COLS.length}">Nenhum cliente neste recorte.</td></tr>`;
+  const foot=`<tfoot><tr><td><b>Total</b></td><td></td>${CT_COLS.slice(2).map(([k,,c])=>`<td class="${c}"><b>${ctCell(k,{active:t.active,positive:t.positive,coverage:t.coverage,newC:t.newC,risk:t.risk,short:t.short,long:t.long,valueAtRisk:t.valueAtRisk}[k])}</b></td>`).join('')}</tr></tfoot>`;
+  host.innerHTML=head+'<tbody>'+body+'</tbody>'+foot;
+  $$('[data-ct-sort]').forEach(b=>b.onclick=()=>{const k=b.dataset.ctSort;if(CT.sort===k)CT.dir*=-1;else{CT.sort=k;CT.dir=(k==='name'||k==='supervisor')?1:-1;}ctDrawTable();});
+}
+function ctDrawLists(){
+  const ex=CT.p?.extras,host=$('#ctLists');if(!ex||!host)return;
+  const lists=ex.lists||{},tab=CT_TABS.find(x=>x[0]===CT.tab)||CT_TABS[0],list=lists[tab[0]]||[],shown=list.slice(0,CT.limit);
+  const sub=tab[0]==='falling'?'o mês anterior ficou mais de '+integer(ex.fallPct)+'% abaixo da média dos 3 meses antes dele':tab[2];
+  host.innerHTML=`<div class="ov-head"><p class="ov-k">Listas de ação</p><p class="ov-s">ordenadas pela média mensal de compra (12 meses), da maior para a menor</p></div>
+  <nav class="ct-tabs" aria-label="Lista de ação">${CT_TABS.map(([k,l])=>`<button type="button" data-ct-tab="${k}" aria-pressed="${k===tab[0]}">${esc(l)} <b>${integer((lists[k]||[]).length)}</b></button>`).join('')}</nav>
+  <p class="ov-s">${esc(sub)}</p>
+  ${list.length?`<div class="ov-table-wrap"><table class="ov-table ct-list"><thead><tr><th data-sort-ready="1">Cliente</th><th data-sort-ready="1">RCA</th><th data-sort-ready="1">Supervisor</th><th data-sort-ready="1">Cidade</th><th data-sort-ready="1">Última compra</th><th data-sort-ready="1" class="num">Dias sem comprar</th><th data-sort-ready="1" class="num">Valor da última compra</th><th data-sort-ready="1" class="num">Média mensal (12 meses)</th></tr></thead><tbody>${shown.map(c=>`<tr><td><b>${esc(c.name)}</b><small class="ov-s ct-code">Cód. ${esc(c.id)}${c.note?' · '+esc(c.note):''}</small></td><td>${esc(c.rcaName)}${c.orphan?' <span class="ct-tag">fora da equipe</span>':''}</td><td>${esc(c.supervisor)}</td><td>${esc(c.city||'—')}</td><td>${ovDate(c.last)}</td><td class="num">${pdDaysChip(c.days)}</td><td class="num">${money(c.lastValue,true)}</td><td class="num"><b>${money(c.avg12,true)}</b></td></tr>`).join('')}</tbody></table></div>${pdMore('ctMore',shown.length,list.length,CT_PAGE,'clientes')}`:'<p class="ov-s">Nenhum cliente nesta lista.</p>'}
+  <p class="ov-s">Telefone: a base de clientes não traz essa informação.</p>`;
+  $$('[data-ct-tab]').forEach(b=>b.onclick=()=>{CT.tab=b.dataset.ctTab;CT.limit=CT_PAGE;ctDrawLists();});
+  const more=$('#ctMore');if(more)more.onclick=()=>{CT.limit+=CT_PAGE;ctDrawLists();};
+}
+function ctDrawEvolution(rows){
+  const canvas=$('#ctEvolution');if(!canvas||!rows.length)return;
+  const labels=rows.map(r=>ctMonthLabel(r.month)+(r.partial?'*':''));
+  const lastLabels={id:'ctLastLabels',afterDatasetsDraw(c){
+    const ctx=c.ctx;ctx.save();ctx.font='700 11px Inter,system-ui,sans-serif';ctx.textBaseline='middle';ctx.textAlign='left';
+    c.data.datasets.forEach((ds,i)=>{const meta=c.getDatasetMeta(i);if(meta.hidden)return;const pt=meta.data[meta.data.length-1];const v=ds.data[ds.data.length-1];if(!pt||v==null)return;
+      ctx.fillStyle=ds.borderColor;ctx.fillText(ds.yAxisID==='y1'?pct(v):integer(v),pt.x+6,pt.y);});ctx.restore();}};
+  const line=(label,data,color,extra={})=>({label,data,borderColor:color,backgroundColor:color,pointRadius:0,pointHoverRadius:4,borderWidth:2.4,tension:.25,...extra});
+  chart(canvas,'line',{labels,datasets:[
+    line('Ativos',rows.map(r=>r.active),'#14275c'),
+    line('Inativos curto',rows.map(r=>r.short),'#c2453f'),
+    line('Inativos longo',rows.map(r=>r.long),'#d89b35'),
+    line('Cobertura',rows.map(r=>r.coverage==null?null:Math.round(r.coverage*10)/10),'#2d8b62',{borderDash:[5,4],yAxisID:'y1'})
+  ]},{
+    layout:{padding:{right:52}},interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:11}}},
+      tooltip:{backgroundColor:'#fff',titleColor:'#1E2655',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:true,callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.dataset.yAxisID==='y1'?pct(ctx.raw):integer(ctx.raw)}`}}},
+    scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#7A8294',font:{size:10}}},
+      y:{beginAtZero:true,grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>integer(v)}},
+      y1:{position:'right',min:0,max:100,display:false}}
+  },[lastLabels]);
 }
 
 function renderProdutos(p){
