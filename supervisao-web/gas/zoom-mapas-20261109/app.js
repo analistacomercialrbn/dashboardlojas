@@ -569,8 +569,9 @@ function updateAdvancedFilterCount(){
 
 function queryPage(){
   // A marca da Visão Geral acompanha a tela atual (a Visão equipes não passa por renderPage).
-  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'));
+  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'));
   document.body.classList.toggle('tv-page',state.module==='commercial'&&state.page==='teams');
+  document.body.classList.toggle('pd-page',state.module==='commercial'&&state.page==='pedidos');
   if(state.module==='hub')return;
   if(state.module==='administration'){renderUsers();return;}
   if(state.module==='logistics'){logShow();return;}
@@ -586,7 +587,7 @@ function queryPage(){
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
   if(state.page==='teams'){queryTeams(requestId);return;}
-  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
+  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...(state.page==='pedidos'&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
   if(state.page==='history'){$('#pageTitle').textContent='Histórico comercial';$('#pageSubtitle').textContent='Evolução e comparação de indicadores';$('#periodChip').textContent='Desde jun/2017';return;}
@@ -645,7 +646,7 @@ function sectionHeading(title,sub=''){return `<div class="section-heading"><div>
 
 function renderPage(page,payload){
   // Visão Geral tem cabeçalho e visual próprios; as outras telas continuam como antes.
-  document.body.classList.toggle('ov-page',page==='overview');
+  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos');
   mountCoverageFilters(page==='cidades'&&state.cityView==='coverage');
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')Promise.resolve(renderMacroHistory(payload)).then(()=>{if(state.page==='history')renderPageExtras('history',payload);});
@@ -655,7 +656,7 @@ function renderPage(page,payload){
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
   else if(page==='pedidos')renderOrders(payload);
-  if(page!=='history'&&page!=='overview'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
+  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
   biRender(page,payload);
   if(page!=='history')renderPageExtras(page,payload);
 }
@@ -811,6 +812,7 @@ function tvImageName(){
 function renderTeams(payload){
   if(TEAMS.indicator==='margin'&&!payload.canMargin)TEAMS.indicator='revenue';
   ovEnsureTopTools();
+  {const c=$('#ovCutoff');if(c&&!/Corte/.test(c.textContent))c.innerHTML='Corte dos dados: <b>—</b>';}
   const label=$('#activeMenuLabel');if(label)label.textContent='Visão equipes';
   const mt=$('#ovMarginToggle');if(mt)mt.hidden=true;
   const model=teamsModel(payload);TEAMS.model=model;
@@ -926,6 +928,7 @@ function ovBar(attainment,projection,cls=''){
 
 function renderOverview(p){
   OV.p=p;ovEnsureTopTools();
+  {const c=$('#ovCutoff');if(c&&!c.querySelector('b'))c.innerHTML='Corte dos dados: <b>—</b>';if(c&&!/Corte/.test(c.textContent))c.innerHTML='Corte dos dados: <b>—</b>';}
   const label=$('#activeMenuLabel');if(label)label.textContent='Visão Geral';
   const k=p.kpis||{},ex=p.extras||{},c=ex.comparisons||null,cl=ex.clients||{},pipe=p.pipeline||{},daily=p.daily||{};
   const revenue=Number(k.revenue)||0,meta=Number(k.meta)||0,attainment=meta?revenue/meta*100:null,missing=meta?Math.max(0,meta-revenue):null;
@@ -1140,24 +1143,13 @@ function renderPageExtras(page,payload){
   const ex=payload?.extras;if(!ex||ex.error){if(ex?.error)console.warn('Indicadores adicionais indisponíveis:',ex.error);return;}
   try{
     if(page==='overview'){/* Visão Geral: comparativos ficam na faixa azul */}
-    else if(page==='pedidos')exOrdersUi(ex);
+    else if(page==='pedidos'){/* Pedidos: blocos fazem parte da página */}
     else if(page==='carteira')exPortfolioUi(ex);
     else if(page==='produtos')exProductsUi(ex);
     else if(page==='cidades'&&state.cityView!=='coverage')exCitiesUi(ex);
     else if(page==='metas')exGoalsUi(ex);
     else if(page==='history')exHistoryUi(ex);
   }catch(error){console.warn('Falha ao desenhar indicadores adicionais',error);}
-}
-
-function exOrdersUi(ex){
-  const aging=ex.aging||[],maxV=Math.max(1,...aging.map(a=>a.value));
-  const old=aging.filter(a=>a.min>=16).reduce((s,a)=>s+a.value,0),oldCount=aging.filter(a=>a.min>=16).reduce((s,a)=>s+a.count,0);
-  const agingHtml=`<div class="ex-aging">${aging.map(a=>`<div class="ex-aging-row ${a.min>=16?'is-old':''}"><span>${esc(a.label)}</span><div class="ex-aging-bar"><i style="width:${a.value/maxV*100}%"></i>${a.blocked?`<b style="width:${a.blocked/maxV*100}%" title="Bloqueado"></b>`:''}</div><strong>${money(a.value,true)}</strong><small>${integer(a.count)} pedidos</small></div>`).join('')}<p class="ex-note"><i class="ex-key-blocked"></i> parte bloqueada · ${oldCount?`<b>${integer(oldCount)} pedidos (${money(old,true)}) parados há mais de 15 dias</b>`:'nenhum pedido parado há mais de 15 dias'}</p></div>`;
-  const conv=ex.conversion;
-  const convHtml=conv?exCards([['Pedidos recebidos no período',integer(conv.orders),money(conv.entered,true)+' em pedidos'],['Já faturados',integer(conv.billedOrders),money(conv.billed,true)+' faturados'],['Conversão em faturamento',pct(conv.rate),'do valor pedido já virou nota',conv.rate>=80?'good':conv.rate>=50?'':'bad']]):'<p class="ex-empty">A conversão aparece quando há entradas diárias de pedidos no período (disponíveis nos dois meses mais recentes).</p>';
-  const sups=exTable([{label:'Supervisão'},{label:'Pedidos',num:true},{label:'Em aberto',num:true},{label:'Liberado',num:true},{label:'Pendente',num:true},{label:'Bloqueado',num:true},{label:'% bloqueado',num:true}],
-    (ex.bySupervisor||[]).map(s=>[`<strong>${esc(s.name)}</strong>`,integer(s.orders),money(s.value,true),money(s.released,true),money(s.pending,true),money(s.blocked,true),`${exShareBar(s.value?s.blocked/s.value*100:0,'bad')} ${pct(s.value?s.blocked/s.value*100:0)}`]));
-  exInsert(`<div class="ex-grid-2">${exSection('ordersAging','Idade dos pedidos em aberto','Há quantos dias cada pedido foi lançado. Quanto mais antigo, maior o risco de não faturar.',agingHtml)}${exSection('ordersConversion','Pedido × faturamento','Pedidos lançados no período que já viraram faturamento.',convHtml)}</div>${exSection('ordersBySupervisor','Pedidos em aberto por supervisão','Valor parado em carteira por situação.',sups)}`,'.order-status-panel');
 }
 
 function exPortfolioUi(ex){
@@ -1503,43 +1495,83 @@ async function renderCityMap(cities,selectedKey){
   }
 }
 
+// ===== Pedidos & Previsão (visual das páginas novas; sem imagem) =====
+const PD_STATUS=[['PENDENTE','Pendente','pend'],['LIBERADO','Liberado','lib'],['BLOQUEADO','Bloqueado','blk']];
+const PD_CLIENTS_PAGE=15,PD_ORDERS_PAGE=20,PD_CHASE_PAGE=10;
+function pdDays(order){
+  const d=order.firstDate||order.date;if(!d)return null;
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  return Math.max(0,Math.floor((Date.parse(parts+'T12:00:00Z')-new Date(d).getTime())/86400000));
+}
+function pdDaysChip(days){if(days==null)return '—';return `<span class="pd-days ${days>30?'is-red':days>15?'is-yellow':''}">${integer(days)} ${days===1?'dia':'dias'}</span>`;}
+function pdMore(id,shown,total,step,label){return shown<total?`<button type="button" class="pd-more" id="${id}">Carregar mais ${integer(Math.min(step,total-shown))} ${label} <small>· mostrando ${integer(shown)} de ${integer(total)}</small></button>`:(total>step?`<p class="pd-more-end">Mostrando todos os ${integer(total)} ${label}.</p>`:'');}
+
 function renderOrders(p){
-  const byStatus=p.byStatus||[];
-  const rows=p.orders||[];
-  const statusLabel={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'};
-  const statusClass={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
-  state.orderPayload=p;
+  state.orderPayload=p;ovEnsureTopTools();
+  const label=$('#activeMenuLabel');if(label)label.textContent='Pedidos & Previsão';
+  const ex=p.extras||{},rows=p.orders||[],byStatus=new Map((p.byStatus||[]).map(x=>[x.status,x]));
+  const cut=$('#ovCutoff');if(cut)cut.innerHTML='Atualização: <b>'+esc(ex.updatedAt?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(ex.updatedAt)):ovDate(ex.latest))+'</b>';
+  const mt=$('#ovMarginToggle');if(mt)mt.hidden=true;
   if(!rows.some(x=>orderClientCode(x)===state.selectedOrderClient))state.selectedOrderClient='';
   if(!rows.some(x=>x.key===state.selectedOrderKey))state.selectedOrderKey='';
-  $('#content').innerHTML=`
-    ${sectionHeading('Pedidos em aberto e posição','Visão de carteira por cliente, pedido e item, inspirada na rotina 336 do Winthor.')}
-    <div class="grid kpi-grid four">
-      ${kpi('Carteira total',money(p.totalOpenValue??(Number(p.openValue||0)+Number(p.blockedValue||0)),true),`${integer(p.totalOpenCount??(Number(p.openCount||0)+Number(p.blockedCount||0)))} pedidos · todos os status`)}
-      ${kpi('Participação no faturamento',pct(p.shareRevenue),'Carteira total, inclusive bloqueados ÷ faturado')}
-      ${kpi('Projeção liberados + pendentes',money(p.projected,true),`${pct(p.projectedAttainment)} da meta do recorte`)}
-      ${kpi('Bloqueados',money(p.blockedValue,true),`${integer(p.blockedCount)} pedidos fora da projeção`)}
+  state.orderClientLimit=PD_CLIENTS_PAGE;state.orderRowLimit=PD_ORDERS_PAGE;state.orderChaseLimit=PD_CHASE_PAGE;
+  const total=Number(p.totalOpenValue??0),count=Number(p.totalOpenCount??rows.length);
+  const aging=ex.aging||[],maxCount=Math.max(1,...aging.map(a=>a.count));
+  const old=aging.filter(a=>a.min>=16),oldCount=old.reduce((s,a)=>s+a.count,0),oldValue=old.reduce((s,a)=>s+a.value,0);
+  const conv=ex.conversion,options=ex.supervisorOptions||[],selected=normalizeMulti(state.filters.supervisor);
+  const checked=name=>selected.length?selected.includes(name):!tvDefaultOut(name);
+  const sup=options.length?`<details class="tv-sup" id="tvSupervisors"><summary>Supervisão: ${esc(tvSupervisorSummary(options))} <span aria-hidden="true">▾</span></summary><div class="tv-sup-menu"><fieldset><legend class="sr-only">Supervisões</legend>${options.map(o=>`<label><input type="checkbox" data-teams-supervisor="${esc(o.name)}" ${checked(o.name)?'checked':''}><span>${esc(o.name)}</span><small>${integer(o.count)} ped.</small></label>`).join('')}</fieldset><div class="tv-sup-actions"><button type="button" id="teamsSelectAll">Marcar todas</button><button type="button" id="teamsClearSupervisors">Limpar</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="primary" id="teamsApplySupervisors">Aplicar</button></div></div></details>`:'';
+  $('#content').className='pd-report';
+  $('#content').innerHTML=`<div class="tv-toolbar">${sup}</div>
+  <section class="ov-hero pd-hero" aria-label="Carteira de pedidos">
+    <div class="pd-hero-grid">
+      <div><p class="ov-k">Carteira total</p><p class="pd-hv-lg">${money(total,true)}</p><p class="ov-hs">${money(total)} · todas as posições, inclusive bloqueados</p></div>
+      <div><p class="ov-k">Pedidos em aberto</p><p class="ov-hv">${integer(count)}</p><p class="ov-hs">${integer(byStatus.get('BLOQUEADO')?.count||0)} bloqueados</p></div>
+      <div><p class="ov-k">Sobre o faturado</p><p class="ov-hv">${pct(p.shareRevenue)}</p><p class="ov-hs">carteira ÷ faturado no período</p></div>
+      <div><p class="ov-k">Faturado + carteira liberável</p><p class="ov-hv">${money(p.projected,true)}</p><p class="ov-hs">${pct(p.projectedAttainment)} da meta · o que já foi faturado no mês mais os pedidos liberados e pendentes; não é garantia de faturamento</p></div>
     </div>
-    <div class="panel order-status-panel order-status-filter"><div class="panel-title-row"><div><h2>Pedidos por posição</h2><div class="panel-sub">Clique em uma posição para filtrar os clientes e os pedidos abaixo.</div></div></div><div class="order-status-breakdown">
-      <button type="button" class="status-summary order-position-choice" data-order-status="" aria-pressed="false"><b>Todas as posições</b><strong>${money(p.totalOpenValue??rows.reduce((sum,x)=>sum+Number(x.value||0),0),true)}</strong><small>${orderCount(rows.length)}</small></button>
-      ${byStatus.map(x=>`<button type="button" class="status-summary order-position-choice ${String(x.status).toLowerCase()}" data-order-status="${esc(x.status)}" aria-pressed="false"><b>${esc(statusLabel[x.status]||x.status)}</b><strong>${money(x.value,true)}</strong><small>${orderCount(x.count)}</small></button>`).join('')}
-    </div></div>
-    <div class="order-explorer">
-      <div class="panel order-clients-panel"><div class="panel-title-row"><div><h2>Clientes</h2><div id="orderClientFilterNote" class="panel-sub">Todos os clientes do recorte.</div></div></div>
-        <label class="order-search-label" for="orderClientSearch">Buscar cliente</label><input id="orderClientSearch" class="order-client-search" type="search" placeholder="Nome ou código do cliente" autocomplete="off">
-        <button id="allOrderClients" class="order-client-all" type="button">Todos os clientes</button>
-        <div id="orderClientList" class="order-client-list"></div>
-      </div>
-      <div class="panel order-detail-panel"><div class="panel-title-row"><div><h2 id="orderClientTitle">Todos os clientes</h2><div id="orderDetailNote" class="panel-sub">Pedidos de todos os clientes. Clique em um pedido para ver os itens.</div></div><span id="orderClientTotal" class="panel-chip"></span></div>
-        <div id="clientOrders"></div>
-        <div id="orderLineDetails" class="order-line-details"></div>
-      </div>
-    </div>
-    <div class="small-note order-stock-note">O arquivo de pedidos atual não traz saldo de estoque. Quando essa informação estiver disponível na integração, os itens serão marcados como disponíveis ou em falta; por enquanto, o saldo aparece como “não informado”.</div>`;
-  $('#orderClientSearch').value=state.orderClientQuery;
-  $('#orderClientSearch').addEventListener('input',e=>{state.orderClientQuery=e.target.value;updateOrderExplorer()});
-  $('#allOrderClients').addEventListener('click',()=>{state.selectedOrderClient='';state.selectedOrderKey='';state.orderClientQuery='';$('#orderClientSearch').value='';updateOrderExplorer()});
-  $$('.order-position-choice').forEach(button=>button.addEventListener('click',()=>{const status=button.dataset.orderStatus;state.selectedOrderStatus=state.selectedOrderStatus===status?'':status;state.selectedOrderClient='';state.selectedOrderKey='';updateOrderExplorer()}));
+    <p class="ov-hs pd-hero-note">Diferente da projeção oficial da Visão Geral, que usa o ritmo de faturamento por dias úteis.</p>
+  </section>
+  <div class="ov-row">
+    <section class="ov-card pd-positions"><div class="ov-head"><p class="ov-k">Posições</p><p class="ov-s">clique para filtrar clientes e pedidos</p></div>
+      <div class="pd-split">${PD_STATUS.map(([s,,cls])=>{const v=Number(byStatus.get(s)?.value||0);return v>0?`<button type="button" class="${cls} order-position-choice" data-order-status="${s}" style="flex:${v}" aria-label="Filtrar ${s.toLowerCase()}"></button>`:'';}).join('')}</div>
+      <div class="pd-status">${PD_STATUS.map(([s,label,cls])=>{const x=byStatus.get(s)||{value:0,count:0};return `<button type="button" class="pd-status-item order-position-choice" data-order-status="${s}" aria-pressed="false"><span class="ov-s"><i class="dot ${cls}"></i>${label}</span><b>${money(x.value,true)}</b><small>${orderCount(x.count)}</small></button>`;}).join('')}<button type="button" class="pd-status-item pd-status-all order-position-choice" data-order-status="" aria-pressed="false"><span class="ov-s">Todas</span><small>sem filtro de posição</small></button></div>
+    </section>
+    <section class="ov-card pd-aging"><div class="ov-head"><p class="ov-k">Idade dos pedidos</p><p class="ov-s">dias desde o lançamento · por pedido</p></div>
+      <div class="pd-aging-rows">${aging.map(a=>`<div class="pd-aging-row ${a.min>=16?'is-old':''}"><span>${esc(a.label)}</span><div class="pd-aging-bar"><i style="width:${a.count/maxCount*100}%"></i></div><b>${orderCount(a.count)}</b><small>${money(a.value,true)}</small></div>`).join('')}</div>
+      <p class="ov-s pd-note">${oldCount?`<b class="r">${orderCount(oldCount)} (${money(oldValue,true)}) parados há mais de 15 dias.</b>`:'Nenhum pedido parado há mais de 15 dias.'}</p>
+    </section>
+  </div>
+  <section class="ov-card pd-chase" id="pdChase"></section>
+  <section class="ov-card pd-conv"><p class="ov-k">Pedido × faturamento</p>${conv?`<div class="pd-conv-row"><div><span class="ov-s">Pedidos lançados no período</span><b>${orderCount(conv.orders)}</b><small>${money(conv.entered,true)}</small></div><div><span class="ov-s">Já faturados</span><b>${orderCount(conv.billedOrders)}</b><small>${money(conv.billed,true)}</small></div><div><span class="ov-s">Conversão</span><b class="${conv.rate>=80?'g':conv.rate>=50?'y':'r'}">${pct(conv.rate)}</b><small>do valor pedido já virou nota</small></div></div><p class="ov-s pd-note">"Já faturados" conta só os pedidos lançados neste período que viraram nota; por isso é menor que o faturado total do mês, que inclui pedidos lançados antes.</p>`:'<p class="ov-s">Disponível quando há entradas diárias de pedidos no período (dois meses mais recentes).</p>'}</section>
+  <section class="ov-card pd-sups"><div class="ov-head"><p class="ov-k">Pedidos em aberto por supervisão</p><p class="ov-s">valor parado em carteira por posição</p></div>
+    <div class="ov-table-wrap"><table class="ov-table pd-table"><thead><tr><th data-sort-ready="1">Supervisão</th><th data-sort-ready="1">Pedidos</th><th data-sort-ready="1">Em aberto</th><th data-sort-ready="1">Liberado</th><th data-sort-ready="1">Pendente</th><th data-sort-ready="1">Bloqueado</th><th data-sort-ready="1">% bloqueado</th></tr></thead><tbody>${(ex.bySupervisor||[]).map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${integer(s.orders)}</td><td><b>${money(s.value,true)}</b></td><td>${money(s.released,true)}</td><td>${money(s.pending,true)}</td><td>${money(s.blocked,true)}</td><td>${pct(s.value?s.blocked/s.value*100:0)}</td></tr>`).join('')||'<tr><td colspan="7">Nenhum pedido neste recorte.</td></tr>'}</tbody></table></div>
+  </section>
+  <div class="order-explorer pd-explorer">
+    <section class="ov-card order-clients-panel"><div class="ov-head"><p class="ov-k">Clientes</p><p id="orderClientFilterNote" class="ov-s"></p></div>
+      <input id="orderClientSearch" class="order-client-search" type="search" placeholder="Buscar nome ou código do cliente" autocomplete="off" aria-label="Buscar cliente">
+      <button id="allOrderClients" class="order-client-all" type="button">Todos os clientes</button>
+      <div id="orderClientList" class="order-client-list"></div>
+    </section>
+    <section class="ov-card order-detail-panel"><div class="ov-head"><p class="ov-k" id="orderClientTitle">Todos os clientes</p><p id="orderDetailNote" class="ov-s"></p></div>
+      <div id="clientOrders"></div>
+      <div id="orderLineDetails" class="order-line-details"></div>
+    </section>
+  </div>
+  <p class="ov-s pd-foot">Motivo do bloqueio: a base de pedidos não traz essa informação. Saldo de estoque: ainda não vem na integração e aparece como “não informado”.</p>`;
+  $('#orderClientSearch').value=state.orderClientQuery||'';
+  $('#orderClientSearch').oninput=e=>{state.orderClientQuery=e.target.value;state.orderClientLimit=PD_CLIENTS_PAGE;state.orderRowLimit=PD_ORDERS_PAGE;updateOrderExplorer();};
+  $('#allOrderClients').onclick=()=>{state.selectedOrderClient='';state.selectedOrderKey='';state.orderClientQuery='';$('#orderClientSearch').value='';state.orderClientLimit=PD_CLIENTS_PAGE;state.orderRowLimit=PD_ORDERS_PAGE;updateOrderExplorer();};
+  $$('.order-position-choice').forEach(b=>b.onclick=()=>{const s=b.dataset.orderStatus;state.selectedOrderStatus=s===''||state.selectedOrderStatus===s?'':s;state.selectedOrderClient='';state.selectedOrderKey='';state.orderClientLimit=PD_CLIENTS_PAGE;state.orderRowLimit=PD_ORDERS_PAGE;updateOrderExplorer();});
+  bindTeamsSupervisors();
+  pdDrawChase();
   updateOrderExplorer();
+}
+function pdDrawChase(){
+  const list=state.orderPayload?.extras?.chase||[],shown=list.slice(0,state.orderChaseLimit||PD_CHASE_PAGE),host=$('#pdChase');if(!host)return;
+  const label={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'},cls={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
+  host.innerHTML=`<div class="ov-head"><p class="ov-k">Pedidos para cobrar · ${integer(list.length)}</p><p class="ov-s">bloqueados e parados há mais de 15 dias · do mais antigo para o mais novo</p></div>${list.length?`<div class="ov-table-wrap"><table class="ov-table pd-table"><thead><tr><th data-sort-ready="1">Pedido</th><th data-sort-ready="1">Cliente</th><th data-sort-ready="1">RCA</th><th data-sort-ready="1">Supervisor</th><th data-sort-ready="1">Posição</th><th data-sort-ready="1">Dias parado</th><th data-sort-ready="1">Valor</th></tr></thead><tbody>${shown.map(o=>`<tr><td>${esc(o.order||'—')}</td><td><b>${esc(o.clientName||'—')}</b></td><td>${esc(o.rcaName||'—')}</td><td>${esc(o.supervisor||'—')}</td><td><span class="order-status ${cls[o.status]||''}">${esc(label[o.status]||o.status)}</span></td><td>${pdDaysChip(o.days)}</td><td><b>${money(o.value,true)}</b></td></tr>`).join('')}</tbody></table></div>${pdMore('pdChaseMore',shown.length,list.length,PD_CHASE_PAGE,'pedidos')}`:'<p class="ov-s">Nenhum pedido bloqueado ou parado há mais de 15 dias neste recorte.</p>'}`;
+  const more=$('#pdChaseMore');if(more)more.onclick=()=>{state.orderChaseLimit=(state.orderChaseLimit||PD_CHASE_PAGE)+PD_CHASE_PAGE;pdDrawChase();};
 }
 function orderClientCode(order){return String(order.client??'')||'__sem_cliente'}
 function orderCount(count){return `${integer(count)} ${Number(count)===1?'pedido':'pedidos'}`}
@@ -1547,13 +1579,14 @@ function orderExplorerData(){
   const rows=(state.orderPayload?.orders||[]).filter(x=>!state.selectedOrderStatus||x.status===state.selectedOrderStatus),query=normalize(state.orderClientQuery),groups=new Map();
   rows.forEach(order=>{
     const code=orderClientCode(order);
-    if(!groups.has(code))groups.set(code,{code,labelCode:String(order.client??''),name:order.clientName||String(order.client??'')||'Cliente sem identificação',orders:[],value:0});
+    if(!groups.has(code))groups.set(code,{code,labelCode:String(order.client??''),name:order.clientName||'Cliente sem cadastro · '+String(order.client??'—'),orders:[],value:0});
     const group=groups.get(code);group.orders.push(order);group.value+=Number(order.value)||0;
   });
-  const clients=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  // Clientes com mais valor em carteira primeiro; sem cadastro também aparecem.
+  const clients=[...groups.values()].sort((a,b)=>b.value-a.value||a.name.localeCompare(b.name,'pt-BR'));
   const visible=clients.filter(x=>!query||normalize(x.name).includes(query)||normalize(x.labelCode).includes(query));
   const selected=visible.find(x=>x.code===state.selectedOrderClient);
-  const orders=selected?selected.orders:visible.flatMap(x=>x.orders);
+  const orders=(selected?selected.orders:visible.flatMap(x=>x.orders)).slice().sort((a,b)=>(pdDays(b)??-1)-(pdDays(a)??-1));
   return {clients,visible,selected,orders,value:orders.reduce((sum,x)=>sum+Number(x.value||0),0)};
 }
 function updateOrderExplorer(){
@@ -1562,19 +1595,21 @@ function updateOrderExplorer(){
   if(!orders.some(x=>x.key===state.selectedOrderKey))state.selectedOrderKey='';
   const statusLabel={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'},statusClass={PENDENTE:'pending',LIBERADO:'released',BLOQUEADO:'blocked'};
   const position=state.selectedOrderStatus?statusLabel[state.selectedOrderStatus]||state.selectedOrderStatus:'Todas as posições';
-  $$('.order-position-choice').forEach(button=>{const active=button.dataset.orderStatus===state.selectedOrderStatus;button.classList.toggle('selected',active);button.setAttribute('aria-pressed',String(active))});
+  $$('.order-position-choice').forEach(b=>{const active=b.dataset.orderStatus===(state.selectedOrderStatus||'');b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active));});
+  const clientLimit=state.orderClientLimit||PD_CLIENTS_PAGE,rowLimit=state.orderRowLimit||PD_ORDERS_PAGE;
   $('#orderClientFilterNote').textContent=`${integer(visible.length)} ${visible.length===1?'cliente':'clientes'} · ${position}`;
   $('#allOrderClients').classList.toggle('selected',!selected&&!state.orderClientQuery);
-  $('#allOrderClients').setAttribute('aria-pressed',String(!selected&&!state.orderClientQuery));
-  $('#orderClientList').innerHTML=visible.length?visible.map(x=>`<button type="button" class="order-client-choice ${selected?.code===x.code?'selected':''}" data-client="${esc(x.code)}" aria-pressed="${selected?.code===x.code}"><span><strong>${esc(x.name)}</strong><small>Cód. ${esc(x.labelCode||'—')} · ${orderCount(x.orders.length)}</small></span><b>${money(x.value,true)}</b></button>`).join(''):'<div class="empty">Nenhum cliente corresponde aos filtros.</div>';
-  $$('.order-client-choice').forEach(button=>button.addEventListener('click',()=>{state.selectedOrderClient=state.selectedOrderClient===button.dataset.client?'':button.dataset.client;state.selectedOrderKey=visible.find(x=>x.code===state.selectedOrderClient)?.orders[0]?.key||'';updateOrderExplorer()}));
+  $('#orderClientList').innerHTML=(visible.length?visible.slice(0,clientLimit).map(x=>`<button type="button" class="order-client-choice ${selected?.code===x.code?'selected':''}" data-client="${esc(x.code)}" aria-pressed="${selected?.code===x.code}"><span><strong>${esc(x.name)}</strong><small>Cód. ${esc(x.labelCode||'—')} · ${orderCount(x.orders.length)}</small></span><b>${money(x.value,true)}</b></button>`).join(''):'<div class="empty">Nenhum cliente corresponde aos filtros.</div>')+pdMore('pdClientsMore',Math.min(clientLimit,visible.length),visible.length,PD_CLIENTS_PAGE,'clientes');
+  $$('.order-client-choice').forEach(b=>b.onclick=()=>{state.selectedOrderClient=state.selectedOrderClient===b.dataset.client?'':b.dataset.client;state.selectedOrderKey='';state.orderRowLimit=PD_ORDERS_PAGE;updateOrderExplorer();});
+  const cm=$('#pdClientsMore');if(cm)cm.onclick=()=>{state.orderClientLimit=clientLimit+PD_CLIENTS_PAGE;updateOrderExplorer();};
   $('#orderClientTitle').textContent=selected?.name||(state.orderClientQuery?'Clientes da busca':'Todos os clientes');
-  $('#orderDetailNote').textContent=`${position} · ${selected?'Pedidos deste cliente':'Pedidos de todos os clientes listados'}. Clique no número do pedido para ver os itens.`;
-  $('#orderClientTotal').textContent=`${orderCount(orders.length)} · ${money(value,true)}`;
-  $('#clientOrders').innerHTML=orders.length?`<div class="table-wrap order-table-wrap"><table class="order-table order-browser-table"><thead><tr><th>Pedido</th><th>Cliente</th><th>Posição</th><th>Data</th><th>RCA</th><th>Itens</th><th class="align-right">Valor</th></tr></thead><tbody>${orders.map(x=>`<tr class="order-select-row ${state.selectedOrderKey===x.key?'selected':''}"><td data-label="Pedido"><button type="button" class="order-open" data-order="${esc(x.key)}" aria-label="Ver itens do pedido ${esc(x.order||'sem número')}" aria-expanded="${state.selectedOrderKey===x.key}">${esc(x.order||'—')} <span aria-hidden="true">↗</span></button></td><td data-label="Cliente" class="order-customer-cell"><strong>${esc(x.clientName||x.client||'Cliente sem identificação')}</strong><small class="item-code">Cód. ${esc(x.client??'—')}</small></td><td data-label="Posição"><span class="order-status ${statusClass[x.status]||''}">${esc(statusLabel[x.status]||x.status)}</span></td><td data-label="Data">${fmtDate(x.date)}</td><td data-label="RCA">${esc(x.rcaName||x.rca||'—')}</td><td data-label="Itens">${integer(x.lines||x.items?.length||0)}</td><td data-label="Valor" class="align-right"><strong>${money(x.value,true)}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhum pedido corresponde aos filtros selecionados.</div>';
-  $$('.order-open').forEach(button=>button.addEventListener('click',()=>{state.selectedOrderKey=state.selectedOrderKey===button.dataset.order?'':button.dataset.order;updateOrderExplorer();if(state.selectedOrderKey)$('#orderLineDetails').scrollIntoView({behavior:'smooth',block:'nearest'})}));
+  $('#orderDetailNote').textContent=`${position} · ${orderCount(orders.length)} · ${money(value,true)} · mais antigos primeiro · clique no pedido para ver os itens`;
+  const shown=orders.slice(0,rowLimit);
+  $('#clientOrders').innerHTML=orders.length?`<div class="table-wrap order-table-wrap"><table class="order-table order-browser-table pd-orders"><thead><tr><th data-sort-ready="1">Pedido</th><th data-sort-ready="1">Cliente</th><th data-sort-ready="1">Posição</th><th data-sort-ready="1">Lançado</th><th data-sort-ready="1">Dias em aberto</th><th data-sort-ready="1">RCA</th><th data-sort-ready="1">Supervisor</th><th data-sort-ready="1">Itens</th><th data-sort-ready="1" class="align-right">Valor</th></tr></thead><tbody>${shown.map(x=>`<tr class="order-select-row ${state.selectedOrderKey===x.key?'selected':''}"><td data-label="Pedido"><button type="button" class="order-open" data-order="${esc(x.key)}" aria-label="Ver itens do pedido ${esc(x.order||'sem número')}" aria-expanded="${state.selectedOrderKey===x.key}">${esc(x.order||'—')} <span aria-hidden="true">↗</span></button></td><td data-label="Cliente" class="order-customer-cell"><strong>${esc(x.clientName||'Cliente sem cadastro · '+(x.client??'—'))}</strong><small class="item-code">Cód. ${esc(x.client??'—')}</small></td><td data-label="Posição"><span class="order-status ${statusClass[x.status]||''}">${esc(statusLabel[x.status]||x.status)}</span></td><td data-label="Lançado">${fmtDate(x.firstDate||x.date)}</td><td data-label="Dias em aberto">${pdDaysChip(pdDays(x))}</td><td data-label="RCA">${esc(x.rcaName||x.rca||'—')}</td><td data-label="Supervisor">${esc(x.supervisor||'—')}</td><td data-label="Itens">${integer(x.lines||x.items?.length||0)}</td><td data-label="Valor" class="align-right"><strong>${money(x.value,true)}</strong></td></tr>`).join('')}</tbody></table></div>${pdMore('pdOrdersMore',shown.length,orders.length,PD_ORDERS_PAGE,'pedidos')}`:'<div class="empty">Nenhum pedido corresponde aos filtros selecionados.</div>';
+  const om=$('#pdOrdersMore');if(om)om.onclick=()=>{state.orderRowLimit=rowLimit+PD_ORDERS_PAGE;updateOrderExplorer();};
+  $$('.order-open').forEach(b=>b.onclick=()=>{state.selectedOrderKey=state.selectedOrderKey===b.dataset.order?'':b.dataset.order;updateOrderExplorer();if(state.selectedOrderKey)$('#orderLineDetails').scrollIntoView({behavior:'smooth',block:'nearest'});});
   const order=orders.find(x=>x.key===state.selectedOrderKey);
-  $('#orderLineDetails').innerHTML=order?`<div class="order-lines-heading"><div><h3>Itens do pedido ${esc(order.order||'')}</h3><span>${esc(order.clientName||order.client||'Cliente sem identificação')} · ${esc(order.department||'')}</span></div><span class="order-status ${statusClass[order.status]||''}">${esc(statusLabel[order.status]||order.status)}</span></div><div class="table-wrap"><table><thead><tr><th>Produto</th><th class="align-right">Quantidade</th><th>Estoque</th><th class="align-right">Valor do item</th></tr></thead><tbody>${(order.items||[]).map(item=>`<tr><td><strong>${esc(item.productName||'Produto sem descrição')}</strong><small class="item-code">${item.product!=null?'Cód. '+esc(item.product):''}</small></td><td class="align-right">${item.quantity?dec(item.quantity):'—'}</td><td>${item.stock==null?'<span class="stock-unknown">Não informado</span>':item.stock>0?`<span class="stock-available">${dec(item.stock)} disponível</span>`:'<span class="stock-missing">Sem estoque</span>'}</td><td class="align-right">${money(item.value,true)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">A base não contém o detalhamento dos itens deste pedido.</td></tr>'}</tbody></table></div>`:'<div class="order-lines-empty">Selecione um pedido para abrir o detalhamento dos itens.</div>';
+  $('#orderLineDetails').innerHTML=order?`<div class="order-lines-heading"><div><h3>Itens do pedido ${esc(order.order||'')}</h3><span>${esc(order.clientName||order.client||'Cliente sem identificação')} · ${esc(order.department||'')}</span></div><span class="order-status ${statusClass[order.status]||''}">${esc(statusLabel[order.status]||order.status)}</span></div><div class="table-wrap"><table><thead><tr><th>Produto</th><th class="align-right">Quantidade</th><th>Estoque</th><th class="align-right">Valor do item</th></tr></thead><tbody>${(order.items||[]).map(item=>`<tr><td><strong>${esc(item.productName||'Produto sem descrição')}</strong><small class="item-code">${item.product!=null?'Cód. '+esc(item.product):''}</small></td><td class="align-right">${item.quantity?dec(item.quantity):'—'}</td><td>${item.stock==null?'<span class="stock-unknown">Não informado</span>':item.stock>0?`<span class="stock-available">${dec(item.stock)} disponível</span>`:'<span class="stock-missing">Sem estoque</span>'}</td><td class="align-right">${money(item.value,true)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">A base não contém o detalhamento dos itens deste pedido.</td></tr>'}</tbody></table></div>`:'<div class="order-lines-empty">Clique no número de um pedido para ver os itens.</div>';
 }
 function renderMetas(p){
   const attainment=p.totalMeta?p.totalRevenue/p.totalMeta*100:null;

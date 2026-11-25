@@ -1154,6 +1154,56 @@ body.ov-exporting .tv-scope{display:block}
  .tv-table td .ov-s{display:block;font-size:10.5px}
 }
 </style>
+<style id="orders-report-style">
+/* Pedidos & Previsão — visual das páginas novas (sem botões de imagem) */
+body.pd-page[data-module=commercial] #ovCopy,body.pd-page[data-module=commercial] #ovDownload,body.pd-page[data-module=commercial] #ovMarginToggle{display:none!important}
+#content.pd-report{display:flex;flex-direction:column;gap:16px;color:#0f1b3d;font-family:Inter,system-ui,sans-serif}
+.pd-report p{margin:0}
+.pd-hero{gap:10px!important}
+.pd-hero-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr 1.6fr;gap:24px;align-items:end}
+.pd-hv-lg{margin:4px 0 0!important;font-size:44px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:#fff}
+.pd-hero-note{opacity:.85}
+.pd-positions{flex:1 1 420px;display:flex;flex-direction:column;gap:12px}
+.pd-aging{flex:1 1 420px;display:flex;flex-direction:column;gap:12px}
+.pd-split{display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px;background:#eef1f6}
+.pd-split button{border:0;padding:0;min-height:0;cursor:pointer;display:block;min-width:4px}
+.pd-split .pend{background:#8fa3d6}.pd-split .lib{background:#14275c}.pd-split .blk{background:#c2453f}
+.pd-split button.selected{outline:3px solid #f2c94c;outline-offset:-3px}
+.pd-status{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pd-status-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid #e2e7f0;background:#fff;border-radius:10px;padding:9px 11px;cursor:pointer;min-height:0;font:inherit;color:#0f1b3d}
+.pd-status-item b{font-size:16px;font-variant-numeric:tabular-nums}.pd-status-item small{font-size:11px;color:#5b6785}
+.pd-status-item.selected{border-color:#14275c;background:#eef3fb}
+.pd-status-all{justify-content:center}
+.pd-status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.pd-aging-rows{display:flex;flex-direction:column;gap:8px}
+.pd-aging-row{display:grid;grid-template-columns:110px 1fr 92px 82px;gap:10px;align-items:center;font-size:12.5px}
+.pd-aging-row b{text-align:right;font-variant-numeric:tabular-nums}.pd-aging-row small{text-align:right;color:#5b6785}
+.pd-aging-bar{height:10px;border-radius:5px;background:#eef1f6;overflow:hidden}.pd-aging-bar i{display:block;height:100%;background:#4a72d1;border-radius:5px}
+.pd-aging-row.is-old span{color:#b23a35;font-weight:700}.pd-aging-row.is-old .pd-aging-bar i{background:#c2453f}
+.pd-note b.r,.pd-report .r{color:#c2453f}.pd-report .g{color:#1f8a5b}.pd-report .y{color:#b7791f}
+.pd-chase,.pd-sups{display:flex;flex-direction:column;gap:10px}
+.pd-table{min-width:720px}
+.pd-days{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef1f6;font-size:12px;font-weight:600;white-space:nowrap}
+.pd-days.is-yellow{background:#faf0d4;color:#8a6510}.pd-days.is-red{background:#fae6e5;color:#a23c39}
+.pd-conv{display:flex;flex-direction:column;gap:8px}
+.pd-conv-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.pd-conv-row>div{display:flex;flex-direction:column;gap:2px;border-left:1px solid #e2e7f0;padding-left:14px}
+.pd-conv-row>div:first-child{border-left:0;padding-left:0}
+.pd-conv-row b{font-size:20px;font-variant-numeric:tabular-nums}.pd-conv-row small{font-size:11.5px;color:#5b6785}
+.pd-explorer{display:grid!important;grid-template-columns:minmax(260px,320px) 1fr;gap:16px;align-items:start}
+.pd-explorer .ov-card{display:flex;flex-direction:column;gap:10px}
+.pd-explorer .order-client-search{min-height:36px;border:1px solid #d5dbe6;border-radius:8px;padding:7px 10px;font-size:13px}
+.pd-explorer .order-client-list{max-height:none!important;overflow:visible!important}
+.pd-more{width:100%;margin-top:8px;font:600 12.5px Inter,system-ui,sans-serif;padding:9px 12px;border-radius:9px;border:1px dashed #b9c9e0;background:#f7f9fc;color:#14275c;cursor:pointer;min-height:0}
+.pd-more small{font-weight:500;color:#5b6785}
+.pd-more-end{font-size:11.5px;color:#7a889b;text-align:center;margin-top:8px!important}
+.pd-orders th,.pd-orders td{white-space:nowrap}
+.pd-explorer .order-table-wrap{max-height:none!important;overflow-x:auto!important;overflow-y:visible!important}
+.pd-chase .pd-table th,.pd-chase .pd-table td{text-align:left}.pd-chase .pd-table th:last-child,.pd-chase .pd-table td:last-child{text-align:right}
+.pd-foot{font-size:11.5px}
+@media(max-width:999px){.pd-hero-grid{grid-template-columns:1fr 1fr}.pd-explorer{grid-template-columns:1fr}.pd-status{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.pd-hv-lg{font-size:30px;white-space:nowrap}.pd-hero-grid{grid-template-columns:1fr;gap:12px}.pd-conv-row{grid-template-columns:1fr}.pd-conv-row>div{border-left:0;padding-left:0}.pd-aging-row{grid-template-columns:84px 1fr 80px}.pd-aging-row small{display:none}}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
@@ -1581,8 +1631,10 @@ function allowedRca(filters){
   const catalog=RCA_BY_CODE.size?[...RCA_BY_CODE.values()]:rcaCatalog();
   const supervisors=multi(filters.supervisor);
   const rcas=multi(filters.rca);
+  const excluded=multi(filters.excludeSupervisors).map(norm);
   return new Set(catalog.filter(r=>{
     if(supervisors.length && !supervisors.includes(String(r.supervisor))) return false;
+    if(excluded.length && excluded.includes(norm(r.supervisor))) return false;
     if(rcas.length && !rcas.includes(String(r.code))) return false;
     return true;
   }).map(r=>r.code));
@@ -1629,10 +1681,12 @@ function summarizeOrders(rows){
   const groups=new Map();
   for(const row of rows){
     const key=[row.year,row.order,row.rca].join('|');
-    if(!groups.has(key))groups.set(key,{key:key,year:row.year,order:row.order,status:row.status,date:row.date,rca:row.rca,rcaName:row.rcaName,supervisor:row.supervisor,client:row.client,clientName:CLIENTS.get(row.client)?.name||String(row.client??''),city:row.city,uf:row.uf,value:0,lines:0,departments:new Set(),items:[]});
+    if(!groups.has(key))groups.set(key,{key:key,year:row.year,order:row.order,status:row.status,date:row.date,rca:row.rca,rcaName:row.rcaName,supervisor:row.supervisor,client:row.client,clientName:row.clientName||CLIENTS.get(row.client)?.name||(row.client!=null&&row.client!==''?'Cliente sem cadastro · '+row.client:'Cliente sem identificação'),firstDate:row.date,city:row.city,uf:row.uf,value:0,lines:0,departments:new Set(),items:[]});
     const group=groups.get(key);group.value+=Number(row.value)||0;group.lines++;if(row.department)group.departments.add(row.department);
     group.items.push({product:row.product??null,productName:row.productName||'Produto sem descrição',quantity:Number(row.quantity)||0,stock:row.stock==null||row.stock===''?null:Number(row.stock),value:Number(row.value)||0});
     if(row.date&&(!group.date||row.date>group.date))group.date=row.date;
+    if(row.date&&(!group.firstDate||row.date<group.firstDate))group.firstDate=row.date;
+    if(!group.clientName.startsWith||group.clientName.startsWith('Cliente sem')){if(row.clientName)group.clientName=row.clientName;}
   }
   return [...groups.values()].map(g=>({...g,department:[...g.departments].join(', ')})).sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0));
 }
@@ -2256,20 +2310,24 @@ async function exOverview(f){
   return {comparisons,monthlyPrev,projection,clients,latest:exLatest().toISOString()};
 }
 function exOrders(f){
-  const rows=filterOpenOrders(f),today=commercialToday(),bands=[['0 a 3 dias',0,3],['4 a 7 dias',4,7],['8 a 15 dias',8,15],['16 a 30 dias',16,30],['Mais de 30 dias',31,1e9]];
-  const ref=Date.parse(today+'T12:00:00Z');
+  // Conta PEDIDOS (cada pedido uma vez), não itens. Dias em aberto pelo primeiro lançamento do pedido.
+  const orders=summarizeOrders(filterOpenOrders(f)),today=commercialToday(),ref=Date.parse(today+'T12:00:00Z');
+  const daysOf=o=>{const d=o.firstDate||o.date;return d?Math.max(0,Math.floor((ref-new Date(d).getTime())/86400000)):null;};
+  const bands=[['0 a 3 dias',0,3],['4 a 7 dias',4,7],['8 a 15 dias',8,15],['16 a 30 dias',16,30],['Mais de 30 dias',31,1e9]];
   const aging=bands.map(([label,min,max])=>({label,min,max,count:0,value:0,blocked:0}));
-  const sups=new Map();
-  for(const o of rows){
-    const age=o.date?Math.max(0,Math.floor((ref-new Date(o.date).getTime())/86400000)):null;
-    const band=age==null?null:aging.find(b=>age>=b.min&&age<=b.max);
-    const value=Number(o.value)||0,blocked=String(o.status||'').toUpperCase()==='BLOQUEADO';
+  const sups=new Map(),chase=[];
+  for(const o of orders){
+    const days=daysOf(o),value=Number(o.value)||0,st=String(o.status||'').toUpperCase(),blocked=st==='BLOQUEADO';
+    const band=days==null?null:aging.find(b=>days>=b.min&&days<=b.max);
     if(band){band.count++;band.value+=value;if(blocked)band.blocked+=value;}
     const sup=o.supervisor||(RCA_BY_CODE.get(o.rca)||RCA_BY_CODE.get(Number(o.rca))||{}).supervisor||'Sem supervisor';
-    if(!sups.has(sup))sups.set(sup,{name:sup,orders:new Set(),value:0,blocked:0,released:0,pending:0});
-    const s=sups.get(sup);s.orders.add(String(o.rca)+'|'+String(o.order));s.value+=value;
-    const st=String(o.status||'').toUpperCase();if(st==='BLOQUEADO')s.blocked+=value;else if(st==='LIBERADO')s.released+=value;else s.pending+=value;
+    if(!sups.has(sup))sups.set(sup,{name:sup,orders:0,value:0,blocked:0,released:0,pending:0});
+    const s=sups.get(sup);s.orders++;s.value+=value;if(blocked)s.blocked+=value;else if(st==='LIBERADO')s.released+=value;else s.pending+=value;
+    if(blocked||(days!=null&&days>15))chase.push({key:o.key,order:o.order,status:st,client:o.client,clientName:o.clientName,rcaName:o.rcaName,supervisor:sup,days,value});
   }
+  chase.sort((a,b)=>(b.days??-1)-(a.days??-1)||b.value-a.value);
+  const options=new Map();for(const r of RCA_BY_CODE.values()){const n=r.supervisor||'Sem supervisor';if(!options.has(n))options.set(n,0);}
+  for(const o of summarizeOrders(filterOpenOrders({...f,supervisor:[],excludeSupervisors:[]}))){const n=o.supervisor||'Sem supervisor';options.set(n,(options.get(n)||0)+1);}
   // Conversão: pedidos recebidos no período que já viraram faturamento.
   const allowed=allowedRca(f),y=exYear(f),m=exMonth(f),departments=multi(f.department);
   const entries=ORDER_ENTRIES.filter(e=>allowed.has(e.rca)&&(y===null||e.year===y)&&(m===null||e.month===m)&&(!departments.length||departments.includes(String(e.department))));
@@ -2280,7 +2338,8 @@ function exOrders(f){
     const entered=[...keys.values()].reduce((a,b)=>a+b,0),billedValue=[...billed.values()].reduce((a,b)=>a+b,0);
     conversion={orders:keys.size,billedOrders:billed.size,entered,billed:billedValue,rate:entered?Math.min(100,billedValue/entered*100):null};
   }
-  return {aging,bySupervisor:[...sups.values()].map(s=>({...s,orders:s.orders.size})).sort((a,b)=>b.value-a.value),conversion};
+  return {aging,chase,orders:orders.length,bySupervisor:[...sups.values()].sort((a,b)=>b.value-a.value),conversion,updatedAt:SERVER_UPDATED_AT,latest:exLatest().toISOString(),
+    supervisorOptions:[...options].map(([name,count])=>({name,count})).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'))};
 }
 async function exPortfolio(f){
   const links=portfolioLinks?await portfolioLinks.catch(()=>[]):[];

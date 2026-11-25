@@ -161,6 +161,13 @@ function buildSnapshotRecords_() {
   return { records: records, latest: latest, validCount: validCount };
 }
 
+// A coluna Cod/Cliente da base de vendas vem como "11520 - NOME DO CLIENTE"; guarda a parte do nome.
+function clientNameFromCell_(value) {
+  const match = String(value == null ? '' : value).match(/^\s*\d+\s*[-–—]\s*(.+)$/);
+  const name = match ? match[1].replace(/\s+/g, ' ').trim() : '';
+  return name && !/^\d+$/.test(name) ? name : '';
+}
+
 function refreshOpenOrdersCache_() {
   const source = SpreadsheetApp.openById(CFG.salesSpreadsheetId);
   const year = String(CFG.years[CFG.years.length - 1]);
@@ -195,7 +202,7 @@ function refreshOpenOrdersCache_() {
         monthKey: year + '-' + String(orderDate.getUTCMonth() + 1).padStart(2, '0'),
         status: status, rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode),
         supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(),
-        client: code_(cell_(row, ix, 'Cod/Cliente')), product: productCode, productName: productName,
+        client: code_(cell_(row, ix, 'Cod/Cliente')), clientName: clientNameFromCell_(cell_(row, ix, 'Cod/Cliente')), product: productCode, productName: productName,
         order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city,
         uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados'))
       }}));
@@ -1500,7 +1507,7 @@ function refreshOpenOrdersCache_(providedAux, targetName, deferPublish) {
       const rawProduct = String(cell_(row, ix, 'Cod/Produto') || '').trim(), productCode = code_(rawProduct);
       const productName = rawProduct.replace(/^\s*\d+\s*-\s*/, '').trim() || (productCode == null ? 'Sem descrição' : 'Produto ' + productCode);
       const city = String(cell_(row, ix, 'MUNICENT') || ''), region = aux.routeMap.get(String(rcaCode) + '|' + norm_(city)) || '';
-      records.push(JSON.stringify({ type: 'openOrder', value: { date: iso, year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, monthKey: iso.slice(0, 7), status: status, rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: code_(cell_(row, ix, 'Cod/Cliente')), product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')) } }));
+      records.push(JSON.stringify({ type: 'openOrder', value: { date: iso, year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, monthKey: iso.slice(0, 7), status: status, rca: rcaCode, rcaName: rca.name || String(rcaCode == null ? '' : rcaCode), supervisor: rca.supervisor || '', department: String(cell_(row, ix, 'DEPARTAMENTO') || '').trim(), client: code_(cell_(row, ix, 'Cod/Cliente')), clientName: clientNameFromCell_(cell_(row, ix, 'Cod/Cliente')), product: productCode, productName: productName, order: String(cell_(row, ix, 'NUMPED') || '').trim(), city: city, uf: norm_(cell_(row, ix, 'ESTENT')), region: region, value: num_(cell_(row, ix, 'Pedidos Enviados')) } }));
     });
   }
   cacheSheet.clearContents(); cacheSheet.getRange(1, 1).setValue('NDJSON');
