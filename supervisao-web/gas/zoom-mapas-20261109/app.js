@@ -838,10 +838,9 @@ function renderTeams(payload){
   const outs=['Somente RCAs ativos',outSups.length?outSups.join(', ')+' fora do ranking':'',TV_FORA_DA_PAGINA.length?TV_FORA_DA_PAGINA.join(', ')+' fora da página':''].filter(Boolean).join('; ');
   $('#content').className='teams-view tv-report';
   $('#content').innerHTML=`${teamsTabs(payload)}
-  <p class="tv-scope">${esc(scopeParts.join(' · '))}</p>
   <section class="tv-hero">
     <div class="tv-hero-top">
-      <div class="tv-hero-title"><p class="ov-k">${esc(tvGroupLabel(TEAMS.group))} · ${esc(monthLabel)}</p><h2>${esc(TV_QUESTIONS[indicator]||config.label)}</h2><p class="tv-hs">${revenue?'Ordem pela projeção de atingimento':'Ordem pelo resultado real · empates na mesma posição'} · ${esc(days)}</p></div>
+      <div class="tv-hero-title"><p class="ov-k">${esc(tvGroupLabel(TEAMS.group))} · ${esc(monthLabel)}</p><h2>${esc(TV_QUESTIONS[indicator]||config.label)}</h2><p class="tv-hs">${revenue?'Ordem pela projeção de atingimento':'Ordem pelo resultado real · empates na mesma posição'} · ${esc(days)}</p><p class="tv-hs">${esc(scopeParts.join(' · '))}</p></div>
       <div class="tv-hero-facts"><div><p class="ov-k">RCAs no ranking</p><p class="tv-hv">${integer(ranked.length)}</p><p class="tv-hs">${esc(outSups.length?'sem '+outSups.join(', '):'todas as supervisões marcadas')}</p></div>${facts.map(([l,v,n])=>`<div><p class="ov-k">${esc(l)}</p><p class="tv-hv">${esc(v)}</p><p class="tv-hs">${esc(n)}</p></div>`).join('')}</div>
     </div>
     <div><div class="tv-dist">${['green','yellow','red','muted'].filter(t=>tones[t]).map(t=>`<i class="${t}" style="flex:${tones[t]}"></i>`).join('')}</div>
@@ -946,7 +945,7 @@ function renderOverview(p){
   <div class="ov-scope"><span>${esc(scope)}</span><span id="ovDays"></span></div>
   <section class="ov-hero" aria-label="Resultado do mês">
     <div class="ov-hero-top">
-      <div class="ov-hero-main"><p class="ov-k">Faturado em ${esc(periodLabel)}</p><p class="ov-hero-value" title="${money(revenue)}">${money(revenue,true)}</p><p class="ov-hero-sub">${money(revenue)} · vendas pela data de faturamento${c?.partial?' · até '+ovDate(ex.latest):''}</p></div>
+      <div class="ov-hero-main"><p class="ov-k">Faturado em ${esc(periodLabel)}</p><p class="ov-hero-value" title="${money(revenue)}">${money(revenue,true)}</p><p class="ov-hero-sub">${money(revenue)} · vendas pela data de faturamento${c?.partial?' · até '+ovDate(ex.latest):''}</p><p class="ov-hero-sub ov-hero-scope">${esc(scope)}<span id="ovDaysHero"></span></p></div>
       <div class="ov-hero-grid">
         <div><p class="ov-k">Da meta</p><p class="ov-hv">${pct(attainment)}</p><p class="ov-hs">${meta?'meta '+money(meta,true):'meta não cadastrada'}</p></div>
         <div><p class="ov-k">Falta</p><p class="ov-hv">${missing==null?'—':missing>0?money(missing,true):'Meta batida'}</p><p class="ov-hs">${missing>0?'para bater a meta':meta?'faturado passou da meta':'sem meta no recorte'}</p></div>
@@ -1052,6 +1051,7 @@ function ovApplyTeams(payload){
   }else{setText('#ovPace','—');setText('#ovPaceSub',cal?.closed?'mês encerrado':'escolha um mês em andamento');}
   const bar=$('#ovHeroBar');if(bar)bar.innerHTML=ovBar(attainment,projection,'is-hero');
   setText('#ovDays',cal&&!cal.closed&&!cal.future?integer(cal.remainingToday??cal.remaining)+' dias úteis até o fim do mês':cal?.closed?'mês encerrado':'');
+  {const d=cal&&!cal.closed&&!cal.future?integer(cal.remainingToday??cal.remaining)+' dias úteis até o fim do mês':cal?.closed?'mês encerrado':'';setText('#ovDaysHero',d?' · '+d:'');}
   if(cal)ovDrawChart(p,cal);
   const canMargin=payload?.canMargin===true,showMargin=canMargin&&COMPANY.showMargin;
   const toggle=$('#ovMarginToggle');if(toggle){toggle.hidden=!canMargin;const box=$('#companyShowMargin');if(box)box.checked=COMPANY.showMargin;}
@@ -1096,9 +1096,15 @@ async function ovExport(mode){
   try{
     const render=await loadHtml2canvas();
     document.body.classList.add('ov-exporting');window.scrollTo(0,0);
-    const skip=el=>el.nodeType===1&&(el.classList.contains('ov-noprint')||el.matches('.filterbar,.app-menu,.menu-backdrop,#dataStatus,.header-account,.menu-toggle,#refreshData,button,input,select,.tv-toolbar,.tv-tabs,details'));
-    const canvas=await render(target,{scale:2,backgroundColor:'#f3f5f9',useCORS:true,logging:false,ignoreElements:skip,height:Math.ceil((($('#content [data-capture-end]')||$('#content'))?.getBoundingClientRect().bottom||target.scrollHeight)-target.getBoundingClientRect().top+24)});
-    const blob=await new Promise((resolve,reject)=>ovTrimCanvas(canvas).toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
+    // Recorte: da faixa azul até o fim do último bloco, nas bordas dos blocos.
+    const content=$('#content'),hero=content?.querySelector('.ov-hero,.tv-hero');if(!hero)throw new Error('Página ainda carregando.');
+    const end=content.querySelector('[data-capture-end]')?.previousElementSibling||[...content.children].filter(el=>!el.matches('details,.ov-export-status')).pop();
+    const box=content.getBoundingClientRect(),top=hero.getBoundingClientRect(),bottom=end.getBoundingClientRect();
+    const canvas=await render(content,{scale:2,backgroundColor:'#f3f5f9',useCORS:true,logging:false,ignoreElements:el=>el.nodeType===1&&el.matches('details,.tv-sup-menu')});
+    const k=canvas.width/box.width,cut=document.createElement('canvas');
+    cut.width=Math.round(top.width*k);cut.height=Math.round((bottom.bottom-top.top)*k);
+    cut.getContext('2d').drawImage(canvas,Math.round((top.left-box.left)*k),Math.round((top.top-box.top)*k),cut.width,cut.height,0,0,cut.width,cut.height);
+    const blob=await new Promise((resolve,reject)=>cut.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
     const name=state.page==='teams'?tvImageName():'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
     if(mode==='copy'){
       try{if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);say('Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.');return;}
