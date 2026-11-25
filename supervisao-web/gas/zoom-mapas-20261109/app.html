@@ -1204,6 +1204,51 @@ body.pd-page[data-module=commercial] #ovCopy,body.pd-page[data-module=commercial
 @media(max-width:999px){.pd-hero-grid{grid-template-columns:1fr 1fr}.pd-explorer{grid-template-columns:1fr}.pd-status{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.pd-hv-lg{font-size:30px;white-space:nowrap}.pd-hero-grid{grid-template-columns:1fr;gap:12px}.pd-conv-row{grid-template-columns:1fr}.pd-conv-row>div{border-left:0;padding-left:0}.pd-aging-row{grid-template-columns:84px 1fr 80px}.pd-aging-row small{display:none}}
 </style>
+<style id="portfolio-report-style">
+/* Carteira — visual das páginas novas */
+body.ct-page .filter-group.period{display:none!important}
+#content.ct-report{display:flex;flex-direction:column;gap:16px;color:#0f1b3d;font-family:Inter,system-ui,sans-serif}
+.ct-report p{margin:0}
+.ct-scope{margin-left:auto}
+/* altura fixa: na imagem o filtro some, e a faixa azul não pode subir */
+.ct-report>.tv-toolbar{min-height:40px}
+.ct-hero{gap:10px!important}
+.ct-hero-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.3fr;gap:24px;align-items:end}
+.ct-hv-lg{margin:4px 0 0!important;font-size:44px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:#fff}
+.ct-hero-note{opacity:.85}
+.ct-delta{display:inline-block;padding:1px 7px;border-radius:999px;font-weight:700;font-size:11.5px;background:rgba(255,255,255,.14);color:#fff;white-space:nowrap}
+.ct-delta.up{background:rgba(46,180,120,.25);color:#b8f0d3}.ct-delta.down{background:rgba(230,90,80,.25);color:#ffd0cc}
+.ct-hero .ov-s{color:rgba(255,255,255,.75)}
+.ct-move,.ct-evo,.ct-rcas,.ct-lists,.ct-foot{display:flex;flex-direction:column;gap:12px}
+.ct-eq{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap}
+.ct-eq>div{flex:1 1 120px;display:flex;flex-direction:column;gap:2px;border:1px solid #e2e7f0;border-radius:10px;padding:10px 12px;background:#fff}
+.ct-eq>div b{font-size:22px;font-variant-numeric:tabular-nums}.ct-eq>div small{font-size:11px;color:#5b6785}
+.ct-eq>div.g b{color:#1f8a5b}.ct-eq>div.r b{color:#c2453f}
+.ct-eq>.ct-eq-total{background:#14275c;border-color:#14275c}.ct-eq>.ct-eq-total b,.ct-eq>.ct-eq-total .ov-s{color:#fff}
+.ct-eq>i{align-self:center;font-style:normal;font-size:20px;font-weight:700;color:#5b6785}
+.ct-report .g{color:#1f8a5b}.ct-report .r{color:#c2453f}
+.ct-chart{position:relative;height:300px}
+.ct-table,.ct-list{min-width:860px}
+.ct-table th button.ct-sort{all:unset;cursor:pointer;font:inherit;white-space:nowrap}
+.ct-table th button.ct-sort.on{color:#14275c;text-decoration:underline}
+.ct-table th,.ct-table td,.ct-list th,.ct-list td{text-align:left}
+.ct-table th.num,.ct-table td.num,.ct-list th.num,.ct-list td.num{text-align:right}
+.ct-table tfoot td{border-top:2px solid #d5dbe6}
+.ct-table tr.ct-orphan td{background:#fff6f5}
+.ct-tabs{display:flex;flex-wrap:wrap;gap:6px}
+.ct-tabs button{border:1px solid #d5dbe6;background:#fff;border-radius:999px;padding:6px 12px;font:600 12.5px Inter,system-ui,sans-serif;color:#0f1b3d;cursor:pointer;min-height:0}
+.ct-tabs button b{margin-left:4px;color:#5b6785}
+.ct-tabs button[aria-pressed=true]{background:#14275c;border-color:#14275c;color:#fff}.ct-tabs button[aria-pressed=true] b{color:#cfd8f0}
+.ct-list td,.ct-list th{white-space:nowrap}
+.ct-code{display:block;font-size:11px}
+.ct-tag{display:inline-block;padding:1px 6px;border-radius:999px;background:#fae6e5;color:#a23c39;font-size:10.5px;font-weight:700}
+.ct-foot-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.ct-foot-row>div{display:flex;flex-direction:column;gap:2px;border-left:1px solid #e2e7f0;padding-left:14px}
+.ct-foot-row>div:first-child{border-left:0;padding-left:0}
+.ct-foot-row b{font-size:18px;font-variant-numeric:tabular-nums}.ct-foot-row small{font-size:11.5px;color:#5b6785}
+@media(max-width:999px){.ct-hero-grid{grid-template-columns:1fr 1fr}.ct-foot-row{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.ct-hv-lg{font-size:32px}.ct-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.ct-eq>i{display:none}.ct-eq>div{flex:1 1 40%}.ct-foot-row{grid-template-columns:1fr}.ct-foot-row>div{border-left:0;padding-left:0}.ct-chart{height:240px}.ct-scope{margin-left:0}}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
@@ -2341,37 +2386,127 @@ function exOrders(f){
   return {aging,chase,orders:orders.length,bySupervisor:[...sups.values()].sort((a,b)=>b.value-a.value),conversion,updatedAt:SERVER_UPDATED_AT,latest:exLatest().toISOString(),
     supervisorOptions:[...options].map(([name,count])=>({name,count})).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'))};
 }
-async function exPortfolio(f){
+// ===== Carteira (página nova): uma data de referência, comparação com o fechamento do mês anterior =====
+// Faixas pela última compra na data de referência: ativo até 89 dias (em risco de 60 a 89),
+// inativo curto de 90 a 179 e inativo longo de 180 dias ou mais.
+async function carteiraV2(f){
   const links=portfolioLinks?await portfolioLinks.catch(()=>[]):[];
-  const directory=portfolioDirectory(links||[]),clients=portfolioGroups(filterSales({...f,year:'Todos',month:'Todos'}),directory);
-  const latest=exLatest(),y=exYear(f),m=exMonth(f);
-  const periodEnd=y===null?latest:m===null?new Date(Date.UTC(y,11,31,23,59,59)):new Date(Date.UTC(y,m,0,23,59,59));
-  const ref=periodEnd<latest?periodEnd:latest;
-  const periodStart=y===null?null:m===null?new Date(Date.UTC(y,0,1)):new Date(Date.UTC(y,m-1,1));
-  const risk=[],buyers=[];let recovered=0,recoveredRevenue=0;
-  const from12=new Date(ref);from12.setUTCFullYear(from12.getUTCFullYear()-1);
-  for(const [id,group] of clients){
-    let last=null,beforeStart=null,rev12=0,inPeriod=0;
-    for(const sale of group.history){
-      if(sale.date>ref)break;
-      last=sale;if(sale.date>=from12)rev12+=sale.value;
-      if(periodStart&&sale.date<periodStart)beforeStart=sale;
-      if(!periodStart||sale.date>=periodStart)inPeriod+=sale.value;
-    }
-    if(!last)continue;
-    const days=portfolioInactivityDays(ref,last.date);
-    if(days>=60&&days<90){
-      const owner=last.rca;
-      risk.push({client:id,name:group.name||CLIENTS.get(id)?.name||CLIENTS.get(last.client)?.name||String(id),rca:owner,rcaName:RCA_BY_CODE.get(owner)?.name||String(owner),last:last.date.toISOString(),days,revenue12:rev12});
-    }
-    if(periodStart&&inPeriod>0&&beforeStart&&portfolioInactivityDays(periodStart,beforeStart.date)>=90){recovered++;recoveredRevenue+=inPeriod;}
-    if(inPeriod>0)buyers.push(inPeriod);
+  const directory=portfolioDirectory(links||[]);
+  const day=d=>Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
+  let latest=LATEST_DATE?new Date(LATEST_DATE):null;
+  if(!latest||!Number.isFinite(latest.getTime())){let max=0;for(const s of SALES){const t=s.date.getTime();if(t>max)max=t;}latest=max?new Date(max):new Date();}
+  const ref=new Date(day(latest)+86399999);
+  const Y=ref.getUTCFullYear(),M=ref.getUTCMonth();
+  const monthStart=(k)=>Date.UTC(Y,M-k,1);
+  const curStart=monthStart(0),prevClose=new Date(curStart-1);
+  const keyOf=t=>{const d=new Date(t);return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');};
+  const curKey=keyOf(curStart),prevKey=keyOf(monthStart(1));
+  const fallKeys=[keyOf(monthStart(2)),keyOf(monthStart(3)),keyOf(monthStart(4))];
+  const fallPct=Math.min(95,Math.max(5,Number(f.fallPct)||50));
+  const from12=day(ref)-364*86400000,from6=Date.UTC(Y,M-6,ref.getUTCDate()),from3=monthStart(3);
+  const daysTo=(cut,t)=>Math.round((day(cut)-day(new Date(t)))/86400000);
+  // Filtros desta página: departamento e região valem para as compras; supervisão e RCA valem para o dono do cliente.
+  const departments=new Set(multi(f.department));
+  const geo=portfolioGeography(f);
+  const firstEver=new Map(),groups=new Map();
+  for(const s of SALES){
+    if(s.client==null)continue;
+    const id=portfolioClientKey(s,directory),t=s.date.getTime();
+    if(!Number.isFinite(t)||t>ref.getTime())continue;
+    if(!firstEver.has(id)||t<firstEver.get(id))firstEver.set(id,t);
+    if(departments.size&&!departments.has(String(s.department)))continue;
+    if(!geo(s))continue;
+    if(!groups.has(id))groups.set(id,[]);
+    groups.get(id).push(s);
   }
-  buyers.sort((a,b)=>b-a);
-  const total=buyers.reduce((a,b)=>a+b,0),top=n=>buyers.slice(0,n).reduce((a,b)=>a+b,0);
-  const top20=Math.max(1,Math.ceil(buyers.length*0.2));
-  return {risk:risk.sort((a,b)=>b.revenue12-a.revenue12),riskRevenue:risk.reduce((a,r)=>a+r.revenue12,0),reference:ref.toISOString(),
-    recovered,recoveredRevenue,concentration:buyers.length?{clients:buyers.length,top10:total?top(10)/total*100:null,top20pct:total?top(top20)/total*100:null,top20count:top20}:null};
+  const allowed=allowedRca(f),ownerFiltered=multi(f.supervisor).length||multi(f.rca).length;
+  const excluded=multi(f.excludeSupervisors).map(norm);
+  const months=[];for(let k=11;k>=0;k--){const start=monthStart(k),end=Math.min(Date.UTC(Y,M-k+1,1)-1,ref.getTime());months.push({key:keyOf(start),cutoff:end,partial:k===0&&end<Date.UTC(Y,M+1,1)-1,active:0,short:0,long:0,positive:0});}
+  const supCount=new Map();
+  const T={active:0,risk:0,short:0,long:0,positive:0,activePrev:0,shortPrev:0,longPrev:0,positivePrev:0,newC:0,recovered:0,lost:0,valueAtRisk:0,monthRevenue:0,mixPairs:0};
+  const byRca=new Map(),lists={pending:[],risk:[],falling:[],late:[],recoverable:[],orphan:[],single:[]};
+  const rev12All=[];
+  for(const [id,rows] of groups){
+    rows.sort((a,b)=>a.date-b.date);
+    const last=rows[rows.length-1];
+    const reg=CLIENTS.get(id)||CLIENTS.get(last.client);
+    const owner=reg?.rca??last.rca;
+    const info=owner==null?null:RCA_BY_CODE.get(owner);
+    const supervisor=info?.supervisor||'Sem supervisor';
+    const orphan=!info||info.active===false;
+    // Contagem para o filtro de supervisão (ignora a supervisão escolhida).
+    const days=daysTo(ref,last.date.getTime());
+    if(days<90&&info)supCount.set(supervisor,(supCount.get(supervisor)||0)+1);
+    if(info){if(!allowed.has(owner))continue;if(excluded.length&&excluded.includes(norm(supervisor)))continue;}
+    else if(ownerFiltered)continue;
+    let rev12=0,lastPrev=null,lastDayValue=0,mPrev=0,mFall=[0,0,0],monthRev=0;
+    const buyDays=new Set(),deps6=new Set(),products=new Set(),lastDay=day(last.date);
+    for(const s of rows){
+      const t=s.date.getTime(),v=Number(s.value)||0;
+      if(t>=from12){rev12+=v;buyDays.add(day(s.date));}
+      if(t>=from6&&s.department)deps6.add(String(s.department));
+      if(t<=prevClose.getTime())lastPrev=s;
+      if(day(s.date)===lastDay)lastDayValue+=v;
+      if(s.monthKey===prevKey)mPrev+=v;
+      const fi=fallKeys.indexOf(s.monthKey);if(fi>=0)mFall[fi]+=v;
+      if(t>=curStart){monthRev+=v;if(s.product!=null)products.add(s.product);}
+    }
+    // Evolução: situação no fim de cada mês (o mês atual vai até a data de referência).
+    let cursor=0,lastBefore=null;
+    for(const m of months){
+      while(cursor<rows.length&&rows[cursor].date.getTime()<=m.cutoff){lastBefore=rows[cursor];cursor++;}
+      if(!lastBefore)continue;
+      if(lastBefore.monthKey===m.key)m.positive++;
+      const d=daysTo(new Date(m.cutoff),lastBefore.date.getTime());
+      if(d<90)m.active++;else if(d<180)m.short++;else m.long++;
+    }
+    const daysPrev=lastPrev?daysTo(prevClose,lastPrev.date.getTime()):null;
+    const activeNow=days<90,activePrev=daysPrev!=null&&daysPrev<90,bought=last.date.getTime()>=curStart;
+    const isNew=bought&&(firstEver.get(id)??Infinity)>=curStart;
+    const avg12=rev12/12;
+    rev12All.push(rev12);
+    const rcaKey=orphan?'__sem_dono':String(owner);
+    if(!byRca.has(rcaKey))byRca.set(rcaKey,{key:rcaKey,rca:orphan?null:owner,name:orphan?'Sem dono':(info?.name||String(owner)),supervisor:orphan?'RCA fora da equipe ou sem RCA':supervisor,active:0,positive:0,newC:0,risk:0,short:0,long:0,valueAtRisk:0});
+    const r=byRca.get(rcaKey);
+    if(activeNow){T.active++;r.active++;}
+    else if(days<180){T.short++;r.short++;}
+    else {T.long++;r.long++;}
+    if(activePrev)T.activePrev++;else if(daysPrev!=null){if(daysPrev<180)T.shortPrev++;else T.longPrev++;}
+    if(mPrev>0)T.positivePrev++;
+    if(bought){T.positive++;r.positive++;T.monthRevenue+=monthRev;T.mixPairs+=products.size;}
+    if(isNew){T.newC++;r.newC++;}
+    else if(bought&&!activePrev)T.recovered++;
+    if(activePrev&&!activeNow)T.lost++;
+    const risk=days>=60&&days<90,short=days>=90&&days<180;
+    if(risk){T.risk++;r.risk++;}
+    if(risk||short){T.valueAtRisk+=avg12;r.valueAtRisk+=avg12;}
+    const item={id:String(id),name:reg?.name||directory.get(id)?.name||'Cliente '+String(id),rcaName:info?.name||(owner==null?'Sem RCA':'RCA '+owner),supervisor:info?supervisor:'—',orphan,
+      city:last.city?String(last.city)+(last.uf?' · '+last.uf:''):'',last:last.date.toISOString(),days,lastValue:lastDayValue,avg12};
+    if(!bought&&last.date.getTime()>=from3)lists.pending.push(item);
+    if(risk)lists.risk.push(item);
+    const avg3=(mFall[0]+mFall[1]+mFall[2])/3;
+    if(avg3>0&&mPrev<avg3*(1-fallPct/100))lists.falling.push({...item,note:'mês anterior '+Math.round((1-mPrev/avg3)*100)+'% abaixo da média'});
+    if(activeNow&&buyDays.size>=3){const sorted=[...buyDays].sort((a,b)=>a-b),interval=(sorted[sorted.length-1]-sorted[0])/86400000/(sorted.length-1);if(interval>0&&days>2*interval)lists.late.push({...item,note:'compra a cada '+Math.max(1,Math.round(interval))+' dias'});}
+    if(short)lists.recoverable.push(item);
+    if(orphan&&days<180)lists.orphan.push(item);
+    if(activeNow&&deps6.size===1)lists.single.push({...item,note:'só '+[...deps6][0]});
+  }
+  for(const list of Object.values(lists))list.sort((a,b)=>b.avg12-a.avg12||b.lastValue-a.lastValue);
+  rev12All.sort((a,b)=>b-a);
+  const total12=rev12All.reduce((a,b)=>a+b,0);let acc=0,to80=0;
+  for(const v of rev12All){if(!(v>0))break;acc+=v;to80++;if(acc>=total12*0.8)break;}
+  const buyers12=rev12All.filter(v=>v>0).length;
+  const prevMonthStart=new Date(monthStart(1));
+  const supervisorOptions=[...new Set([...RCA_BY_CODE.values()].map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:supCount.get(name)||0}));
+  const rcaRows=[...byRca.values()].map(r=>({...r,coverage:r.active?r.positive/r.active*100:null}));
+  return {reference:ref.toISOString(),previousClose:prevClose.toISOString(),previousMonth:prevMonthStart.toISOString(),currentMonth:curKey,baseStart:'2024-08-01',fallPct,
+    totals:{...T,inactive:T.short+T.long,inactivePrev:T.shortPrev+T.longPrev,coverage:T.active?T.positive/T.active*100:null,coveragePrev:T.activePrev?T.positivePrev/T.activePrev*100:null,
+      lossRate:T.activePrev?T.lost/T.activePrev*100:null,recoveryRate:(T.shortPrev+T.longPrev)?T.recovered/(T.shortPrev+T.longPrev)*100:null,
+      avgPurchase:T.positive?T.monthRevenue/T.positive:null,mix:T.positive?T.mixPairs/T.positive:null},
+    evolution:months.map(m=>({month:m.key,cutoff:new Date(m.cutoff).toISOString(),partial:m.partial,active:m.active,short:m.short,long:m.long,positive:m.positive,coverage:m.active?m.positive/m.active*100:null})),
+    byRca:rcaRows,lists,
+    concentration:buyers12?{clients:buyers12,to80,top10:total12?rev12All.slice(0,10).reduce((a,b)=>a+b,0)/total12*100:null,revenue12:total12}:null,
+    supervisorOptions};
 }
 function exPrevious(f){
   const y=exYear(f),m=exMonth(f);if(y===null)return null;
@@ -2458,7 +2593,7 @@ function exHistory(){
 async function pageExtras(page,f){
   if(page==='overview')return await exOverview(f);
   if(page==='pedidos')return exOrders(f);
-  if(page==='carteira')return await exPortfolio(f);
+  if(page==='carteira')return await carteiraV2(f);
   if(page==='produtos')return exProducts(f);
   if(page==='cidades')return exCities(f);
   if(page==='metas')return exGoals(f);
