@@ -22,7 +22,7 @@ const state = {
   checkingForUpdates:false,
   page:'overview',
   filters:{uf:[],region:'Todos',city:'Todos',year:'Todos',month:'Todos',supervisor:[],rca:[],department:[]},
-  dailyMode:'today',
+  dailyMode:'yesterday',
   dailyDate:'',
   historyYear:null,
   historySource:null,
@@ -568,6 +568,8 @@ function updateAdvancedFilterCount(){
 }
 
 function queryPage(){
+  // A marca da Visão Geral acompanha a tela atual (a Visão equipes não passa por renderPage).
+  document.body.classList.toggle('ov-page',state.module==='commercial'&&state.page==='overview');
   if(state.module==='hub')return;
   if(state.module==='administration'){renderUsers();return;}
   if(state.module==='logistics'){logShow();return;}
@@ -641,6 +643,8 @@ function insight(i){
 function sectionHeading(title,sub=''){return `<div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div>`}
 
 function renderPage(page,payload){
+  // Visão Geral tem cabeçalho e visual próprios; as outras telas continuam como antes.
+  document.body.classList.toggle('ov-page',page==='overview');
   mountCoverageFilters(page==='cidades'&&state.cityView==='coverage');
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')Promise.resolve(renderMacroHistory(payload)).then(()=>{if(state.page==='history')renderPageExtras('history',payload);});
@@ -650,10 +654,9 @@ function renderPage(page,payload){
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
   else if(page==='pedidos')renderOrders(payload);
-  if(page!=='history'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
+  if(page!=='history'&&page!=='overview'&&!(page==='cidades'&&state.cityView==='coverage'))applyPageLook(page,payload);
   biRender(page,payload);
   if(page!=='history')renderPageExtras(page,payload);
-  if(page==='overview')loadCompanySummary();
 }
 
 const TEAM_INDICATORS={
@@ -969,114 +972,190 @@ async function downloadTeamsImage(model){
 
 
 
-// ===== Resumo da empresa (Visão geral) =====
-// Mesmos indicadores e regras da Visão equipes, somados para a empresa toda (teamGroup 'all').
-// Nada por vendedor: só empresa, equipe e supervisão. Pensado para virar imagem e ir ao grupo dos supervisores.
+// ===== Visão Geral (relatório único) =====
+// A página inteira vira um relatório no mesmo visual, pronto para virar imagem e ir aos supervisores.
+// Números do processamento das bases (faturamento, meta, pedidos, clientes principais, departamentos)
+// + números da Visão equipes somados para a empresa (projeção por dias úteis, RCAs, equipes e supervisões).
 const COMPANY={payload:null,key:'',loadedAt:0,showMargin:false};
 try{COMPANY.showMargin=localStorage.getItem('companyShowMargin')==='1';}catch{}
 const MONTH_NAMES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const OV={p:null,chart:null};
 
 function companyFilters(){return {...state.filters,teamGroup:'all'};}
 function companyKey(){return JSON.stringify([state.user?.login,state.user?.accessVersion,companyFilters(),state.serverUpdatedAt]);}
-function companyHost(){
-  let host=$('#companySummary');
-  if(!host){
-    host=document.createElement('section');host.id='companySummary';host.className='company-summary';
-    const hero=$('#overviewCompare')||$('#content .overview-summary-hero');if(hero)hero.after(host);else $('#content').prepend(host);
+function ovDate(iso){return iso?String(iso).slice(0,10).split('-').reverse().join('/'):'—';}
+function ovTone(v){return v==null?'muted':v>=100?'green':v>=90?'yellow':'red';}
+function ovToneLabel(v){return v==null?'Sem meta':v>=100?'No ritmo da meta':v>=90?'Perto da meta':'Abaixo da meta';}
+function ovChip(value,label){
+  if(value==null||!Number.isFinite(Number(value)))return '';
+  const v=Number(value);return `<span class="ov-chip ${v>=0?'up':'down'}">${v>=0?'▲':'▼'} ${Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}% ${esc(label)}</span>`;
+}
+// Dia anterior para o Comercial do dia (domingo vira sábado), só para o rótulo do botão.
+function ovPreviousDay(){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const d=new Date(parts+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);if(d.getUTCDay()===0)d.setUTCDate(d.getUTCDate()-1);
+  return d.toISOString().slice(0,10);
+}
+function ovMonthReady(){return /^20\d{2}$/.test(String(state.filters.year))&&/^([1-9]|1[0-2])$/.test(String(state.filters.month));}
+
+// Ferramentas do topo (só aparecem na Visão Geral): data de corte, margem e imagem.
+function ovEnsureTopTools(){
+  const right=$('.topbar-right');if(!right||$('#ovTopTools'))return;
+  right.insertAdjacentHTML('afterbegin',`<div id="ovTopTools" class="ov-only ov-top-tools"><span id="ovCutoff" class="ov-cutoff">Corte dos dados: <b>—</b></span><label id="ovMarginToggle" class="ov-margin-toggle ov-noprint" hidden><input type="checkbox" id="companyShowMargin"> Mostrar margem</label></div>`);
+  right.insertAdjacentHTML('beforeend',`<button type="button" class="btn ov-only ov-noprint" id="ovCopy">Copiar imagem</button><button type="button" class="btn primary ov-only ov-noprint" id="ovDownload">Baixar imagem</button>`);
+  $('#ovCopy').onclick=()=>ovExport('copy');$('#ovDownload').onclick=()=>ovExport('download');
+  $('#companyShowMargin').onchange=e=>{COMPANY.showMargin=e.target.checked;try{localStorage.setItem('companyShowMargin',e.target.checked?'1':'0');}catch{}if(OV.p)renderOverview(OV.p);};
+}
+
+function ovBar(attainment,projection,cls=''){
+  const scale=Math.max(100,Math.min(150,projection||0,150),attainment||0),w=v=>v==null?0:Math.max(0,Math.min(100,v/scale*100));
+  return `<div class="ov-bar ${cls} tone-${ovTone(projection??attainment)}" aria-hidden="true"><i class="ov-bar-proj" style="width:${w(projection)}%"></i><i class="ov-bar-real" style="width:${w(attainment)}%"></i><span class="ov-bar-goal" style="left:${w(100)}%"></span></div>`;
+}
+
+function renderOverview(p){
+  OV.p=p;ovEnsureTopTools();
+  const label=$('#activeMenuLabel');if(label)label.textContent='Visão Geral';
+  const k=p.kpis||{},ex=p.extras||{},c=ex.comparisons||null,cl=ex.clients||{},pipe=p.pipeline||{},daily=p.daily||{};
+  const revenue=Number(k.revenue)||0,meta=Number(k.meta)||0,attainment=meta?revenue/meta*100:null,missing=meta?Math.max(0,meta-revenue):null;
+  const [yy,mm]=[state.filters.year,state.filters.month];
+  const periodLabel=ovMonthReady()?MONTH_NAMES[Number(mm)-1]:(yy&&yy!=='Todos'?String(yy):'o período');
+  const cut=$('#ovCutoff b');if(cut)cut.textContent=ovDate(ex.latest);
+  const scope=teamsScopeText({filters:state.filters,group:'all',search:''}).replace(/^Demais equipes · /,'');
+  const statusInfo=[['PENDENTE','Pendente','pend'],['LIBERADO','Liberado','lib'],['BLOQUEADO','Bloqueado','blk']];
+  const byStatus=new Map((pipe.byStatus||[]).map(x=>[x.status,x])),openTotal=Number(pipe.totalOpenValue||0);
+  const prevDay=ovPreviousDay(),mode=state.dailyMode||'yesterday';
+  const dayLabel=daily.date?ovDate(daily.date)+(daily.isToday?' · hoje':daily.date===prevDay?' · dia anterior':''):'—';
+  const deps=(p.departments||[]),withGoal=deps.filter(d=>d.meta>0),noGoal=deps.filter(d=>!(d.meta>0)&&d.revenue>0);
+  const selectedDeps=new Set(normalizeMulti(state.filters.department));
+  const insights=(p.insights||[]);
+  $('#content').className='ov-report';
+  $('#content').innerHTML=`
+  <div class="ov-scope"><span>${esc(scope)}</span><span id="ovDays"></span></div>
+  <section class="ov-hero" aria-label="Resultado do mês">
+    <div class="ov-hero-top">
+      <div class="ov-hero-main"><p class="ov-k">Faturado em ${esc(periodLabel)}</p><p class="ov-hero-value" title="${money(revenue)}">${money(revenue,true)}</p><p class="ov-hero-sub">${money(revenue)} · vendas pela data de faturamento${c?.partial?' · até '+ovDate(ex.latest):''}</p></div>
+      <div class="ov-hero-grid">
+        <div><p class="ov-k">Da meta</p><p class="ov-hv">${pct(attainment)}</p><p class="ov-hs">${meta?'meta '+money(meta,true):'meta não cadastrada'}</p></div>
+        <div><p class="ov-k">Falta</p><p class="ov-hv">${missing==null?'—':missing>0?money(missing,true):'Meta batida'}</p><p class="ov-hs">${missing>0?'para bater a meta':meta?'faturado passou da meta':'sem meta no recorte'}</p></div>
+        <div><p class="ov-k">Projeção</p><p class="ov-hv" id="ovProj">…</p><p class="ov-hs" id="ovProjSub">pelo ritmo de dias úteis</p></div>
+        <div><p class="ov-k">Ritmo</p><p class="ov-hv" id="ovPace">…</p><p class="ov-hs" id="ovPaceSub">por dia útil</p></div>
+      </div>
+    </div>
+    <div class="ov-hero-bar"><div id="ovHeroBar">${ovBar(attainment,null,'is-hero')}</div>
+      <div class="ov-hero-legend"><span><i class="k-real"></i>Faturado</span><span><i class="k-proj"></i>Projeção</span><span><i class="k-goal"></i>Meta</span>
+        <span class="ov-chips">${c?ovChip(c.lastYearGrowth,'vs '+c.lastYearLabel.toLowerCase()+' ('+money(c.lastYear,true)+')'):''}${c&&c.previous!=null?ovChip(c.previousGrowth,'vs '+c.previousLabel.toLowerCase()+(c.partial?' até dia '+c.limitDay:'')+' ('+money(c.previous,true)+')'):''}</span></div>
+    </div>
+  </section>
+  <div class="ov-row">
+    <section class="ov-card ov-clients"><p class="ov-k">Clientes · ${cl.principal===false?'por código de cliente':'pelos clientes principais'}</p>
+      <div class="ov-tiles" id="ovClientTiles">
+        <div><p class="ov-s">Positivações</p><p class="ov-v">${integer(cl.clients??k.clients)}</p><p class="ov-s">clientes com compra</p></div>
+        <div><p class="ov-s">Mix</p><p class="ov-v">${cl.mix!=null?dec(cl.mix):dec(k.mix)}</p><p class="ov-s">produtos por cliente</p></div>
+        <div><p class="ov-s">Ticket médio</p><p class="ov-v">${money(cl.ticket??k.ticket,true)}</p><p class="ov-s">por pedido</p></div>
+        <div><p class="ov-s">Compra média</p><p class="ov-v">${cl.perClient!=null?money(cl.perClient,true):'—'}</p><p class="ov-s">por cliente</p></div>
+        <div id="ovMarginTile" hidden><p class="ov-s">Margem bruta</p><p class="ov-v" id="ovMarginValue">—</p><p class="ov-s">lucro ÷ faturamento</p></div>
+      </div>
+    </section>
+    <section class="ov-card ov-orders"><div class="ov-head"><p class="ov-k">Pedidos em aberto</p><p class="ov-s">${pipe.shareRevenue!=null?pct(pipe.shareRevenue)+' do faturado':''}</p></div>
+      <p class="ov-v ov-v-lg">${money(openTotal,true)} <span>· ${integer(pipe.totalOpenCount||0)} pedidos</span></p>
+      <div class="ov-split">${statusInfo.map(([s,,cls])=>{const v=Number(byStatus.get(s)?.value||0);return v>0?`<i class="${cls}" style="flex:${v}"></i>`:'';}).join('')||'<i class="empty" style="flex:1"></i>'}</div>
+      <div class="ov-status">${statusInfo.map(([s,label,cls])=>{const x=byStatus.get(s)||{value:0,count:0};return `<div><p class="ov-s"><i class="dot ${cls}"></i>${label}</p><p class="ov-strong">${money(x.value,true)}</p><p class="ov-s">${integer(x.count)} ${s==='BLOQUEADO'?'aguardando solução':'pedidos'}</p></div>`;}).join('')}</div>
+    </section>
+  </div>
+  <section class="ov-card ov-day" aria-label="Comercial do dia">
+    <div class="ov-day-head"><p class="ov-k">Comercial do dia</p><p class="ov-day-date">${esc(dayLabel)}</p>
+      <div class="ov-day-buttons ov-noprint"><button type="button" data-daily-mode="today" aria-pressed="${mode==='today'}">Hoje</button><button type="button" data-daily-mode="yesterday" aria-pressed="${mode==='yesterday'}">Ontem · ${esc(ovDate(prevDay).slice(0,5))}</button><input type="date" id="dailyDateChoice" aria-label="Escolher data" value="${esc(daily.date||'')}"></div></div>
+    <div class="ov-day-grid">
+      <div><p class="ov-s">Faturado no dia</p><p class="ov-v ov-v-md">${money(daily.soldValue)}</p><p class="ov-s">${integer(daily.soldOrders)} pedidos</p></div>
+      <div><p class="ov-s">Pedidos recebidos</p><p class="ov-v ov-v-md">${daily.entriesAvailable?money(daily.entryValue):'—'}</p><p class="ov-s">${daily.entriesAvailable?integer(daily.entryCount)+' pedidos · faturados ou não':'disponível nos dois meses mais recentes'}</p></div>
+      <div><p class="ov-s">Clientes no dia</p><p class="ov-v ov-v-md">${integer(daily.clients)}</p><p class="ov-s">com venda ou pedido em aberto</p></div>
+    </div>
+  </section>
+  <section class="ov-card ov-rcas" id="ovRcas"><p class="ov-k">RCAs no ritmo da meta</p><p class="ov-s">${ovMonthReady()?'Somando os indicadores das equipes…':'Escolha um ano e um mês nos filtros para ver RCAs, equipes e supervisões.'}</p></section>
+  <div class="ov-row">
+    <section class="ov-card ov-chart"><div class="ov-head"><p class="ov-k">Ritmo de faturamento · ${esc(yy&&yy!=='Todos'?yy:'')} × ${esc(yy&&yy!=='Todos'?String(Number(yy)-1):'ano anterior')}</p><p class="ov-s ov-legend-txt"><b class="l-cur">━ ${esc(yy&&yy!=='Todos'?yy:'atual')}</b> · <b class="l-prev">┅ ${esc(yy&&yy!=='Todos'?String(Number(yy)-1):'anterior')}</b> · <b class="l-proj">┄ projeção</b></p></div><div class="ov-chart-wrap"><canvas id="overviewMonthly"></canvas></div></section>
+    <section class="ov-card ov-attention"><p class="ov-k">Pontos de atenção</p>${insights.length?insights.slice(0,3).map(i=>`<div class="ov-att ${esc(i.level||'attention')}"><p class="ov-s ov-att-title">${esc(i.title)}</p><p class="ov-v ov-v-md">${i.kind==='money'?money(i.value,true):pct(i.value)}</p><p class="ov-s">${esc(i.text||'')}</p></div>`).join(''):'<div class="ov-att opportunity"><p class="ov-s ov-att-title">Recorte estável</p><p class="ov-s">Nenhum alerta forte identificado.</p></div>'}</section>
+  </div>
+  <section class="ov-card ov-deps"><div class="ov-head"><p class="ov-k">Departamentos · faturado × meta</p><p class="ov-s">ordenados por faturamento · clique para filtrar</p></div>
+    <div class="ov-dep-grid">${withGoal.map(d=>{const a=d.revenue/d.meta*100;return `<div class="ov-dep ${selectedDeps.has(String(d.key))?'selected':''}" role="button" tabindex="0" data-ov-dep="${esc(d.key)}"><div class="ov-dep-top"><b>${esc(d.key||'Sem departamento')}</b><span><b>${money(d.revenue,true)}</b> · ${pct(a)}</span></div><div class="ov-dep-bar"><i class="tone-${ovTone(a)}" style="width:${Math.max(0,Math.min(100,a))}%"></i></div><p class="ov-s">meta ${money(d.meta,true)}</p></div>`;}).join('')||'<p class="ov-s">Nenhum departamento com meta neste recorte.</p>'}</div>
+    ${noGoal.length?`<p class="ov-s ov-nogoal">Sem meta cadastrada: ${noGoal.map(d=>`<b>${esc(d.key||'Sem departamento')}</b> ${money(d.revenue,true)}`).join(' · ')}</p>`:''}
+  </section>`;
+  $$('[data-daily-mode]').forEach(b=>b.onclick=()=>{state.dailyMode=b.dataset.dailyMode;queryPage();});
+  $('#dailyDateChoice').onchange=e=>{if(!e.target.value)return;state.dailyMode='custom';state.dailyDate=e.target.value;queryPage();};
+  $$('[data-ov-dep]').forEach(el=>{const go=()=>toggleCrossFilter('department',el.dataset.ovDep);el.onclick=go;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}};});
+  ovDrawChart(p,null);
+  ovLoadTeams();
+}
+
+function ovDrawChart(p,calendar){
+  const monthly=p.monthly||[],ex=p.extras||{},prev=new Map((ex.monthlyPrev||[]).map(x=>[x.month,x.revenue]));
+  const year=state.filters.year&&state.filters.year!=='Todos'?state.filters.year:'Atual';
+  const sets=[{label:String(year),data:monthly.map(x=>x.revenue),borderColor:'#14275c',backgroundColor:'rgba(20,39,92,.06)',fill:true,cubicInterpolationMode:'monotone',tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:3}];
+  if(prev.size)sets.push({label:String(Number(year)-1||'Ano anterior'),data:monthly.map(x=>prev.get(x.month)??null),borderColor:'#8a94a8',backgroundColor:'transparent',borderDash:[6,5],fill:false,cubicInterpolationMode:'monotone',tension:.4,pointRadius:0,pointHoverRadius:4,borderWidth:2.5});
+  // Projeção do mês em andamento: mesmo ritmo por dias úteis da faixa azul.
+  if(calendar&&calendar.factor&&calendar.factor>1){
+    const m=Number(String(calendar.month||'').slice(5,7)),i=monthly.findIndex(x=>x.month===m);
+    if(i>0){const projected=monthly[i].revenue*calendar.factor;sets.push({label:'Projeção',data:monthly.map((x,j)=>j===i?projected:j===i-1?x.revenue:null),borderColor:'#4a72d1',backgroundColor:'#4a72d1',borderDash:[2,6],fill:false,cubicInterpolationMode:'monotone',tension:.4,pointRadius:ctx=>ctx.dataIndex===i?5:0,borderWidth:3,spanGaps:false});}
   }
-  return host;
+  if(OV.chart){try{OV.chart.destroy();}catch{}state.charts=state.charts.filter(x=>x!==OV.chart);}
+  const canvas=$('#overviewMonthly');if(!canvas)return;
+  OV.chart=chart(canvas,'line',{labels:monthly.map(x=>x.label),datasets:sets},{plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',titleColor:'#14275c',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>ctx.dataset.label+': '+money(ctx.raw,true)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#5b6785',font:{size:11}}},y:{beginAtZero:true,grid:{color:'#eef1f6'},border:{display:false},ticks:{color:'#5b6785',font:{size:11},maxTicksLimit:5,callback:v=>money(v,true)}}}});
 }
 
-function companyGroupStats(rows){
-  const withGoal=rows.filter(row=>row.goals?.revenue>0),goal=withGoal.reduce((s,r)=>s+r.goals.revenue,0);
-  const actual=withGoal.reduce((s,r)=>s+(r.revenue||0),0),projected=withGoal.reduce((s,r)=>s+(r.projected||0),0);
-  const ranked=teamsRanking(rows,'revenue'),tones={green:0,yellow:0,red:0,muted:0};
-  ranked.forEach(r=>{tones[r.tone in tones?r.tone:'muted']++;});
-  return {count:rows.length,withGoal:withGoal.length,attainment:goal?actual/goal*100:null,projection:goal&&projected?projected/goal*100:(goal?0:null),tones};
+// Agrupamentos da tabela: % da meta conta TODO o faturamento do grupo (não só de quem tem meta).
+function ovGroupStats(rows,calendar){
+  const goal=rows.reduce((s,r)=>s+(r.goals?.revenue>0?r.goals.revenue:0),0),actual=rows.reduce((s,r)=>s+(Number(r.revenue)||0),0);
+  const factor=calendar?.factor,projected=factor==null?null:actual*factor;
+  const ranked=teamsRanking(rows,'revenue'),tones={green:0,yellow:0,red:0,muted:0};ranked.forEach(r=>{tones[r.tone in tones?r.tone:'muted']++;});
+  return {count:rows.length,goal,actual,attainment:goal?actual/goal*100:null,projection:goal&&projected!=null?projected/goal*100:null,tones};
 }
-function companyPace(total,calendar){
-  // Quanto da meta precisa entrar por dia útil para chegar a 100%, comparado com o ritmo atual.
-  const elapsed=Number(calendar.elapsed),remaining=Number(calendar.remaining);
-  if(calendar.closed||calendar.future||!(remaining>0)||!(elapsed>0)||total.attainment==null)return null;
-  if(total.attainment>=100)return ['Ritmo necessário','Meta batida','faturado já passou de 100%'];
-  const needed=(100-total.attainment)/remaining,current=total.attainment/elapsed;
-  return ['Ritmo necessário',pct(needed)+' / dia','da meta por dia útil · ritmo atual '+pct(current)+' / dia'];
-}
-function companyRcaCount(n){return integer(n)+(n===1?' RCA ativo':' RCAs ativos');}
-function companyTone(value){return value==null?'muted':value>=100?'green':value>=90?'yellow':'red';}
-function companyToneLabel(value){return value==null?'Sem meta':value>=100?'No ritmo da meta':value>=90?'Perto da meta':'Abaixo da meta';}
+function ovTones(t){return `<span class="ov-tones" title="no ritmo · perto · abaixo · sem meta"><b class="g">${integer(t.green)}</b> · <b class="y">${integer(t.yellow)}</b> · <b class="r">${integer(t.red)}</b> · <b class="m">${integer(t.muted)}</b></span>`;}
 
-function companyModel(payload){
-  const rows=(payload.rows||[]).filter(row=>row.active===true);
-  const total=companyGroupStats(rows);
-  const teams=['other','health'].map(key=>({key,label:teamsGroupLabel(key),stats:companyGroupStats(rows.filter(r=>(r.teamGroup||'other')===key)),metrics:payload.teamSummary?.[key]||null})).filter(t=>t.stats.count);
-  const names=[...new Set(rows.map(r=>r.supervisor||'Sem supervisor'))];
-  const supervisors=names.map(name=>({name,stats:companyGroupStats(rows.filter(r=>(r.supervisor||'Sem supervisor')===name)),metrics:(payload.supervisorSummary||[]).find(s=>s.name===name)||null}))
-    .sort((a,b)=>(b.stats.projection??-1)-(a.stats.projection??-1)||a.name.localeCompare(b.name,'pt-BR'));
-  return {payload,rows,total,teams,supervisors,summary:payload.summary||{},calendar:payload.calendar||{},canMargin:payload.canMargin===true};
-}
-
-function companyBar(stats){
-  const scale=Math.min(150,Math.max(110,stats.projection||0,stats.attainment||0)),w=v=>v==null?0:Math.max(0,Math.min(100,v/scale*100));
-  return `<div class="company-bar tone-${companyTone(stats.projection)}" aria-hidden="true"><i class="company-bar-projection" style="width:${w(stats.projection)}%"></i><i class="company-bar-actual" style="width:${w(stats.attainment)}%"></i><span class="company-bar-goal" style="left:${w(100)}%"><b>Meta</b></span></div>`;
-}
-function companyDots(t){
-  return `<span class="company-dots" title="RCAs: ${t.green} no ritmo, ${t.yellow} perto, ${t.red} abaixo, ${t.muted} sem meta">${[['green',t.green],['yellow',t.yellow],['red',t.red]].map(([tone,n])=>`<span><i class="teams-dot ${tone}"></i>${integer(n)}</span>`).join('')}${t.muted?`<span class="is-muted"><i class="teams-dot muted"></i>${integer(t.muted)}</span>`:''}</span>`;
-}
-function companyRow(label,sub,stats,metrics,showMargin){
-  return `<tr><th scope="row"><strong>${esc(label)}</strong><small>${esc(sub)}</small></th><td><div class="company-cell-bar">${companyBar(stats)}</div></td><td class="num">${pct(stats.attainment)}</td><td class="num strong">${pct(stats.projection)}</td><td class="num">${metrics?integer(metrics.clients):'—'}</td><td class="num">${metrics?.mix!=null?dec(metrics.mix):'—'}</td><td class="num">${metrics?.ticket!=null?money(metrics.ticket,true):'—'}</td>${showMargin?`<td class="num">${metrics?.margin!=null?pct(metrics.margin):'—'}</td>`:''}<td>${companyDots(stats.tones)}</td></tr>`;
-}
-
-function renderCompanySummary(payload){
-  const host=companyHost(),m=companyModel(payload),{total,summary,calendar}=m;
-  const showMargin=m.canMargin&&COMPANY.showMargin;
-  const [year,month]=String(calendar.month||'').split('-');
-  const monthLabel=month?MONTH_NAMES[Number(month)-1]+' de '+year:'';
-  const cutoff=calendar.cutoff?calendar.cutoff.split('-').reverse().join('/'):'—';
-  const pace=calendar.closed?'Mês encerrado':calendar.future?'Mês futuro':integer(calendar.remainingToday??calendar.remaining)+' dias úteis até o fim do mês';
-  const tone=companyTone(total.projection);
-  const filtersText=teamsScopeText({filters:state.filters,group:'all',search:''}).replace(/^Demais equipes · /,'');
-  const tiles=[
-    ['Positivações',integer(summary.clients),'clientes principais com compra'],
-    ['Mix por cliente',summary.mix!=null?dec(summary.mix):'—','produtos distintos por cliente'],
-    ['Ticket médio',summary.ticket!=null?money(summary.ticket,true):'—','faturamento ÷ clientes com compra'],
-    ...(showMargin?[['Margem bruta',summary.margin!=null?pct(summary.margin):'—','lucro bruto ÷ faturamento']]:[]),
-    ['RCAs no ritmo',integer(total.tones.green)+' de '+integer(total.count),'projeção ≥ 100% da meta'],
-    ...(companyPace(total,calendar)?[companyPace(total,calendar)]:[])
-  ];
-  const head=`<tr><th data-sort-ready="1" scope="col">${'%LABEL%'}</th><th data-sort-ready="1" scope="col">Faturado e projeção × meta</th><th data-sort-ready="1" scope="col" class="num">Faturado</th><th data-sort-ready="1" scope="col" class="num">Projeção</th><th data-sort-ready="1" scope="col" class="num">Positivações</th><th data-sort-ready="1" scope="col" class="num">Mix</th><th data-sort-ready="1" scope="col" class="num">Ticket</th>${showMargin?'<th data-sort-ready="1" scope="col" class="num">Margem</th>':''}<th data-sort-ready="1" scope="col">RCAs</th></tr>`;
-  host.innerHTML=`<div class="company-toolbar"><div><h2>Resumo da empresa</h2><p>Indicadores da Visão equipes somados para a empresa, por equipe e por supervisão. Sem dados de vendedor — pronto para enviar aos supervisores.</p></div><div class="company-actions">${m.canMargin?`<label class="company-margin-toggle"><input type="checkbox" id="companyShowMargin" ${COMPANY.showMargin?'checked':''}> Mostrar margem</label>`:''}<button type="button" class="btn secondary small" id="companyCopy">Copiar imagem</button><button type="button" class="btn primary small" id="companyDownload">Baixar imagem</button></div></div>
-  <article id="companyCard" class="company-card">
-    <header class="company-head"><div><span class="company-eyebrow">REBANHO · RESUMO COMERCIAL DA EMPRESA</span><h3>${esc(monthLabel.charAt(0).toUpperCase()+monthLabel.slice(1))}</h3><p>${esc(filtersText)}</p></div><div class="company-period"><strong>${esc(pace)}</strong><span>Corte dos dados: ${esc(cutoff)}</span></div></header>
-    <section class="company-goal tone-${tone}"><div class="company-goal-numbers"><div><span>Faturado</span><strong>${pct(total.attainment)}</strong><small>da meta do mês</small></div><div class="is-main"><span>Projeção</span><strong>${pct(total.projection)}</strong><small>até o fim do mês</small></div><span class="teams-pill tone-${tone}"><i class="teams-dot ${tone}"></i>${esc(companyToneLabel(total.projection))}</span></div><div class="company-goal-bar">${companyBar(total)}<div class="company-goal-legend"><span><i class="k-actual"></i>Faturado</span><span><i class="k-projection"></i>Projeção</span><span><i class="k-goal"></i>Meta (100%)</span><span class="muted">${integer(total.withGoal)} de ${integer(total.count)} RCAs com meta</span></div></div></section>
-    <section class="company-tiles">${tiles.map(([l,v,n])=>`<div><span>${esc(l)}</span><strong>${esc(v)}</strong><small>${esc(n)}</small></div>`).join('')}</section>
-    <section class="company-dist"><div class="company-dist-bar">${['green','yellow','red','muted'].filter(t=>total.tones[t]).map(t=>`<i class="tone-${t}" style="flex:${total.tones[t]}"></i>`).join('')}</div><div class="company-dist-legend"><span><i class="teams-dot green"></i><b>${integer(total.tones.green)}</b> RCAs no ritmo (≥ 100%)</span><span><i class="teams-dot yellow"></i><b>${integer(total.tones.yellow)}</b> perto (90% a 99,9%)</span><span><i class="teams-dot red"></i><b>${integer(total.tones.red)}</b> abaixo de 90%</span>${total.tones.muted?`<span><i class="teams-dot muted"></i><b>${integer(total.tones.muted)}</b> sem meta</span>`:''}</div></section>
-    ${m.teams.length>1?`<section class="company-table-wrap"><h4>Por equipe</h4><table class="company-table"><thead>${head.replace('%LABEL%','Equipe')}</thead><tbody>${m.teams.map(t=>companyRow(t.label,companyRcaCount(t.stats.count),t.stats,t.metrics,showMargin)).join('')}</tbody></table></section>`:''}
-    <section class="company-table-wrap"><h4>Por supervisão</h4><table class="company-table"><thead>${head.replace('%LABEL%','Supervisão')}</thead><tbody>${m.supervisors.map(s=>companyRow(s.name,companyRcaCount(s.stats.count),s.stats,s.metrics,showMargin)).join('')}</tbody></table></section>
-    <footer class="company-foot">Faturamento: somente vendas faturadas. Faturado e projeção em % da meta, considerando RCAs com meta; projeção pelo ritmo de dias úteis. Positivações, mix e ticket pelos clientes principais. Somente RCAs ativos — mesmas regras da Visão equipes.</footer>
-  </article><p id="companyStatus" class="company-status" role="status"></p>`;
-  $('#companyCopy').onclick=()=>companyExport('copy');
-  $('#companyDownload').onclick=()=>companyExport('download');
-  const toggle=$('#companyShowMargin');if(toggle)toggle.onchange=()=>{COMPANY.showMargin=toggle.checked;try{localStorage.setItem('companyShowMargin',toggle.checked?'1':'0');}catch{}renderCompanySummary(payload);};
-}
-
-async function loadCompanySummary(){
-  if(state.page!=='overview'||state.module!=='commercial')return;
-  const requestId=state.requestId,host=companyHost();
-  if(!/^20\d{2}$/.test(String(state.filters.year))||!/^([1-9]|1[0-2])$/.test(String(state.filters.month))){
-    host.innerHTML='<div class="company-empty"><strong>Resumo da empresa</strong><span>Escolha um ano e um mês nos filtros para ver o resumo com meta, projeção, positivações, mix e ticket.</span></div>';return;
-  }
-  const key=companyKey();
-  if(COMPANY.payload&&COMPANY.key===key&&Date.now()-COMPANY.loadedAt<180000){renderCompanySummary(COMPANY.payload);return;}
-  host.innerHTML='<div class="company-empty"><strong>Resumo da empresa</strong><span>Somando os indicadores das equipes…</span></div>';
+async function ovLoadTeams(){
+  if(!ovMonthReady()){ovApplyTeams(null);return;}
+  const requestId=state.requestId,key=companyKey();
   try{
-    const payload=await api('/api/teamsView',{body:JSON.stringify({filters:companyFilters()})});
-    if(state.page!=='overview'||state.requestId!==requestId||!document.body.contains(host))return;
-    COMPANY.payload=payload;COMPANY.key=key;COMPANY.loadedAt=Date.now();renderCompanySummary(payload);
+    let payload=COMPANY.payload&&COMPANY.key===key&&Date.now()-COMPANY.loadedAt<180000?COMPANY.payload:null;
+    if(!payload){payload=await api('/api/teamsView',{body:JSON.stringify({filters:companyFilters()})});COMPANY.payload=payload;COMPANY.key=key;COMPANY.loadedAt=Date.now();}
+    if(state.page!=='overview'||state.requestId!==requestId||!$('#ovRcas'))return;
+    ovApplyTeams(payload);
   }catch(error){
-    if(!document.body.contains(host))return;
-    host.innerHTML=`<div class="company-empty"><strong>Resumo da empresa indisponível</strong><span>${esc(error.message||String(error))}</span></div>`;
+    if(!$('#ovRcas'))return;
+    $('#ovRcas').innerHTML=`<p class="ov-k">RCAs no ritmo da meta</p><p class="ov-s">Indicadores das equipes indisponíveis: ${esc(error?.message||String(error))}</p>`;
+    ['#ovProj','#ovPace'].forEach(s=>{const el=$(s);if(el)el.textContent='—';});
   }
+}
+
+function ovApplyTeams(payload){
+  const p=OV.p||{},k=p.kpis||{},revenue=Number(k.revenue)||0,meta=Number(k.meta)||0,attainment=meta?revenue/meta*100:null;
+  const cal=payload?.calendar||null,setText=(s,t)=>{const el=$(s);if(el)el.textContent=t;};
+  // Projeção e ritmo: os mesmos dias úteis (com feriados) da Visão equipes.
+  let projection=null;
+  if(cal&&meta){projection=cal.closed?attainment:cal.factor!=null?revenue*cal.factor/meta*100:null;}
+  setText('#ovProj',cal?.future?'—':pct(projection));setText('#ovProjSub',cal?.closed?'mês encerrado':cal?.future?'mês futuro':'pelo ritmo de dias úteis');
+  if(cal&&!cal.closed&&!cal.future&&cal.elapsed>0&&cal.remaining>0&&attainment!=null){
+    setText('#ovPace',pct(attainment/cal.elapsed).replace('%','%/dia'));
+    setText('#ovPaceSub',attainment>=100?'meta já batida':'precisa de '+pct((100-attainment)/cal.remaining).replace('%','%/dia'));
+  }else{setText('#ovPace','—');setText('#ovPaceSub',cal?.closed?'mês encerrado':'escolha um mês em andamento');}
+  const bar=$('#ovHeroBar');if(bar)bar.innerHTML=ovBar(attainment,projection,'is-hero');
+  setText('#ovDays',cal&&!cal.closed&&!cal.future?integer(cal.remainingToday??cal.remaining)+' dias úteis até o fim do mês':cal?.closed?'mês encerrado':'');
+  if(cal)ovDrawChart(p,cal);
+  const canMargin=payload?.canMargin===true,showMargin=canMargin&&COMPANY.showMargin;
+  const toggle=$('#ovMarginToggle');if(toggle){toggle.hidden=!canMargin;const box=$('#companyShowMargin');if(box)box.checked=COMPANY.showMargin;}
+  const mt=$('#ovMarginTile');if(mt){mt.hidden=!showMargin;setText('#ovMarginValue',payload?.summary?.margin!=null?pct(payload.summary.margin):'—');}
+  const host=$('#ovRcas');if(!host||!payload)return;
+  const rows=(payload.rows||[]).filter(r=>r.active===true),total=ovGroupStats(rows,cal);
+  const teams=['other','health'].map(key=>({label:teamsGroupLabel(key),rows:rows.filter(r=>(r.teamGroup||'other')===key),m:payload.teamSummary?.[key]})).filter(t=>t.rows.length);
+  const sups=[...new Set(rows.map(r=>r.supervisor||'Sem supervisor'))].map(name=>({label:name,rows:rows.filter(r=>(r.supervisor||'Sem supervisor')===name),m:(payload.supervisorSummary||[]).find(s=>s.name===name)}));
+  const line=g=>{const s=ovGroupStats(g.rows,cal);return {s,html:`<tr><td><b>${esc(g.label)}</b><br><span class="ov-s">${integer(s.count)} ${s.count===1?'RCA':'RCAs'}</span></td><td class="bar">${ovBar(s.attainment,s.projection)}</td><td>${pct(s.attainment)}</td><td><b>${pct(s.projection)}</b></td><td>${g.m?integer(g.m.clients):'—'}</td><td>${g.m?.mix!=null?dec(g.m.mix):'—'}</td><td>${g.m?.ticket!=null?money(g.m.ticket,true):'—'}</td>${showMargin?`<td>${g.m?.margin!=null?pct(g.m.margin):'—'}</td>`:''}<td>${ovTones(s.tones)}</td></tr>`};};
+  const supLines=sups.map(line).sort((a,b)=>(b.s.projection??-1)-(a.s.projection??-1));
+  const cols=showMargin?9:8,t=total.tones,n=Math.max(1,total.count);
+  host.innerHTML=`<div class="ov-head"><p class="ov-k">RCAs no ritmo da meta · ${integer(total.count)} RCAs</p><p class="ov-s">projeção ≥ 100% da meta</p></div>
+    <div class="ov-split ov-split-tones">${[['g',t.green],['y',t.yellow],['r',t.red],['m',t.muted]].filter(([,v])=>v).map(([c,v])=>`<i class="${c}" style="flex:${v}"></i>`).join('')}</div>
+    <div class="ov-tone-legend"><span><b class="g">● ${integer(t.green)}</b> no ritmo (≥ 100%)</span><span><b class="y">● ${integer(t.yellow)}</b> perto (90–99,9%)</span><span><b class="r">● ${integer(t.red)}</b> abaixo de 90%</span><span><b class="m">● ${integer(t.muted)}</b> sem meta</span></div>
+    <div class="ov-table-wrap"><table class="ov-table"><thead><tr><th data-sort-ready="1">Equipe / supervisão</th><th data-sort-ready="1" class="bar">Faturado e projeção × meta</th><th data-sort-ready="1">Faturado</th><th data-sort-ready="1">Projeção</th><th data-sort-ready="1">Positiv.</th><th data-sort-ready="1">Mix</th><th data-sort-ready="1">Compra/cliente</th>${showMargin?'<th data-sort-ready="1">Margem</th>':''}<th data-sort-ready="1">RCAs</th></tr></thead>
+    <tbody>${teams.length>1?`<tr class="ov-group"><td colspan="${cols}">Por equipe</td></tr>${teams.map(g=>line(g).html).join('')}`:''}<tr class="ov-group"><td colspan="${cols}">Por supervisão</td></tr>${supLines.map(x=>x.html).join('')}</tbody></table></div>
+    <p class="ov-s ov-note">RCAs: no ritmo · perto · abaixo · sem meta. % da meta conta todo o faturamento do grupo; positivações, mix e compra/cliente pelos clientes principais. A tabela considera somente RCAs ativos (como a Visão equipes); os totais do topo incluem todas as vendas, por isso a soma da tabela pode ficar um pouco abaixo.</p>`;
 }
 
 let html2canvasPromise=null;
@@ -1085,28 +1164,27 @@ function loadHtml2canvas(){
   html2canvasPromise||=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';s.onload=()=>resolve(window.html2canvas);s.onerror=()=>{html2canvasPromise=null;reject(new Error('Não foi possível carregar o gerador de imagem.'));};document.head.append(s);});
   return html2canvasPromise;
 }
-async function companyExport(mode){
-  const card=$('#companyCard'),status=$('#companyStatus');if(!card)return;
-  const buttons=[$('#companyCopy'),$('#companyDownload')];buttons.forEach(b=>b&&(b.disabled=true));
-  if(status)status.textContent='Gerando imagem…';
+// Imagem da página inteira (cabeçalho até Departamentos), sem botões nem campos de filtro.
+async function ovExport(mode){
+  const target=$('#appView'),buttons=[$('#ovCopy'),$('#ovDownload')];if(!target)return;
+  buttons.forEach(b=>b&&(b.disabled=true));
+  const old=buttons[mode==='copy'?0:1]?.textContent;if(buttons[mode==='copy'?0:1])buttons[mode==='copy'?0:1].textContent='Gerando…';
+  const say=t=>{let el=$('#ovExportStatus');if(!el){el=document.createElement('p');el.id='ovExportStatus';el.className='ov-export-status ov-noprint';el.setAttribute('role','status');$('#content')?.prepend(el);}el.textContent=t;};
   try{
     const render=await loadHtml2canvas();
-    card.classList.add('is-exporting');
-    const canvas=await render(card,{scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false});
-    card.classList.remove('is-exporting');
+    document.body.classList.add('ov-exporting');window.scrollTo(0,0);
+    const skip=el=>el.nodeType===1&&(el.classList.contains('ov-noprint')||el.matches('.filterbar,.app-menu,.menu-backdrop,#dataStatus,.header-account,.menu-toggle,#refreshData,button,input,select'));
+    const canvas=await render(target,{scale:2,backgroundColor:'#f3f5f9',useCORS:true,logging:false,ignoreElements:skip,windowWidth:Math.max(1200,document.documentElement.clientWidth),height:Math.ceil(($('#content')?.getBoundingClientRect().bottom||target.scrollHeight)-target.getBoundingClientRect().top+24)});
     const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
-    const name='rebanho-resumo-empresa-'+String(COMPANY.payload?.calendar?.month||'')+'.png';
+    const name='rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
     if(mode==='copy'){
-      try{
-        if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');
-        await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
-        if(status)status.textContent='Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.';return;
-      }catch{if(status)status.textContent='Este navegador não deixou copiar; a imagem foi baixada.';}
+      try{if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);say('Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.');return;}
+      catch{say('Este navegador não deixou copiar; a imagem foi baixada.');}
     }
-    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
-    if(status&&mode!=='copy')status.textContent='Imagem baixada: '+name;
-  }catch(error){if(status)status.textContent='Não foi possível gerar a imagem. '+(error?.message||String(error));}
-  finally{card.classList.remove('is-exporting');buttons.forEach(b=>b&&(b.disabled=false));}
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+    if(mode!=='copy')say('Imagem baixada: '+name);
+  }catch(error){say('Não foi possível gerar a imagem. '+(error?.message||String(error)));}
+  finally{document.body.classList.remove('ov-exporting');buttons.forEach(b=>b&&(b.disabled=false));if(buttons[mode==='copy'?0:1])buttons[mode==='copy'?0:1].textContent=old;}
 }
 
 // ===== Indicadores adicionais por tela (payload.extras, calculado no processamento das bases) =====
@@ -1132,7 +1210,7 @@ function exDate(iso){return iso?String(iso).slice(0,10).split('-').reverse().joi
 function renderPageExtras(page,payload){
   const ex=payload?.extras;if(!ex||ex.error){if(ex?.error)console.warn('Indicadores adicionais indisponíveis:',ex.error);return;}
   try{
-    if(page==='overview')exOverviewUi(ex);
+    if(page==='overview'){/* Visão Geral: comparativos ficam na faixa azul */}
     else if(page==='pedidos')exOrdersUi(ex);
     else if(page==='carteira')exPortfolioUi(ex);
     else if(page==='produtos')exProductsUi(ex);
@@ -1140,17 +1218,6 @@ function renderPageExtras(page,payload){
     else if(page==='metas')exGoalsUi(ex);
     else if(page==='history')exHistoryUi(ex);
   }catch(error){console.warn('Falha ao desenhar indicadores adicionais',error);}
-}
-
-function exOverviewUi(ex){
-  const c=ex.comparisons;if(!c)return;
-  const partial=c.partial?` (até o dia ${c.limitDay})`:'';
-  const items=[
-    ['Faturamento no período',money(c.current,true),c.partial?'até o dia '+c.limitDay+' · vendas faturadas':'vendas faturadas'],
-    ['Mesmo período em '+c.lastYearLabel,money(c.lastYear,true),exGrowthChip(c.lastYearGrowth,' vs ano anterior')],
-    ...(c.previous!=null?[['Mês anterior · '+c.previousLabel+partial,money(c.previous,true),exGrowthChip(c.previousGrowth,' vs mês anterior')]]:[])
-  ];
-  exInsert(`<section class="ex-compare" id="overviewCompare" aria-label="Comparativo do período"><div class="ex-compare-title"><strong>Comparativo</strong><small>Mesmo recorte de filtros${c.partial?'; períodos em andamento comparados até o mesmo dia':''}</small></div>${exCards(items)}</section>`,'.overview-summary-hero');
 }
 
 function exOrdersUi(ex){
@@ -1220,94 +1287,6 @@ function exHistoryUi(ex){
   const root=$('#content');if(root)root.insertAdjacentHTML('afterbegin',html);
 }
 
-function renderOverview(p){
-  const k=p.kpis||{};
-  const daily=p.daily||{},dailyDate=daily.date?daily.date.split('-').reverse().join('/'):'Sem movimento no período';
-  const pipeline=p.pipeline||{},goal=Number(k.meta)||0,revenue=Number(k.revenue)||0;
-  const attainment=Math.max(0,Math.min(100,goal?revenue/goal*100:0));
-  const openWidth=goal?Math.min(100-attainment,Number(pipeline.openValue||0)/goal*100):0;
-  const blockedWidth=goal?Math.min(Math.max(0,100-attainment-openWidth),Number(pipeline.blockedValue||0)/goal*100):0;
-  const gap=Math.max(0,goal-revenue),departmentSelected=normalizeMulti(state.filters.department).length>0;
-  const goalGapLabel=departmentSelected?'Falta para meta do departamento':'Falta para a meta';
-  const statusLabels={PENDENTE:'Pendente',LIBERADO:'Liberado',BLOQUEADO:'Bloqueado'};
-  $('#content').innerHTML=`
-    
-    <section class="executive-day" aria-label="Resumo comercial diário">
-      <div class="executive-day-heading"><div><span class="executive-eyebrow">Acompanhamento da diretoria</span><h2>${daily.isToday?'Comercial de hoje':'Movimento comercial do dia'}</h2><p>${esc(dailyDate)}</p><details class="daily-help"><summary aria-label="Critérios do resumo diário">ⓘ</summary><p>Faturamento pela data de faturamento. Pedidos recebidos pela data inicial, faturados ou não. A data abaixo altera somente este resumo.</p></details></div></div>
-      <div class="daily-date-controls" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0">
-        <button type="button" class="secondary" data-daily-mode="today" aria-pressed="${state.dailyMode==='today'}">Hoje</button>
-        <button type="button" class="secondary" data-daily-mode="yesterday" aria-pressed="${state.dailyMode==='yesterday'}">Ontem</button>
-        <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Escolher data <input type="date" id="dailyDateChoice" aria-label="Data do movimento comercial" value="${esc(daily.date||'')}" style="min-height:44px;max-width:100%;padding:8px;border:1px solid #c7d8f2;border-radius:8px"></label>
-        
-      </div>
-      <div class="executive-day-grid">
-        ${kpi('Faturamento do dia',money(daily.soldValue),`${integer(daily.soldOrders)} pedidos realizados`)}
-        ${kpi('Pedidos recebidos no dia',daily.entriesAvailable?money(daily.entryValue):'—',daily.entriesAvailable?`${integer(daily.entryCount)} pedidos · faturados e não faturados`:'Entradas diárias disponíveis nos dois meses mais recentes')}
-        ${kpi('Clientes no dia',integer(daily.clients),'Com venda realizada ou pedido em aberto')}
-      </div>
-    </section>
-    <div class="section-heading executive-period-heading"><div><h2>Resultado do período</h2><p>Meta, carteira e potencial de fechamento no recorte selecionado.</p></div></div>
-    <div class="overview-hero">
-      <div class="overview-revenue">
-        <div class="revenue-kicker"><i></i> Faturamento no recorte</div>
-        <div class="revenue-value" title="${money(revenue)}">${money(k.revenue,true)}</div>
-        <div class="revenue-caption"><strong>${money(revenue)}</strong> · Vendas pela data de faturamento</div>
-        <div class="revenue-divider"></div>
-        <div class="revenue-meta"><span>Meta do recorte</span><strong>${money(k.meta,true)}</strong><span>${pct(k.attainment)} atingido</span></div>
-        <div class="goal-progress" role="img" aria-label="Faturado ${pct(attainment)}; pedidos ativos e bloqueados aparecem em tons claros">
-          <i class="goal-segment realized" style="width:${attainment}%"></i><i class="goal-segment open" style="width:${openWidth}%"></i><i class="goal-segment blocked" style="width:${blockedWidth}%"></i>
-        </div>
-        <div class="goal-legend"><span><i class="legend-dot realized"></i>Faturado</span><span><i class="legend-dot open"></i>Pedidos ativos</span><span><i class="legend-dot blocked"></i>Bloqueados</span></div>
-        <div class="revenue-caption goal-caption">Pedidos em aberto no recorte: <strong>${money(Number(pipeline.totalOpenValue||0),true)}</strong> <span>(inclui bloqueados)</span></div>
-      </div>
-      <div class="overview-kpis">
-        ${kpi('Clientes positivados',integer(k.clients),'Clientes únicos com compra')}
-        ${kpi('Ticket médio',money(k.ticket,true),'Valor por pedido')}
-        ${kpi('Pedidos em aberto',money(Number(pipeline.totalOpenValue||0),true),`${integer(pipeline.totalOpenCount||0)} pedidos · inclui bloqueados`)}
-        ${kpi(goalGapLabel,money(gap,true),goal?`${pct(k.attainment)} atingido${revenue>=goal?' · meta alcançada':''}`:'Meta não cadastrada para este recorte')}
-      </div>
-    </div>
-    <div class="overview-pipeline">
-      <div class="grid kpi-grid four">
-        ${kpi('Carteira total',money(Number(pipeline.totalOpenValue||0),true),`${integer(pipeline.totalOpenCount||0)} pedidos · inclui bloqueados`)}
-        ${kpi('Carteira ÷ faturamento',pct(revenue?Number(pipeline.totalOpenValue||0)/revenue*100:null),'Peso total dos pedidos em aberto')}
-        ${kpi('Projeção liberados + pendentes',money(pipeline.projected,true),`Potencial ${pct(pipeline.projectedAttainment)} da meta · não é garantia de faturamento`)}
-        ${kpi('Valor bloqueado',money(pipeline.blockedValue,true),`${integer(pipeline.blockedCount)} pedidos aguardando solução`)}
-      </div>
-      <div class="order-status-breakdown" aria-label="Pedidos em aberto por posição"><strong>Posição dos pedidos</strong>
-        ${(pipeline.byStatus||[]).map(x=>`<span class="status-summary ${String(x.status).toLowerCase()}"><b>${esc(statusLabels[x.status]||x.status)}</b><strong>${money(x.value,true)}</strong><small>${integer(x.count)} pedidos</small></span>`).join('')||'<span class="muted">Sem pedidos neste recorte.</span>'}
-      </div>
-    </div>
-    <div class="overview-analysis">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Ritmo de faturamento</div><div class="panel-sub">Linha cheia: ano selecionado · tracejado cinza: ano anterior · pontilhado azul: projeção do mês em andamento.</div></div><span class="panel-chip">${esc(state.filters.year||'Ano')}</span></div><div class="chart-wrap"><canvas id="overviewMonthly"></canvas></div></div>
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Leituras para acompanhar</div><div class="panel-sub">Sinais identificados nesta seleção.</div></div></div><div class="overview-insights">${(p.insights?.length?p.insights:[{level:'opportunity',title:'Recorte estável',value:'—',text:'Nenhum alerta forte identificado.'}]).slice(0,4).map(insight).join('')}</div></div>
-    </div>
-    <div class="section-heading"><div><h2>Quem movimenta o resultado</h2><p>Distribuição do faturamento por RCA e departamento.</p></div></div>
-    <div class="overview-bottom">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Desempenho por RCA</div><div class="panel-sub">Clique em um RCA para filtrar os cartões e os demais gráficos. O risco vertical indica a meta de cada RCA.</div></div></div><div class="chart-wrap short"><canvas id="overviewRca"></canvas></div></div>
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Composição por departamento</div><div class="panel-sub">Clique em uma linha para aplicar o departamento aos cartões e gráficos.</div></div></div><div id="depList" class="overview-departments metric-list"></div></div>
-    </div>
-  `;
-  Array.from(document.querySelectorAll('[data-daily-mode]')).forEach(button=>button.addEventListener('click',()=>{state.dailyMode=button.dataset.dailyMode;queryPage();}));
-  $('#dailyDateChoice').addEventListener('change',event=>{if(!event.target.value)return;state.dailyMode='custom';state.dailyDate=event.target.value;queryPage();});
-  const monthly=p.monthly||[];
-  const ovEx=p.extras||{},prevByMonth=new Map((ovEx.monthlyPrev||[]).map(x=>[x.month,x.revenue])),proj=ovEx.projection;
-  const ovSets=[{label:'Faturamento '+(state.filters.year&&state.filters.year!=='Todos'?state.filters.year:''),data:monthly.map(x=>x.revenue),borderColor:'#1D2A68',backgroundColor:'rgba(29,42,104,.07)',fill:true,tension:.32,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}];
-  if(prevByMonth.size)ovSets.push({label:'Ano anterior',data:monthly.map(x=>prevByMonth.get(x.month)??null),borderColor:'#9AA8BC',backgroundColor:'transparent',borderDash:[5,4],fill:false,tension:.32,pointRadius:2,borderWidth:1.8});
-  if(proj){const i=monthly.findIndex(x=>x.month===proj.month);if(i>0)ovSets.push({label:'Projeção do mês (seg–sex)',data:monthly.map((x,j)=>j===i?proj.projected:j===i-1?x.revenue:null),borderColor:'#4F7FC0',backgroundColor:'transparent',borderDash:[3,4],fill:false,pointRadius:ctx=>ctx.dataIndex===i?5:0,pointStyle:'circle',pointBackgroundColor:'#fff',borderWidth:2,spanGaps:false});}
-  chart($('#overviewMonthly'),'line',{labels:monthly.map(x=>x.label),datasets:ovSets},{plugins:{legend:{display:ovSets.length>1,position:'top',align:'end',labels:{boxWidth:18,boxHeight:2,usePointStyle:false,font:{size:11}}},tooltip:{backgroundColor:'#fff',titleColor:'#1E285F',bodyColor:'#4D556B',borderColor:'#D9DDEA',borderWidth:1,padding:10,displayColors:false,callbacks:{label:ctx=>ctx.dataset.label+': '+money(ctx.raw,true)}}},scales:{x:{grid:{display:false},border:{display:false}},y:{beginAtZero:true,grid:{color:'#E8EDF6'},border:{display:false},ticks:{callback:v=>money(v,true)}}}});
-  const top=(p.rca||[]).slice(0,10);
-  const selectedRcas=new Set(normalizeMulti(state.filters.rca));
-  const rcaChart=chart($('#overviewRca'),'bar',{labels:top.map(x=>x.name),datasets:[
-    {label:'Faturamento',data:top.map(x=>x.revenue),backgroundColor:top.map(x=>selectedRcas.size&&!selectedRcas.has(String(x.key))?'#BDD0EE':'#1D2A68'),borderRadius:7,barThickness:10},
-    {type:'scatter',label:'Meta',data:top.map((x,i)=>({x:x.meta||0,y:i})),pointStyle:'line',pointRotation:90,pointRadius:10,pointHoverRadius:12,borderColor:'#56759f',backgroundColor:'#56759f',showValueLabels:false}
-  ]},{indexAxis:'y',onClick:(_event,elements)=>{if(elements?.length)toggleCrossFilter('rca',top[elements[0].index].key)},plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:9}}},barValueLabels:{display:true},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(typeof ctx.raw==='object'?ctx.raw.x:ctx.raw,true)}`}}},scales:{x:{afterDataLimits:axis=>{axis.max=axis.max*1.18},grid:{color:'#E8EDF6'},ticks:{callback:v=>money(v,true)}},y:{grid:{display:false},ticks:{autoSkip:false,font:{size:9}}}}});
-  rcaChart.canvas.style.cursor='pointer';
-  const total=(p.departments||[]).reduce((a,x)=>a+x.revenue,0)||1;
-  const selectedDepartments=new Set(normalizeMulti(state.filters.department));
-  $('#depList').innerHTML=(p.departments||[]).slice(0,12).map(x=>`<button type="button" class="metric-row department-filter ${selectedDepartments.has(String(x.key))?'selected':''}" data-department="${esc(x.key)}"><span><span class="metric-name">${esc(x.key||'Sem departamento')}</span><span class="progress ${x.meta>0?'':'hidden'}"><i style="width:${x.meta>0?Math.max(0,Math.min(100,x.revenue/x.meta*100)):0}%"></i></span></span><span class="metric-value">${money(x.revenue,true)} · ${x.meta>0?pct(x.revenue/x.meta*100)+' da meta':'Sem meta'}<small>${x.meta?`Meta ${money(x.meta,true)}`:'Meta não cadastrada'}</small></span></button>`).join('')||'<div class="empty">Sem departamento neste recorte.</div>';
-  $$('.department-filter').forEach(button=>button.addEventListener('click',()=>toggleCrossFilter('department',button.dataset.department)));
-}
 function drawPortfolioEvolution(rows) {
   if (!rows.length) return;
   const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
