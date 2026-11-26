@@ -294,7 +294,7 @@ const AUTH = {
   passwordChangeSessionSeconds: 600,
   pbkdf2Iterations: 200000
 };
-const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/24fbebdacc3d7aa5d19462256ea793c6afd011e9/supervisao-web/gas/zoom-mapas-20261109/app.html';
+const UI_BUNDLE_URL = 'https://raw.githubusercontent.com/analistacomercialrbn/dashboardlojas/d566a232b2c488c1ecd9767193ffd85c76b1174a/supervisao-web/gas/zoom-mapas-20261109/app.html';
 
 function doGet() {
   const timing=centralTiming_('central.interface');
