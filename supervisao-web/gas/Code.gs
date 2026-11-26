@@ -5438,33 +5438,56 @@ function ibgeHerd_(user) {
   return {ok:true,year,rows,updatedAt:updated instanceof Date?updated.toISOString():String(updated||'')};
 }
 // Lê a resposta da API do SIDRA (primeira linha = nomes das colunas) pelos nomes, não por posição.
-function ibgeSidraRows_(url) {
+// Busca no IBGE com duas rotas: a API do SIDRA e, se ela falhar, a API de agregados (servicodados).
+function ibgeFetchJson_(url) {
   const res=UrlFetchApp.fetch(url,{muteHttpExceptions:true,headers:{Accept:'application/json'}});
-  if(res.getResponseCode()!==200)throw new Error('O IBGE respondeu com erro '+res.getResponseCode()+'.');
-  const data=JSON.parse(res.getContentText());
-  if(!Array.isArray(data)||data.length<2)throw new Error('O IBGE não devolveu dados.');
-  const head=data[0],find=test=>Object.keys(head).find(k=>test(String(head[k]||'')));
-  const muniCode=find(t=>/^Munic[ií]pio \(C[óo]digo\)$/i.test(t)),muniName=find(t=>/^Munic[ií]pio$/i.test(t)),year=find(t=>/^Ano$/i.test(t)),kind=find(t=>/Tipo de rebanho$/i.test(t));
-  if(!muniCode||!muniName||!year)throw new Error('O formato da resposta do IBGE mudou.');
-  return data.slice(1).map(r=>({code:String(r[muniCode]),name:String(r[muniName]),year:String(r[year]),kind:kind?String(r[kind]):'',value:Number(r.V)}));
+  const code=res.getResponseCode(),text=res.getContentText();
+  if(code!==200)throw new Error('HTTP '+code+' '+String(text||'').replace(/\s+/g,' ').slice(0,160));
+  try{return JSON.parse(text);}catch(e){throw new Error('resposta não é JSON: '+String(text||'').replace(/\s+/g,' ').slice(0,160));}
+}
+function ibgeSidraRows_(url) {
+  const data=ibgeFetchJson_(url);
+  if(!Array.isArray(data)||data.length<2)throw new Error('o SIDRA não devolveu dados');
+  const head=data[0],find=test=>Object.keys(head).find(k=>test(String(head[k]||'').trim()));
+  const muniCode=find(t=>/^Munic[ií]pio \(C[óo]digo\)$/i.test(t)),muniName=find(t=>/^Munic[ií]pio$/i.test(t)),year=find(t=>/^Ano$/i.test(t)),kind=find(t=>/^Tipo de rebanho$/i.test(t));
+  if(!muniCode||!muniName||!year)throw new Error('formato do SIDRA diferente: '+JSON.stringify(head).slice(0,160));
+  return data.slice(1).map(r=>({code:String(r[muniCode]),name:String(r[muniName]),year:String(r[year]),kind:kind?String(r[kind]):'',value:Number(String(r.V).replace(',','.'))}));
+}
+function ibgeAgregadosRows_(table,variable,uf,classification) {
+  const url='https://servicodados.ibge.gov.br/api/v3/agregados/'+table+'/periodos/-1/variaveis/'+variable+'?localidades=N6%5BN3%5B'+IBGE_UF_CODES[uf]+'%5D%5D'+(classification?'&classificacao='+classification+'%5Ball%5D':'');
+  const data=ibgeFetchJson_(url),out=[];
+  for(const v of (Array.isArray(data)?data:[]))for(const res of (v.resultados||[])){
+    const cat=(res.classificacoes||[])[0]?.categoria||{},kind=Object.values(cat)[0]||'';
+    for(const s of (res.series||[]))for(const [year,val] of Object.entries(s.serie||{}))out.push({code:String(s.localidade?.id||''),name:String(s.localidade?.nome||''),year:String(year),kind:String(kind),value:Number(val)});
+  }
+  if(!out.length)throw new Error('a API de agregados não devolveu dados');
+  return out;
+}
+function ibgeUf_(uf,errors) {
+  const code=IBGE_UF_CODES[uf],places='in%20n3%20'+code;
+  // Tabela 3939: efetivo dos rebanhos por tipo. Tabela 94: vacas ordenhadas.
+  const tryBoth=(label,sidra,agregados)=>{try{return sidra();}catch(e1){try{return agregados();}catch(e2){errors.push(uf+' '+label+': SIDRA ('+e1.message+'); agregados ('+e2.message+')');return [];}}};
+  const herd=tryBoth('rebanhos',()=>ibgeSidraRows_('https://apisidra.ibge.gov.br/values/t/3939/n6/'+places+'/v/105/p/last%201/c79/all'),()=>ibgeAgregadosRows_(3939,105,uf,79));
+  const cows=tryBoth('vacas ordenhadas',()=>ibgeSidraRows_('https://apisidra.ibge.gov.br/values/t/94/n6/'+places+'/v/107/p/last%201'),()=>ibgeAgregadosRows_(94,107,uf,null));
+  return {herd,cows};
 }
 function ibgeRefresh_(user) {
   if(user.perfil!=='ADMIN')throw new Error('Somente o administrador pode atualizar os dados do IBGE.');
-  const ufs=[...new Set(coverageData_().cities.map(r=>r.uf).concat(['CE']))].filter(uf=>IBGE_UF_CODES[uf]);
-  const places='in%20n3%20'+ufs.map(uf=>IBGE_UF_CODES[uf]).join(',');
-  // Tabela 3939: efetivo dos rebanhos por tipo. Tabela 94: vacas ordenhadas.
-  const herd=ibgeSidraRows_('https://apisidra.ibge.gov.br/values/t/3939/n6/'+places+'/v/105/p/last%201/c79/all');
-  const cows=ibgeSidraRows_('https://apisidra.ibge.gov.br/values/t/94/n6/'+places+'/v/107/p/last%201');
-  const byCode=new Map(),value=v=>Number.isFinite(v)?v:0;
+  let matrixUfs=[];try{matrixUfs=coverageData_().cities.map(r=>String(r.uf||'').trim().toUpperCase());}catch(e){}
+  const ufs=[...new Set(matrixUfs.concat(['CE']))].filter(uf=>IBGE_UF_CODES[uf]);
+  const byCode=new Map(),errors=[],value=v=>Number.isFinite(v)?v:0;
   const row=r=>{if(!byCode.has(r.code)){const m=r.name.match(/^(.*?)\s*-\s*([A-Z]{2})$/);byCode.set(r.code,{code:r.code,city:m?m[1]:r.name,uf:m?m[2]:'',bov:0,cows:0,hens:0,pigs:0,year:r.year});}return byCode.get(r.code);};
-  for(const r of herd){const k=norm_(r.kind),x=row(r);if(k==='BOVINO')x.bov=value(r.value);else if(k==='SUINO - TOTAL')x.pigs=value(r.value);else if(k==='GALINACEOS - TOTAL')x.hens=value(r.value);}
-  for(const r of cows)row(r).cows=value(r.value);
+  for(const uf of ufs){
+    const {herd,cows}=ibgeUf_(uf,errors);
+    for(const r of herd){const k=norm_(r.kind).replace(/\s+/g,' '),x=row(r);if(k==='BOVINO')x.bov=value(r.value);else if(k==='SUINO - TOTAL'||k==='SUINO')x.pigs=value(r.value);else if(k==='GALINACEOS - TOTAL'||k==='GALINACEOS')x.hens=value(r.value);}
+    for(const r of cows)row(r).cows=value(r.value);
+  }
   const list=[...byCode.values()].filter(x=>x.uf);
-  if(!list.length)throw new Error('O IBGE não devolveu municípios.');
+  if(!list.length)throw new Error('O IBGE não respondeu. Detalhes: '+errors.join(' | ').slice(0,600));
   const ss=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId);let sheet=ss.getSheetByName(IBGE_SHEET);
   if(!sheet)sheet=ss.insertSheet(IBGE_SHEET);
   const now=new Date(),out=[['COD_IBGE','MUNICIPIO','UF','BOVINOS','VACAS_ORDENHADAS','GALINACEOS','SUINOS','ANO_PESQUISA','ATUALIZADO_EM']].concat(list.map(x=>[x.code,x.city,x.uf,x.bov,x.cows,x.hens,x.pigs,x.year,now]));
   sheet.clearContents();
   sheet.getRange(1,1,out.length,out[0].length).setValues(out);
-  return {ok:true,count:list.length,year:list[0].year,ufs};
+  return {ok:true,count:list.length,year:list[0].year,ufs,warnings:errors};
 }

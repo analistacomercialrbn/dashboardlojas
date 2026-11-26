@@ -1440,7 +1440,8 @@ const CIDADES_FAIXA_ESTAVEL=10;
 const CD={line:'all',mode:'situation',pick:'',sort:'revenue',dir:-1,query:'',limit:25,opp:'lost',oppLimit:20,clientsOpen:false,clientLimit:20,context:null,loading:null,error:''};
 const CD_SITUATION={up:['Crescendo','#2f9e6e'],stable:['Estável','#5b7fd1'],down:['Caindo','#e08a2e'],lost:['Sem venda há 90+ dias','#c94a43'],none:['Sem responsável','#c9d0dc']};
 const CD_MODES=[['situation','Situação'],['revenue','Faturamento'],['growth','Variação'],['coverage','Cobertura'],['potential','Potencial'],['owner','Responsável']];
-const CD_OWNER_COLORS=['#1f5fbf','#d1495b','#2a9d8f','#e9a03b','#7b4fbf','#3c8d2f','#c55f9e','#5c6b7a'];
+// Uma cor por RCA (cores bem diferentes entre si; vizinhas na lista ficam distantes no tom).
+const CD_OWNER_COLORS=['#1f5fbf','#e6194b','#3cb44b','#f58231','#911eb4','#42d4f4','#f032e6','#9a6324','#469990','#e6a700','#000075','#800000','#7fb800','#dc7fb0','#4363d8','#a9a9a9','#00a39b','#b5651d','#6b8e23','#c71585','#2f4f4f','#ff6f61','#5d3fd3','#8b4513'];
 const CD_OPPS=[['lost','Cidades perdidas','venderam nos últimos 12 meses e estão há 90+ dias sem venda · pela média mensal'],['falling','Caindo','abaixo do mesmo período do ano anterior · pela perda em R$'],['noSaleMonth','Sem venda no mês','cidades do território que ainda não compraram no mês atual · pela média mensal'],['missingDept','Departamento ausente','compram algum departamento e não compram outro dos principais da linha · pela média mensal'],['cattle','Muito gado, pouca venda','rebanho acima da mediana e R$ por mil cabeças no terço mais baixo · pelo rebanho'],['outside','Fora do território','vendas de um RCA na área de outro · pelo valor']];
 function cdFilters(){
   const f={line:CD.line};
@@ -1523,7 +1524,7 @@ function renderCidades(p){
   $$('[data-cd-mode]').forEach(b=>b.onclick=()=>{CD.mode=b.dataset.cdMode;$$('[data-cd-mode]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));cdPaintMap();});
   $('#cdSearch').value=CD.query;$('#cdSearch').oninput=e=>{CD.query=e.target.value;CD.limit=25;cdDrawTable();};
   $('#cdMatrixRefresh').onclick=async e=>{const b=e.currentTarget;b.disabled=true;$('#cdCheckNote').textContent='Atualizando a matriz…';try{state.coverage=await api('/api/coverage',{method:'POST',body:JSON.stringify({force:true})});queryPage();}catch(err){$('#cdCheckNote').textContent='Não foi possível: '+(err?.message||err);b.disabled=false;}};
-  const ib=$('#cdIbgeRefresh');if(ib)ib.onclick=async e=>{const b=e.currentTarget;b.disabled=true;$('#cdCheckNote').textContent='Buscando no IBGE… pode levar até 1 minuto.';try{const r=await api('/api/ibgeRefresh',{method:'POST'});$('#cdCheckNote').textContent='IBGE atualizado: '+integer(r.count)+' municípios, pesquisa de '+r.year+'.';CD.context=null;await cdEnsureContext();queryPage();}catch(err){$('#cdCheckNote').textContent='O IBGE não respondeu: '+(err?.message||err)+'. Veja as instruções para colar o arquivo manualmente.';b.disabled=false;}};
+  const ib=$('#cdIbgeRefresh');if(ib)ib.onclick=async e=>{const b=e.currentTarget;b.disabled=true;$('#cdCheckNote').textContent='Buscando no IBGE… pode levar até 1 minuto.';try{const r=await api('/api/ibgeRefresh',{method:'POST'});$('#cdCheckNote').textContent='IBGE atualizado: '+integer(r.count)+' municípios, pesquisa de '+r.year+'.'+(r.warnings?.length?' Atenção: '+r.warnings.join(' | '):'');CD.context=null;await cdEnsureContext();queryPage();}catch(err){$('#cdCheckNote').textContent='O IBGE não respondeu: '+(err?.message||err)+'. Veja as instruções para colar o arquivo manualmente.';b.disabled=false;}};
   cdDrawCard();cdDrawTable();cdDrawOpp();cdRenderMap();
 }
 function cdRow(key){return CD.p?.city?.rows.find(r=>r.key===key)||null;}
@@ -1602,12 +1603,11 @@ function cdScale(){
     return {color:r=>!r||r.coverage==null?(r?.inTerritory?'#eceff4':null):bins.find(b=>r.coverage>=b[0]&&r.coverage<b[1])?.[2],legend:[['#eceff4','sem clientes ativos'],[bins[0][2],'até 25%'],[bins[1][2],'25% a 50%'],[bins[2][2],'50% a 75%'],[bins[3][2],'75% ou mais']]};}
   if(mode==='potential'){const pal=['#f4ecd9','#e5cf9c','#cfa760','#a97a35','#6f4c1c'],q=cdQuantiles(rows.filter(r=>r.inTerritory).map(r=>r.bov||0),5);const band=v=>q.filter(x=>v>x).length;
     return {color:r=>!r||!(r.bov>0)?(r?.inTerritory?'#eceff4':null):pal[band(r.bov)],legend:[['#eceff4','sem dado do IBGE']].concat(q.length?(()=>{const l=cdBandLabels(q,pal.length,v=>cdFmtBov(v)+' cab.');return pal.map((col,i)=>[col,l[i]]);})():[]),note:'cabeças de gado (bovinos)'};}
-  // Responsável: até 8 cores; acima disso, por supervisor.
-  const owners=[...new Set(rows.filter(r=>r.inTerritory&&r.owner).map(r=>r.owner))];
-  const bySup=owners.length>CD_OWNER_COLORS.length,keyOf=r=>bySup?(r.ownerSupervisor||'Sem supervisor'):r.owner;
-  const groups=[...new Set(rows.filter(r=>r.inTerritory&&r.owner).map(keyOf))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const color=new Map(groups.map((g,i)=>[g,CD_OWNER_COLORS[i%CD_OWNER_COLORS.length]]));
-  return {color:r=>!r||!r.inTerritory?null:!r.owner?'#c9d0dc':color.get(keyOf(r)),legend:groups.map(g=>[color.get(g),g]).concat([['#c9d0dc','Sem responsável']]),note:bySup?'mais de 8 RCAs: cores por supervisor':''};
+  // Responsável: uma cor por RCA, ordenadas pela quantidade de cidades.
+  const counts=new Map();rows.filter(r=>r.inTerritory&&r.owner).forEach(r=>counts.set(r.owner,(counts.get(r.owner)||0)+1));
+  const owners=[...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'pt-BR')).map(([o])=>o);
+  const color=new Map(owners.map((o,i)=>[o,CD_OWNER_COLORS[i%CD_OWNER_COLORS.length]]));
+  return {color:r=>!r||!r.inTerritory?null:!r.owner?'#d9dee8':color.get(r.owner),legend:owners.map(o=>[color.get(o),o+' ('+integer(counts.get(o))+')']).concat([['#d9dee8','Sem responsável']]),note:'número de cidades entre parênteses'};
 }
 function cdLegend(scale){
   const host=$('#cdLegend');if(!host)return;
