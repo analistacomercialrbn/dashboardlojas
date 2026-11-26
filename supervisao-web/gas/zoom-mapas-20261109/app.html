@@ -1346,6 +1346,43 @@ body.ov-exporting .cd-map .leaflet-control-container{display:none}.cd-owner-tabl
 @media(max-width:760px){.cd-table-wrap{overflow-x:auto}.cd-table{min-width:900px}.cd-check-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.cd-hv-lg{font-size:32px}.cd-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.cd-hero-grid>div:first-child{grid-column:1/-1}.cd-map{height:360px}.cd-card-grid{grid-template-columns:1fr 1fr}}
 </style>
+<style id="goals-report-style">
+/* Gestão de Metas — visual das páginas novas */
+#content.mt-report{display:flex;flex-direction:column;gap:16px;color:#0f1b3d;font-family:Inter,system-ui,sans-serif}
+.mt-report p{margin:0}
+.mt-report>.tv-toolbar{min-height:40px;flex-wrap:wrap;gap:10px;align-items:center}
+.mt-rca{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
+.mt-rca select{min-height:36px;border:1px solid #d5dbe6;border-radius:8px;padding:0 8px;font:500 13px Inter,system-ui,sans-serif;background:#fff}
+.mt-period{margin-left:auto}
+.mt-hero{gap:10px!important}
+.mt-hero-grid{display:grid;grid-template-columns:1.5fr repeat(5,1fr);gap:20px;align-items:end}
+.mt-hv-lg{margin:4px 0 0!important;font-size:40px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:#fff}
+.mt-hero .mt-nogoal{opacity:.55;font-style:italic}
+.mt-hero .mt-att.g{color:#9be7c0}.mt-hero .mt-att.y{color:#ffe08a}.mt-hero .mt-att.r{color:#ffc3bd}
+.mt-hero-note{opacity:.85}
+.mt-panel,.mt-acc,.mt-chart-card{display:flex;flex-direction:column;gap:12px}
+.mt-table{min-width:980px}
+.mt-table th,.mt-table td{white-space:nowrap;text-align:left}
+.mt-table th.num,.mt-table td.num{text-align:right}
+.mt-table th button.ct-sort{all:unset;cursor:pointer;font:inherit;white-space:nowrap}.mt-table th button.ct-sort.on{color:#14275c;text-decoration:underline}
+.mt-cell small{display:block;font-size:11px}
+.mt-att{font-weight:700}.mt-att.g{color:#1f8a5b}.mt-att.y{color:#9a6b00}.mt-att.r{color:#c2453f}
+.mt-cell .mt-att{display:inline-block;padding:1px 7px;border-radius:999px;margin-top:2px}
+.mt-cell .mt-att.g{background:#e3f4ea}.mt-cell .mt-att.y{background:#fbf1d2}.mt-cell .mt-att.r{background:#fbe4e2}
+.mt-table tfoot tr.mt-sup td{background:#f5f7fb;border-top:1px solid #dfe4ee}
+.mt-table tfoot tr.mt-co td{background:#eaeef7;border-top:2px solid #c9d1e3}
+.mt-acc-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
+.mt-acc-row>div{display:flex;flex-direction:column;gap:2px;border-left:1px solid #e2e7f0;padding-left:14px}
+.mt-acc-row>div:first-child{border-left:0;padding-left:0}
+.mt-acc-row b{font-size:22px;font-variant-numeric:tabular-nums}.mt-acc-row small{font-size:11.5px;color:#5b6785}
+.mt-chart{position:relative;height:320px}
+.mt-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.mt-two>section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.mt-group{min-width:0!important;width:100%}.mt-group th,.mt-group td{text-align:left}.mt-group th.num,.mt-group td.num{text-align:right}
+.mt-check{display:grid;gap:12px;margin-top:10px}
+@media(max-width:1199px){.mt-hero-grid{grid-template-columns:1fr 1fr 1fr}.mt-hero-grid>.is-main{grid-column:1/-1}.mt-two{grid-template-columns:1fr}.mt-acc-row{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:560px){.mt-hv-lg{font-size:32px}.mt-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.mt-acc-row{grid-template-columns:1fr 1fr}.mt-acc-row>div{border-left:0;padding-left:0}.mt-chart{height:260px}.mt-period{margin-left:0}}
+</style>
 </head>
 <body>
   <div id="loginView" class="login-shell hidden">
@@ -2495,6 +2532,111 @@ function cidadesSimple(filters,limit=null){
   }
   return [...m.values()];
 }
+// ===== Gestão de Metas (página nova) =====
+// Indicadores por RCA no mês: faturamento (com meta da aba METAS), positivação, cobertura, mix, margem e venda média.
+// Equipe e empresa: soma dos números dos RCAs; percentuais e médias calculados com os números somados.
+const MT_KEYS=['revenue','clients','coverage','mix','margin','ticket'];
+async function metasV2(f,ctx){
+  ctx=ctx||{};
+  const latest=exLatest(),ly=latest.getUTCFullYear(),lm=latest.getUTCMonth()+1;
+  const y=exYear(f)??ly;let m=exMonth(f),fallback=false;
+  if(m===null){m=y===ly?lm:12;fallback=true;}
+  const key=(yy,mm)=>yy+'-'+String(mm).padStart(2,'0'),monthKey=key(y,m);
+  const running=y===ly&&m===lm,cutDay=running?latest.getUTCDate():31;
+  const ref=running?new Date(Date.UTC(y,m-1,cutDay,23,59,59)):new Date(Date.UTC(y,m,0,23,59,59));
+  let links=[];try{links=await loadPortfolioLinks();}catch{links=[];}
+  const directory=portfolioDirectory(links),principal=c=>c==null?null:portfolioClientKey({client:c},directory);
+  const outNames=multi(f.excludeRcaNames).map(norm);
+  const nameOut=r=>{const n=norm(r?.name||'');return outNames.some(t=>n===t||n.split(/\s+/).includes(t)||n.startsWith(t+' '));};
+  const allowed=allowedRca(f),deps=multi(f.department);
+  const depOk=d=>!deps.length||deps.includes(String(d));
+  // RCAs da página: ativos, dentro dos filtros, sem Cecé.
+  const team=[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&allowed.has(r.code)&&!nameOut(r));
+  const teamSet=new Set(team.map(r=>r.code));
+  const keepSale=s=>teamSet.has(s.rca)&&depOk(s.department);
+  // Vendas do mês e do ano (para o acumulado).
+  const mon=new Map(team.map(r=>[r.code,{revenue:0,clients:new Set(),pairs:new Set()}]));
+  const yearRev=new Map();// rca|month -> revenue
+  const depYear=new Map();// dep|month -> revenue
+  const boughtInMonth=new Set();
+  for(const s of SALES){
+    if(s.year!==y||!keepSale(s))continue;
+    if(running&&s.month===m&&s.date.getUTCDate()>cutDay)continue;
+    yearRev.set(s.rca+'|'+s.month,(yearRev.get(s.rca+'|'+s.month)||0)+s.value);
+    depYear.set((s.department||'Sem departamento')+'|'+s.month,(depYear.get((s.department||'Sem departamento')+'|'+s.month)||0)+s.value);
+    if(s.month!==m)continue;
+    const g=mon.get(s.rca);g.revenue+=s.value;
+    const c=principal(s.client);
+    if(c!=null&&s.value>0){g.clients.add(c);if(s.product!=null)g.pairs.add(c+'|'+s.product);boughtInMonth.add(c);}
+  }
+  // Cobertura: clientes ativos da carteira do RCA (comprou nos últimos 89 dias) que compraram no mês (de qualquer vendedor).
+  const lastBuy=new Map(),anyBought=new Set();
+  for(const s of SALES){if(s.client==null||s.date>ref)continue;const c=principal(s.client);const p=lastBuy.get(c);if(!p||s.date>p.date)lastBuy.set(c,s);if(s.year===y&&s.month===m&&s.value>0)anyBought.add(c);}
+  const cover=new Map(team.map(r=>[r.code,{active:0,bought:0}]));
+  for(const [c,s] of lastBuy){if(portfolioInactivityDays(ref,s.date)>=90)continue;const owner=CLIENTS.get(c)?.rca??s.rca;const g=cover.get(owner);if(!g)continue;g.active++;if(anyBought.has(c))g.bought++;}
+  // Margem (lucro e faturamento com lucro informado) pelo servidor, só para quem pode ver.
+  const marginBy=new Map();let canMargin=false;
+  if(ctx.products){canMargin=!!ctx.products.canMargin;for(const r of ctx.products.rows||[]){const [rca,,dep,,,,value,profit,base]=r;if(!teamSet.has(rca)||!depOk(ctx.products.departments[dep]))continue;const g=marginBy.get(rca)||{profit:0,base:0};g.profit+=profit;g.base+=base;marginBy.set(rca,g);}}
+  // Metas.
+  const metaBy=new Map(),metaYear=new Map(),metaDepYear=new Map(),metaRcaYear=new Map(),metaOutside=[];
+  for(const g of METAS){
+    if(g.year!==y||!depOk(g.department))continue;
+    const info=RCA_BY_CODE.get(g.rca);
+    if(!info||info.active===false){if(!info||allowed.has(g.rca))metaOutside.push({rca:g.rca,name:info?.name||g.rcaName||('RCA '+g.rca),month:g.month,value:g.value});continue;}
+    if(!teamSet.has(g.rca))continue;
+    metaYear.set(g.month,(metaYear.get(g.month)||0)+g.value);
+    metaRcaYear.set(g.rca+'|'+g.month,(metaRcaYear.get(g.rca+'|'+g.month)||0)+g.value);
+    const dk=(g.department||'Sem departamento')+'|'+g.month;metaDepYear.set(dk,(metaDepYear.get(dk)||0)+g.value);
+    if(g.month===m)metaBy.set(g.rca,(metaBy.get(g.rca)||0)+g.value);
+  }
+  const factor=ctx.calendar&&ctx.calendar.factor!=null?Number(ctx.calendar.factor):(running?null:1);
+  // Metas dos outros indicadores (aba METAS_INDICADORES).
+  const goalsMonth=(ctx.goals||[]).filter(g=>g.month===monthKey);
+  const goalRca=(code,ind)=>goalsMonth.find(g=>g.level==='RCA'&&String(g.code)===String(code)&&g.indicator===ind)?.value??null;
+  const goalSup=(name,ind)=>goalsMonth.find(g=>g.level==='SUPERVISAO'&&norm(g.code)===norm(name)&&g.indicator===ind)?.value??null;
+  const goalCo=ind=>goalsMonth.find(g=>g.level==='EMPRESA'&&g.indicator===ind)?.value??null;
+  const build=(name,parts,extra={})=>{
+    const sum=k=>parts.reduce((a,p)=>a+(p[k]||0),0);
+    const revenue=sum('revenue'),clients=sum('clients'),pairs=sum('pairs'),active=sum('active'),bought=sum('bought'),profit=sum('profit'),base=sum('base'),meta=parts.some(p=>p.meta>0)?sum('meta'):null;
+    return {name,...extra,raw:{revenue,clients,pairs,active,bought,profit,base},
+      values:{revenue,clients,coverage:active?bought/active*100:null,mix:clients?pairs/clients:null,margin:canMargin&&base>0?profit/base*100:null,ticket:clients?revenue/clients:null},
+      goals:{revenue:meta},projected:{revenue:factor!=null?revenue*factor:null}};
+  };
+  const rows=team.map(r=>{const g=mon.get(r.code),cv=cover.get(r.code),mg=marginBy.get(r.code)||{profit:0,base:0};
+    const part={revenue:g.revenue,clients:g.clients.size,pairs:g.pairs.size,active:cv.active,bought:cv.bought,profit:mg.profit,base:mg.base,meta:metaBy.get(r.code)||0};
+    const row=build(r.name,[part],{code:String(r.code),supervisor:r.supervisor||'Sem supervisor',part});
+    for(const k of MT_KEYS.slice(1)){const v=goalRca(r.code,k);if(v!=null)row.goals[k]=v;}
+    return row;});
+  const sups=[...new Set(rows.map(r=>r.supervisor))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>{
+    const list=rows.filter(r=>r.supervisor===name),row=build(name,list.map(r=>r.part),{supervisor:name,count:list.length});
+    for(const k of MT_KEYS.slice(1)){let v=goalSup(name,k);if(v==null&&k==='clients'&&list.length&&list.every(r=>r.goals.clients!=null))v=list.reduce((a,r)=>a+r.goals.clients,0);if(v!=null)row.goals[k]=v;}
+    return row;});
+  const company=build('Empresa',rows.map(r=>r.part),{count:rows.length});
+  for(const k of MT_KEYS.slice(1)){let v=goalCo(k);if(v==null&&k==='clients'&&rows.length&&rows.every(r=>r.goals.clients!=null))v=rows.reduce((a,r)=>a+r.goals.clients,0);if(v!=null)company.goals[k]=v;}
+  // Acumulado: só meses com meta de faturamento cadastrada.
+  const lastMonth=y<ly?12:y===ly?lm:0;
+  const goalMonths=[...metaYear.keys()].filter(mm=>mm<=lastMonth).sort((a,b)=>a-b);
+  const monthRev=mm=>team.reduce((a,r)=>a+(yearRev.get(r.code+'|'+mm)||0),0);
+  const monthly=Array.from({length:12},(_,i)=>{const mm=i+1,meta=metaYear.get(mm)||null,rev=mm<=lastMonth?monthRev(mm):null;return {month:mm,revenue:rev,meta,attainment:meta&&rev!=null?rev/meta*100:null,running:y===ly&&mm===lm,future:mm>lastMonth};});
+  const accMeta=goalMonths.reduce((a,mm)=>a+metaYear.get(mm),0),accRev=goalMonths.reduce((a,mm)=>a+monthRev(mm),0);
+  const curInAcc=goalMonths.includes(lm)&&y===ly,curRev=curInAcc?monthRev(lm):0,curFactor=curInAcc?(ctx.calendarCurrent?.factor??(m===lm?factor:null)):null;
+  const accProj=curInAcc&&curFactor!=null?accRev-curRev+curRev*curFactor:null;
+  const groupAcc=(keysOf,metaMap,revOf)=>keysOf.map(k=>{const meta=goalMonths.reduce((a,mm)=>a+(metaMap.get(k+'|'+mm)||0),0),rev=goalMonths.reduce((a,mm)=>a+revOf(k,mm),0);return {name:k,meta:meta||null,revenue:rev,attainment:meta?rev/meta*100:null,missing:meta?Math.max(0,meta-rev):null};});
+  const supAcc=[...new Set(team.map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>{const list=team.filter(r=>(r.supervisor||'Sem supervisor')===name);const meta=goalMonths.reduce((a,mm)=>a+list.reduce((b,r)=>b+(metaRcaYear.get(r.code+'|'+mm)||0),0),0),rev=goalMonths.reduce((a,mm)=>a+list.reduce((b,r)=>b+(yearRev.get(r.code+'|'+mm)||0),0),0);return {name,meta:meta||null,revenue:rev,attainment:meta?rev/meta*100:null,missing:meta?Math.max(0,meta-rev):null};});
+  const depNames=[...new Set([...metaDepYear.keys(),...depYear.keys()].map(k=>k.split('|')[0]))];
+  const depAcc=groupAcc(depNames,metaDepYear,(k,mm)=>depYear.get(k+'|'+mm)||0).filter(d=>d.meta||d.revenue).sort((a,b)=>(b.meta||0)-(a.meta||0)||b.revenue-a.revenue);
+  // Conferência do cadastro.
+  const noMeta=team.filter(r=>!(metaBy.get(r.code)>0)).map(r=>({name:r.name,supervisor:r.supervisor||'Sem supervisor'}));
+  const monthsNoMeta=Array.from({length:lastMonth},(_,i)=>i+1).filter(mm=>!metaYear.has(mm));
+  const indicatorsNoGoal=MT_KEYS.slice(1).filter(k=>!goalsMonth.some(g=>g.indicator===k));
+  const outside=[...metaOutside.reduce((acc,x)=>{const k=x.rca+'|'+x.month;const o=acc.get(k)||{...x,value:0};o.value+=x.value;acc.set(k,o);return acc;},new Map()).values()].sort((a,b)=>a.month-b.month||a.name.localeCompare(b.name,'pt-BR'));
+  const supervisorOptions=[...new Set([...RCA_BY_CODE.values()].filter(r=>r.active!==false&&!nameOut(r)).map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&!nameOut(r)&&(r.supervisor||'Sem supervisor')===name).length}));
+  const rcaOptions=[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&!nameOut(r)).map(r=>({code:String(r.code),name:r.name})).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  return {year:y,month:m,monthKey,fallback,running,cutDay,latest:latest.toISOString(),factor,calendar:ctx.calendar||null,canMargin,
+    rows,sups,company,monthly,acc:{months:goalMonths,meta:accMeta||null,revenue:accRev,attainment:accMeta?accRev/accMeta*100:null,missing:accMeta?Math.max(0,accMeta-accRev):null,projected:accProj,projectedAttainment:accProj!=null&&accMeta?accProj/accMeta*100:null,includesRunning:curInAcc},
+    supAcc,depAcc,check:{noMeta,outside,monthsNoMeta,indicatorsNoGoal,goalsTab:!!ctx.goalsTab,goalsError:ctx.goalsError||'',goalsCount:(ctx.goals||[]).length},
+    supervisorOptions,rcaOptions};
+}
 function metasPage(filters){
   const rows=filterSales(filters,{ignoreMonth:true});
   const metas=filterMetas(filters,{ignoreMonth:true});
@@ -2870,22 +3012,6 @@ async function produtosV2(f){
     kpis:{revenue:total,margin,products:list.length,mix:clientsAll.size?pairsOfClients/clientsAll.size:null,clients:clientsAll.size,to80,discount:discOf(finTotal),qty:server?finTotal.qty:null},
     departments,suppliers,ranking,moves:{up,down,started,stopped},matrix,rcas,depList,cross:crossPairs,depOptions,supervisorOptions};
 }
-function exGoals(f){
-  const y=exYear(f)||exLatest().getUTCFullYear(),latest=exLatest();
-  const upTo=y<latest.getUTCFullYear()?12:y>latest.getUTCFullYear()?0:latest.getUTCMonth()+1;
-  const ff={...f,year:String(y),month:'Todos'},sales=filterSales(ff),metas=filterMetas(ff,{ignoreMonth:true});
-  const by=(rows,keyFn,valueKey)=>{const m=new Map();for(const r of rows){const k=keyFn(r);m.set(k,(m.get(k)||0)+(Number(r[valueKey])||0));}return m;};
-  const sup=s=>(RCA_BY_CODE.get(s.rca)||{}).supervisor||'Sem supervisor';
-  const metaYear=by(metas,m=>m.supervisor||'Sem supervisor','value'),metaToDate=by(metas.filter(m=>m.month<=upTo),m=>m.supervisor||'Sem supervisor','value');
-  const revToDate=by(sales.filter(s=>s.month<=upTo),sup,'value');
-  const names=new Set([...metaYear.keys(),...revToDate.keys()]);
-  const supervisors=[...names].map(n=>{const mt=metaToDate.get(n)||0,my=metaYear.get(n)||0,r=revToDate.get(n)||0;return {name:n,metaYear:my,metaToDate:mt,revenue:r,attainment:mt?r/mt*100:null,missingYear:Math.max(0,my-r)};}).sort((a,b)=>(b.attainment??-1)-(a.attainment??-1));
-  const dMetaY=by(metas,m=>m.department||'Sem departamento','value'),dMetaT=by(metas.filter(m=>m.month<=upTo),m=>m.department||'Sem departamento','value'),dRev=by(sales.filter(s=>s.month<=upTo),s=>s.department||'Sem departamento','value');
-  const departments=[...new Set([...dMetaY.keys(),...dRev.keys()])].map(n=>{const mt=dMetaT.get(n)||0,my=dMetaY.get(n)||0,r=dRev.get(n)||0;return {name:n,metaYear:my,metaToDate:mt,revenue:r,attainment:mt?r/mt*100:null,missingYear:Math.max(0,my-r)};}).sort((a,b)=>b.revenue-a.revenue);
-  const totalMetaToDate=[...metaToDate.values()].reduce((a,b)=>a+b,0),totalMetaYear=[...metaYear.values()].reduce((a,b)=>a+b,0),totalRev=[...revToDate.values()].reduce((a,b)=>a+b,0);
-  const monthsLeft=Math.max(0,12-upTo+(upTo&&y===latest.getUTCFullYear()?1:0));
-  return {year:y,upTo,supervisors,departments,totalMetaToDate,totalMetaYear,totalRevenue:totalRev,attainmentToDate:totalMetaToDate?totalRev/totalMetaToDate*100:null,missingYear:Math.max(0,totalMetaYear-totalRev),monthsLeft};
-}
 function exHistory(){
   // Acumulado do ano até o mesmo dia × mesmo período do ano anterior (empresa toda, sem filtros).
   const latest=exLatest(),y=latest.getUTCFullYear(),limit={month:latest.getUTCMonth()+1,day:latest.getUTCDate()};
@@ -2898,7 +3024,7 @@ async function pageExtras(page,f){
   if(page==='carteira')return await carteiraV2(f);
   if(page==='produtos')return await produtosV2(f);
   if(page==='cidades')return null;
-  if(page==='metas')return exGoals(f);
+  if(page==='metas')return null;
   if(page==='history')return exHistory();
   return null;
 }
@@ -2961,7 +3087,7 @@ onmessage=async(e)=>{
       else if(msg.page==='carteira')payload=portfolioGrouped(f,await loadPortfolioLinks());
       else if(msg.page==='produtos')payload=produtos(f);
       else if(msg.page==='cidades')payload={city:await cidadesV2(f,msg.cityContext)};
-      else if(msg.page==='metas')payload=metasPage(f);
+      else if(msg.page==='metas')payload={goals:await metasV2(f,msg.metasContext)};
       else if(msg.page==='pedidos')payload=ordersPage(f);
       else payload={};
       if(!msg.coverageContext){try{payload.extras=await pageExtras(msg.page,f);}catch(err){payload.extras={error:err?.message||String(err)};}}

@@ -421,6 +421,8 @@ function dashboardApi(action, payload, token) {
     if(action==='teamsView')return teamsView_(user,payload);
     if(action==='productsView')return productsView_(user,payload);
     if(action==='ibgeHerd')return ibgeHerd_(user);
+    if(action==='metasContext')return metasContext_(user,payload);
+    if(action==='createIndicatorGoalsTab')return createIndicatorGoalsTab_(user);
     if(action==='ibgeRefresh')return ibgeRefresh_(user);
     if(action==='biLayout')return biLayoutApi_(user,payload);
     if(action==='biDiagnostics')return biDiagnostics_(user);
@@ -5175,12 +5177,15 @@ function teamsReference_(month) {
   if(goalSheet&&goalSheet.getLastRow()>1){
     const range=goalSheet.getDataRange(),rows=range.getValues(),formats=range.getNumberFormats();
     const header=rows.shift().map(logNorm_),at=name=>header.indexOf(name);
-    if(['MES','COD_RCA','INDICADOR','META'].some(name=>at(name)<0))throw new Error('Revise as colunas de METAS_INDICADORES: MES, COD_RCA, INDICADOR e META.');
-    const aliases={POSITIVACAO:'clients',POSITIVACOES:'clients',MIX:'mix','MIX DE PRODUTOS':'mix','MIX POR CLIENTE':'mix',MARGEM:'margin','MARGEM BRUTA':'margin',TICKET:'ticket','TICKET MEDIO':'ticket'};
+    // Aceita a coluna COD_RCA ou o formato da Gestão de Metas (NIVEL + CODIGO); aqui só entram as metas por RCA.
+    const codeCol=at('COD_RCA')>=0?at('COD_RCA'):at('CODIGO'),levelCol=at('NIVEL');
+    if(['MES','INDICADOR','META'].some(name=>at(name)<0)||codeCol<0)throw new Error('Revise as colunas de METAS_INDICADORES: MES, NIVEL, CODIGO, INDICADOR e META.');
+    const aliases={POSITIVACAO:'clients',POSITIVACOES:'clients',MIX:'mix','MIX DE PRODUTOS':'mix','MIX POR CLIENTE':'mix',MARGEM:'margin','MARGEM BRUTA':'margin',TICKET:'ticket','TICKET MEDIO':'ticket',VENDA_MEDIA:'ticket','VENDA MEDIA':'ticket','VENDA MEDIA POR CLIENTE':'ticket'};
     rows.forEach((row,i)=>{
       const raw=row[at('MES')],key=raw instanceof Date?Utilities.formatDate(raw,ss.getSpreadsheetTimeZone(),'yyyy-MM'):String(raw||'').trim();
       if(key!==month)return;
-      const indicator=aliases[logNorm_(row[at('INDICADOR')])],rca=code_(row[at('COD_RCA')]);
+      if(levelCol>=0&&!['','RCA'].includes(logNorm_(row[levelCol])))return;
+      const indicator=aliases[logNorm_(row[at('INDICADOR')])],rca=code_(row[codeCol]);
       let value=num_(row[at('META')]);
       if(indicator==='margin'&&String(formats[i+1][at('META')]).includes('%'))value*=100;
       if(indicator&&rca!=null&&value>0)goals.push({rca,indicator,value,department:at('DEPARTAMENTO')<0?'':String(row[at('DEPARTAMENTO')]||'').trim()});
@@ -5490,4 +5495,54 @@ function ibgeRefresh_(user) {
   sheet.clearContents();
   sheet.getRange(1,1,out.length,out[0].length).setValues(out);
   return {ok:true,count:list.length,year:list[0].year,ufs,warnings:errors};
+}
+
+// ===== Gestão de Metas: metas dos indicadores (aba METAS_INDICADORES) e calendário do mês =====
+// Formato: MES (aaaa-mm) | NIVEL (RCA, SUPERVISAO ou EMPRESA) | CODIGO | INDICADOR | META.
+// Percentuais em número inteiro: 60 = 60%. A Visão equipes também lê as linhas de NIVEL = RCA.
+const GOALS_SHEET='METAS_INDICADORES';
+const GOALS_ALIASES={POSITIVACAO:'clients',POSITIVACOES:'clients',COBERTURA:'coverage','COBERTURA DA CARTEIRA':'coverage',MIX:'mix','MIX POR CLIENTE':'mix',MARGEM:'margin','MARGEM BRUTA':'margin',VENDA_MEDIA:'ticket','VENDA MEDIA':'ticket','VENDA MEDIA POR CLIENTE':'ticket',TICKET:'ticket','TICKET MEDIO':'ticket'};
+function indicatorGoals_() {
+  const ss=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId),sheet=ss.getSheetByName(GOALS_SHEET);
+  if(!sheet)return {exists:false,goals:[]};
+  if(sheet.getLastRow()<2)return {exists:true,goals:[]};
+  const range=sheet.getDataRange(),rows=range.getValues(),formats=range.getNumberFormats(),header=rows.shift().map(logNorm_),at=name=>header.indexOf(name);
+  const codeCol=at('CODIGO')>=0?at('CODIGO'):at('COD_RCA');
+  if(['MES','INDICADOR','META'].some(name=>at(name)<0)||codeCol<0)return {exists:true,goals:[],error:'Revise as colunas de METAS_INDICADORES: MES, NIVEL, CODIGO, INDICADOR e META.'};
+  const goals=[];
+  rows.forEach((row,i)=>{
+    const raw=row[at('MES')],month=raw instanceof Date?Utilities.formatDate(raw,ss.getSpreadsheetTimeZone(),'yyyy-MM'):String(raw||'').trim();
+    if(!/^20\d\d-(0[1-9]|1[0-2])$/.test(month))return;
+    const indicator=GOALS_ALIASES[logNorm_(row[at('INDICADOR')])];if(!indicator)return;
+    const level=at('NIVEL')>=0?(logNorm_(row[at('NIVEL')])||'RCA'):'RCA';if(!['RCA','SUPERVISAO','EMPRESA'].includes(level))return;
+    let value=num_(row[at('META')]);
+    // Percentual em número inteiro (60 = 60%); se a célula estiver formatada como %, converte.
+    if(['margin','coverage'].includes(indicator)&&String(formats[i+1][at('META')]).includes('%'))value*=100;
+    if(!(value>0))return;
+    const code=level==='RCA'?code_(row[codeCol]):level==='SUPERVISAO'?String(row[codeCol]||'').trim():'';
+    if(level==='RCA'&&code==null)return;if(level==='SUPERVISAO'&&!code)return;
+    goals.push({month,level,code,indicator,value});
+  });
+  return {exists:true,goals};
+}
+function metasContext_(user,payload) {
+  const month=String(payload&&payload.month||'');
+  if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))throw new Error('Selecione um mês válido para Gestão de Metas.');
+  const today=centralToday_('America/Fortaleza'),lastBilled=/^\d{4}-\d{2}-\d{2}$/.test(String(payload.lastBilled||''))?String(payload.lastBilled):'';
+  let holidays=[];try{holidays=teamsReference_(month).holidays;}catch(e){}
+  const goals=indicatorGoals_();
+  return {ok:true,calendar:teamsCalendar_(month,lastBilled,today,holidays),goals:goals.goals,goalsTab:goals.exists,goalsError:goals.error||''};
+}
+function createIndicatorGoalsTab_(user) {
+  if(user.perfil!=='ADMIN')throw new Error('Somente o administrador pode criar a aba de metas dos indicadores.');
+  const ss=SpreadsheetApp.openById(CFG.auxiliarySpreadsheetId);
+  if(ss.getSheetByName(GOALS_SHEET))return {ok:true,exists:true};
+  const sheet=ss.insertSheet(GOALS_SHEET);
+  sheet.getRange(1,1,2,5).setValues([['MES','NIVEL','CODIGO','INDICADOR','META'],
+    ['INSTRUÇÕES (esta linha é ignorada): MES = aaaa-mm','RCA, SUPERVISAO ou EMPRESA','código do RCA; nome da supervisão; vazio para EMPRESA','POSITIVACAO, COBERTURA, MIX, MARGEM ou VENDA_MEDIA','percentual em número inteiro: 60 = 60%']]);
+  sheet.getRange(1,1,1,5).setFontWeight('bold');sheet.getRange(2,1,1,5).setFontStyle('italic');
+  sheet.getRange(3,1,998,1).setNumberFormat('@');
+  sheet.getRange(1,5).setNote('Percentuais (COBERTURA e MARGEM) em número inteiro: 60 quer dizer 60%. POSITIVACAO em clientes, MIX em produtos por cliente, VENDA_MEDIA em reais.');
+  sheet.setFrozenRows(1);
+  return {ok:true,created:true};
 }
