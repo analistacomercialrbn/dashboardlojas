@@ -569,7 +569,8 @@ function updateAdvancedFilterCount(){
 
 function queryPage(){
   // A marca da Visão Geral acompanha a tela atual (a Visão equipes não passa por renderPage).
-  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'||state.page==='carteira'||state.page==='produtos'||state.page==='cidades'));
+  document.body.classList.toggle('ov-page',state.module==='commercial'&&(state.page==='overview'||state.page==='teams'||state.page==='pedidos'||state.page==='carteira'||state.page==='produtos'||state.page==='cidades'||state.page==='metas'));
+  document.body.classList.toggle('mt-page',state.module==='commercial'&&state.page==='metas');
   document.body.classList.toggle('cd-page',state.module==='commercial'&&state.page==='cidades');
   document.body.classList.toggle('mp-page',state.module==='commercial'&&state.page==='produtos');
   document.body.classList.toggle('ct-page',state.module==='commercial'&&state.page==='carteira');
@@ -590,8 +591,9 @@ function queryPage(){
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
   if(state.page==='teams'){queryTeams(requestId);return;}
+  if(state.page==='metas'){const ready=(()=>{const {selected,current}=mtMonthKey();return MT.ctx.has(selected)&&MT.ctx.has(current);})();if(!ready){renderMetas({});mtEnsureContext().then(()=>{if(state.page==='metas'&&requestId===state.requestId)queryPage();});return;}}
   if(state.page==='cidades'&&!(state.coverage&&CD.context)){renderCidades({});cdEnsureContext().then(()=>{if(state.page==='cidades'&&requestId===state.requestId)queryPage();});return;}
-  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),...(state.page==='cidades'?cdFilters():{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,cityContext:state.page==='cidades'?cdContext():null,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
+  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),...(state.page==='cidades'?cdFilters():{}),...(state.page==='metas'?mtFilters():{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,cityContext:state.page==='cidades'?cdContext():null,metasContext:state.page==='metas'?mtContext():null,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
   if(state.page==='history'){$('#pageTitle').textContent='Histórico comercial';$('#pageSubtitle').textContent='Evolução e comparação de indicadores';$('#periodChip').textContent='Desde jun/2017';return;}
@@ -650,7 +652,7 @@ function sectionHeading(title,sub=''){return `<div class="section-heading"><div>
 
 function renderPage(page,payload){
   // Visão Geral tem cabeçalho e visual próprios; as outras telas continuam como antes.
-  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos'||page==='carteira'||page==='produtos'||page==='cidades');
+  document.body.classList.toggle('ov-page',page==='overview'||page==='pedidos'||page==='carteira'||page==='produtos'||page==='cidades'||page==='metas');
   mountCoverageFilters(false);
   if(page==='history'){$('#content').classList.remove('visual-page');delete $('#content').dataset.presentation;}
   if(page==='history')Promise.resolve(renderMacroHistory(payload)).then(()=>{if(state.page==='history')renderPageExtras('history',payload);});
@@ -660,7 +662,7 @@ function renderPage(page,payload){
   else if(page==='cidades')renderCidades(payload);
   else if(page==='metas')renderMetas(payload);
   else if(page==='pedidos')renderOrders(payload);
-  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&page!=='carteira'&&page!=='produtos'&&page!=='cidades')applyPageLook(page,payload);
+  if(page!=='history'&&page!=='overview'&&page!=='pedidos'&&page!=='carteira'&&page!=='produtos'&&page!=='cidades'&&page!=='metas')applyPageLook(page,payload);
   biRender(page,payload);
   if(page!=='history')renderPageExtras(page,payload);
 }
@@ -1112,7 +1114,7 @@ async function ovExport(mode){
     cut.width=Math.round(top.width*k);cut.height=Math.round((bottom.bottom-top.top)*k);
     cut.getContext('2d').drawImage(canvas,Math.round((top.left-box.left)*k),Math.round((top.top-box.top)*k),cut.width,cut.height,0,0,cut.width,cut.height);
     const blob=await new Promise((resolve,reject)=>cut.toBlob(b=>b?resolve(b):reject(new Error('O navegador não gerou a imagem.')),'image/png'));
-    const name=state.page==='teams'?tvImageName():state.page==='cidades'?'rebanho-cidades-'+String(CD.p?.city?.period?.end||'').slice(0,10)+'.png':state.page==='produtos'?'rebanho-mix-produtos-'+String(MP.p?.extras?.month||'')+'.png':state.page==='carteira'?'rebanho-carteira-'+String(CT.p?.extras?.reference||'').slice(0,10)+'.png':'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
+    const name=state.page==='teams'?tvImageName():state.page==='metas'?'rebanho-metas-'+String(MT.p?.goals?.monthKey||'')+'.png':state.page==='cidades'?'rebanho-cidades-'+String(CD.p?.city?.period?.end||'').slice(0,10)+'.png':state.page==='produtos'?'rebanho-mix-produtos-'+String(MP.p?.extras?.month||'')+'.png':state.page==='carteira'?'rebanho-carteira-'+String(CT.p?.extras?.reference||'').slice(0,10)+'.png':'rebanho-visao-geral-'+(ovMonthReady()?state.filters.year+'-'+String(state.filters.month).padStart(2,'0'):'periodo')+'.png';
     if(mode==='copy'){
       try{if(!navigator.clipboard||typeof ClipboardItem==='undefined')throw new Error('sem suporte');await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);say('Imagem copiada. É só colar (Ctrl+V) na conversa do WhatsApp.');return;}
       catch{say('Este navegador não deixou copiar; a imagem foi baixada.');}
@@ -1151,22 +1153,9 @@ function renderPageExtras(page,payload){
     else if(page==='carteira'){/* Carteira: blocos fazem parte da página */}
     else if(page==='produtos'){/* Mix e Produtos: blocos fazem parte da página */}
     else if(page==='cidades'){/* Cidades: blocos fazem parte da página */}
-    else if(page==='metas')exGoalsUi(ex);
+    else if(page==='metas'){/* Gestão de Metas: blocos fazem parte da página */}
     else if(page==='history')exHistoryUi(ex);
   }catch(error){console.warn('Falha ao desenhar indicadores adicionais',error);}
-}
-
-function exGoalsUi(ex){
-  // Troca o cartão pouco útil "Supervisões com meta" pelos números do ano.
-  // Os cartões "Atingimento" e "Supervisões com meta" dão lugar ao bloco do ano (mesmo atingimento, mais o que falta).
-  $$('#content .kpi-card').forEach(card=>{if(/Supervisões com meta|^Atingimento$/i.test((card.querySelector('.kpi-label')?.textContent||'').trim()))card.remove();});
-  $$('#content > .kpi-grid').forEach(grid=>{if(!grid.children.length)grid.remove();});
-  const upto=MONTH_NAMES[Math.max(0,ex.upTo-1)]||'';
-  const cards=exCards([['Meta até '+upto,money(ex.totalMetaToDate,true),'soma das metas de janeiro a '+upto],['Faturado até '+upto,money(ex.totalRevenue,true),'vendas faturadas no ano'],['Atingido no ano',pct(ex.attainmentToDate),'faturado ÷ meta até '+upto,ex.attainmentToDate>=100?'good':ex.attainmentToDate>=90?'':'bad'],['Falta para a meta do ano',money(ex.missingYear,true),'meta anual '+money(ex.totalMetaYear,true)]]);
-  const cols=[{label:'Nome'},{label:'Meta até '+upto,num:true},{label:'Faturado',num:true},{label:'Atingido',num:true},{label:'Meta do ano',num:true},{label:'Falta no ano',num:true}];
-  const row=r=>[`<strong>${esc(r.name)}</strong>`,r.metaToDate?money(r.metaToDate,true):'<small>sem meta</small>',money(r.revenue,true),r.attainment==null?'—':`${exShareBar(r.attainment,r.attainment>=100?'good':r.attainment>=90?'':'bad')} ${pct(r.attainment)}`,r.metaYear?money(r.metaYear,true):'—',r.metaYear?money(r.missingYear,true):'—'];
-  exInsert(`<section class="ex-compare" id="goalsYear"><div class="ex-compare-title"><strong>Ano de ${ex.year}</strong><small>Meta acumulada até ${upto} e quanto falta para fechar o ano</small></div>${cards}</section>`,'#content > .page-summary-hero');
-  exInsert(`${exSection('goalsBySupervisor','Atingimento no ano por supervisão','Faturado de janeiro a '+upto+' contra a meta do mesmo período.',exTable(cols,ex.supervisors.map(row)))}${exSection('goalsByDepartment','Meta por departamento','Departamentos sem meta cadastrada aparecem só com o faturado.',exTable(cols,ex.departments.map(row)))}`,null);
 }
 
 function exHistoryUi(ex){
@@ -1781,29 +1770,136 @@ function updateOrderExplorer(){
   const order=orders.find(x=>x.key===state.selectedOrderKey);
   $('#orderLineDetails').innerHTML=order?`<div class="order-lines-heading"><div><h3>Itens do pedido ${esc(order.order||'')}</h3><span>${esc(order.clientName||order.client||'Cliente sem identificação')} · ${esc(order.department||'')}</span></div><span class="order-status ${statusClass[order.status]||''}">${esc(statusLabel[order.status]||order.status)}</span></div><div class="table-wrap"><table><thead><tr><th>Produto</th><th class="align-right">Quantidade</th><th>Estoque</th><th class="align-right">Valor do item</th></tr></thead><tbody>${(order.items||[]).map(item=>`<tr><td><strong>${esc(item.productName||'Produto sem descrição')}</strong><small class="item-code">${item.product!=null?'Cód. '+esc(item.product):''}</small></td><td class="align-right">${item.quantity?dec(item.quantity):'—'}</td><td>${item.stock==null?'<span class="stock-unknown">Não informado</span>':item.stock>0?`<span class="stock-available">${dec(item.stock)} disponível</span>`:'<span class="stock-missing">Sem estoque</span>'}</td><td class="align-right">${money(item.value,true)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">A base não contém o detalhamento dos itens deste pedido.</td></tr>'}</tbody></table></div>`:'<div class="order-lines-empty">Clique no número de um pedido para ver os itens.</div>';
 }
+// ===== Gestão de Metas (visual das páginas novas) =====
+const MT={p:null,sort:'revenue',dir:-1,ctx:new Map(),loading:null,error:''};
+const MT_IND=[
+  ['revenue','Faturamento',v=>money(v,true),'faturado no mês'],
+  ['clients','Positivação',v=>integer(v),'clientes principais que compraram'],
+  ['coverage','Cobertura',v=>pct(v),'positivados ÷ ativos da carteira'],
+  ['mix','Mix por cliente',v=>dec(v),'produtos diferentes por cliente principal'],
+  ['margin','Margem',v=>pct(v),'lucro ÷ faturamento'],
+  ['ticket','Venda média',v=>money(v,true),'faturamento ÷ clientes principais']
+];
+function mtMonthKey(){
+  const now=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit'}).format(new Date()).slice(0,7);
+  const y=/^20\d{2}$/.test(String(state.filters.year))?Number(state.filters.year):Number(now.slice(0,4));
+  const m=/^([1-9]|1[0-2])$/.test(String(state.filters.month))?Number(state.filters.month):(y===Number(now.slice(0,4))?Number(now.slice(5,7)):12);
+  return {selected:y+'-'+String(m).padStart(2,'0'),current:now};
+}
+function mtFilters(){
+  const f={excludeRcaNames:TV_FORA_DA_PAGINA};
+  if(!normalizeMulti(state.filters.supervisor).length)f.excludeSupervisors=TV_SUPERVISOES_FORA_POR_PADRAO;
+  return f;
+}
+// Calendário do mês (dias úteis e feriados), metas dos indicadores e margem: buscados uma vez por mês.
+function mtEnsureContext(){
+  const {selected,current}=mtMonthKey();
+  if(MT.ctx.has(selected)&&MT.ctx.has(current))return Promise.resolve(true);
+  if(!MT.loading){
+    const load=month=>Promise.all([api('/api/metasContext',{body:JSON.stringify({month})}).catch(e=>({error:e?.message||String(e)})),
+      month===selected?api('/api/productsView',{body:JSON.stringify({month})}).catch(()=>null):Promise.resolve(null)]).then(([c,p])=>MT.ctx.set(month,{...c,products:p}));
+    MT.loading=Promise.all([...new Set([selected,current])].filter(x=>!MT.ctx.has(x)).map(load)).finally(()=>{MT.loading=null;});
+  }
+  return MT.loading.then(()=>false);
+}
+function mtContext(){
+  const {selected,current}=mtMonthKey(),c=MT.ctx.get(selected)||{},cur=MT.ctx.get(current)||{};
+  MT.error=c.error||'';
+  return {calendar:c.calendar||null,calendarCurrent:cur.calendar||null,goals:c.goals||cur.goals||[],goalsTab:!!(c.goalsTab||cur.goalsTab),goalsError:c.goalsError||'',products:c.products||null};
+}
+function mtTone(p){return p==null?'':p>=100?'g':p>=90?'y':'r';}
+function mtCell(row,k,fmt,running){
+  const v=row.values[k],g=row.goals[k];
+  if(k==='margin'&&!MT.p.goals.canMargin)return '<span class="ov-s">—</span>';
+  if(v==null)return '<span class="ov-s">—</span>';
+  if(g==null)return `<b>${fmt(v)}</b>`;
+  const att=v/g*100,proj=k==='revenue'&&running&&row.projected.revenue!=null?row.projected.revenue/g*100:null;
+  return `<b>${fmt(v)}</b><small class="mt-att ${mtTone(proj??att)}">${pct(att)}${proj!=null?' · proj. '+pct(proj):''}</small><small class="ov-s">meta ${fmt(g)}</small>`;
+}
+function mtMonthName(m){return MONTH_NAMES[m-1]||'';}
+function mtPeriod(months){
+  if(!months.length)return '';
+  const contiguous=months.every((m,i)=>!i||m===months[i-1]+1);
+  return contiguous?(months.length===1?mtMonthName(months[0]):mtMonthName(months[0])+' a '+mtMonthName(months.at(-1))):months.map(mtMonthName).join(', ');
+}
 function renderMetas(p){
-  const attainment=p.totalMeta?p.totalRevenue/p.totalMeta*100:null;
-  $('#content').innerHTML=`
-    <div class="readonly-banner"><strong>Nova Gestão de Metas em migração.</strong> Esta versão web já traz a leitura histórica e a distribuição cadastrada. A edição, versionamento e aprovação serão conectados ao novo backend antes da retirada definitiva do Streamlit.</div>
-    <div class="grid kpi-grid four">
-      ${kpi('Meta do ano',money(p.totalMeta,true),'Ano selecionado')}
-      ${kpi('Faturamento',money(p.totalRevenue,true),'Acumulado no ano')}
-      ${kpi('Atingimento',pct(attainment),'Realizado ÷ meta')}
-      ${kpi('Supervisões com meta',integer(p.supervisors?.length),'Distribuição cadastrada')}
+  MT.p=p;const g=p.goals;ovEnsureTopTools();
+  const label=$('#activeMenuLabel');if(label)label.textContent='Gestão de Metas';
+  const mt=$('#ovMarginToggle');if(mt)mt.hidden=true;
+  const cut=$('#ovCutoff');if(cut)cut.innerHTML='Corte dos dados: <b>'+esc(ovDate(g?.latest))+'</b>';
+  $('#content').className='mt-report';
+  if(!g){$('#content').innerHTML=`<section class="ov-card"><p class="ov-s">${esc(MT.error||'Carregando metas, calendário e margem…')}</p></section>`;return;}
+  const c=g.company,mName=mtMonthName(g.month)+'/'+String(g.year).slice(2);
+  const sOpts=g.supervisorOptions||[],sSel=normalizeMulti(state.filters.supervisor),sChecked=n=>sSel.length?sSel.includes(n):!tvDefaultOut(n);
+  const rca=normalizeMulti(state.filters.rca);
+  const sup=`<details class="tv-sup" id="tvSupervisors"><summary>Supervisão: ${esc(tvSupervisorSummary(sOpts))} <span aria-hidden="true">▾</span></summary><div class="tv-sup-menu"><fieldset><legend class="sr-only">Supervisões</legend>${sOpts.map(o=>`<label><input type="checkbox" data-teams-supervisor="${esc(o.name)}" ${sChecked(o.name)?'checked':''}><span>${esc(o.name)}</span><small>${integer(o.count)} RCAs</small></label>`).join('')}</fieldset><div class="tv-sup-actions"><button type="button" id="teamsSelectAll">Marcar todas</button><button type="button" id="teamsClearSupervisors">Limpar</button><span id="teamsSelectionNote" aria-live="polite"></span><button type="button" class="primary" id="teamsApplySupervisors">Aplicar</button></div></div></details>`;
+  const rcaSel=`<label class="mt-rca">RCA <select id="mtRca"><option value="">Todos</option>${g.rcaOptions.map(r=>`<option value="${esc(r.code)}" ${rca.length===1&&rca[0]===r.code?'selected':''}>${esc(r.name)}</option>`).join('')}${rca.length>1?'<option value="__multi" selected>Vários (Mais filtros)</option>':''}</select></label>`;
+  const days=g.calendar?(g.calendar.closed?'mês encerrado':g.calendar.future?'mês futuro':integer(g.calendar.remainingToday??g.calendar.remaining)+' dias úteis até o fim do mês'):'';
+  const heroBlock=([k,l,fmt,sub])=>{
+    if(k==='margin'&&!g.canMargin)return '';
+    const v=c.values[k],goal=c.goals[k],att=goal!=null&&v!=null?v/goal*100:null,proj=k==='revenue'&&g.running&&c.projected.revenue!=null&&goal?c.projected.revenue/goal*100:null;
+    return `<div class="mt-hb ${k==='revenue'?'is-main':''}"><p class="ov-k">${esc(l)}</p><p class="${k==='revenue'?'mt-hv-lg':'ov-hv'}">${v==null?'—':fmt(v)}</p>${goal!=null?`<p class="ov-hs">meta ${fmt(goal)} · <b class="mt-att ${mtTone(proj??att)}">${pct(att)}</b>${proj!=null?' · projeção '+pct(proj):''}</p>`:`<p class="ov-hs mt-nogoal">sem meta</p>`}<p class="ov-hs">${esc(sub)}</p></div>`;
+  };
+  const acc=g.acc,period=mtPeriod(acc.months);
+  $('#content').innerHTML=`<div class="tv-toolbar mt-toolbar">${sup}${rcaSel}<span class="ov-s mt-period">${esc(mName)}${g.running?' até dia '+g.cutDay+' · '+esc(days):''}${g.fallback?' · “Todos os meses”: mostrando o mês mais recente':''}</span></div>
+  ${MT.error?`<p class="mp-warn">${esc(MT.error)}</p>`:''}
+  <section class="ov-hero mt-hero" aria-label="Metas do mês">
+    <div class="mt-hero-grid">${MT_IND.map(heroBlock).join('')}</div>
+    <p class="ov-hs mt-hero-note">${integer(c.count)} RCAs ativos · sem Cecé${normalizeMulti(state.filters.supervisor).length?'':' · sem Balcão Rebanho'} · cores: verde ≥ 100%, amarelo 90% a 99,9%, vermelho &lt; 90%${g.running?' (no mês em andamento, o faturamento é colorido pela projeção)':''}.</p>
+  </section>
+  <section class="ov-card mt-panel"><div class="ov-head"><p class="ov-k">Painel por RCA · ${esc(mName)}</p><p class="ov-s">clique no título da coluna para ordenar · com meta, mostra o % atingido; sem meta, só o realizado</p></div><div class="ov-table-wrap" id="mtTable"></div></section>
+  <section class="ov-card mt-acc"><div class="ov-head"><p class="ov-k">Acumulado ${esc(String(g.year))} · só meses com meta</p><p class="ov-s">${period?esc(period)+(acc.includesRunning?' (mês atual até hoje)':''):'nenhum mês com meta cadastrada'}</p></div>
+    ${acc.meta?`<div class="mt-acc-row"><div><span class="ov-s">Meta</span><b>${money(acc.meta,true)}</b></div><div><span class="ov-s">Faturado</span><b>${money(acc.revenue,true)}</b></div><div><span class="ov-s">Atingido</span><b class="mt-att ${mtTone(acc.attainment)}">${pct(acc.attainment)}</b></div><div><span class="ov-s">Falta</span><b>${acc.missing>0?money(acc.missing,true):'Meta batida'}</b></div>${acc.projected!=null?`<div><span class="ov-s">Projeção do período</span><b class="mt-att ${mtTone(acc.projectedAttainment)}">${pct(acc.projectedAttainment)}</b><small>${money(acc.projected,true)}</small></div>`:''}</div>`:'<p class="ov-s">Sem meta de faturamento cadastrada neste ano para o recorte.</p>'}
+  </section>
+  <section class="ov-card mt-chart-card"><div class="ov-head"><p class="ov-k">Faturamento mês a mês · ${esc(String(g.year))}</p><p class="ov-s">barras: faturado · linha: meta · % atingido em cima de cada mês</p></div><div class="mt-chart"><canvas id="mtMonthly" role="img" aria-label="Faturamento e meta por mês"></canvas></div></section>
+  <div class="mt-two">
+    <section class="ov-card"><div class="ov-head"><p class="ov-k">Por supervisão</p><p class="ov-s">${esc(period||'sem meses com meta')}</p></div>${mtGroupTable(g.supAcc,'Supervisão')}</section>
+    <section class="ov-card"><div class="ov-head"><p class="ov-k">Por departamento</p><p class="ov-s">${esc(period||'sem meses com meta')}</p></div>${mtGroupTable(g.depAcc,'Departamento')}</section>
+  </div>
+  <span data-capture-end></span>
+  <details class="ov-card cd-check ov-noprint"><summary>Conferência do cadastro</summary>
+    <div class="mt-check">
+      <div><p class="cd-card-k">RCAs ativos sem meta em ${esc(mName)} · ${integer(g.check.noMeta.length)}</p><p class="ov-s">${g.check.noMeta.length?g.check.noMeta.map(r=>esc(r.name)+' ('+esc(r.supervisor)+')').join(' · '):'Todos têm meta.'}</p></div>
+      <div><p class="cd-card-k">Metas lançadas para RCAs fora da equipe · ${integer(g.check.outside.length)}</p><p class="ov-s">${g.check.outside.length?g.check.outside.map(o=>esc(o.name)+' · '+esc(mtMonthName(o.month))+' · '+money(o.value,true)).join(' · '):'Nenhuma.'}</p></div>
+      <div><p class="cd-card-k">Meses sem meta de faturamento em ${esc(String(g.year))}</p><p class="ov-s">${g.check.monthsNoMeta.length?g.check.monthsNoMeta.map(mtMonthName).join(', '):'Nenhum.'}</p></div>
+      <div><p class="cd-card-k">Indicadores sem meta em ${esc(mName)}</p><p class="ov-s">${g.check.indicatorsNoGoal.length?g.check.indicatorsNoGoal.map(k=>MT_IND.find(x=>x[0]===k)[1]).join(', '):'Todos têm meta.'}</p></div>
+      <div><p class="cd-card-k">Aba METAS_INDICADORES</p><p class="ov-s">${g.check.goalsError?esc(g.check.goalsError):g.check.goalsTab?integer(g.check.goalsCount)+' metas cadastradas. Percentuais em número inteiro: 60 = 60%.':'Ainda não existe na planilha auxiliar.'}</p>${!g.check.goalsTab&&state.user?.perfil==='ADMIN'?'<button type="button" class="btn secondary small" id="mtCreateTab">Criar aba METAS_INDICADORES</button>':''}<span id="mtCheckNote" class="ov-s" aria-live="polite"></span></div>
     </div>
-    <div class="grid two-col">
-      <div class="panel"><div class="panel-title-row"><div><h2>Faturamento x meta mês a mês</h2><div class="panel-sub">Leitura anual do período selecionado.</div></div></div><div class="chart-wrap tall"><canvas id="metaMonthly"></canvas></div></div>
-      <div class="panel"><div class="panel-title-row"><div><h2>Meta por supervisão</h2><div class="panel-sub">Distribuição cadastrada na base.</div></div></div><div id="metaSup" class="metric-list"></div></div>
-    </div>
-  `;
-  const monthly=p.monthly||[];
-  const c=new Chart($('#metaMonthly'),{type:'bar',data:{labels:monthly.map(x=>x.label),datasets:[
-    {label:'Meta',data:monthly.map(x=>x.meta),backgroundColor:'#DDE2EF',borderRadius:6},
-    {label:'Faturamento',data:monthly.map(x=>x.revenue),backgroundColor:'#1E2655',borderRadius:6}
-  ]},options:{responsive:true,maintainAspectRatio:false,animation:chartMotionOptions(),plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:8,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${money(ctx.raw)}`}}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'#EEF0F5'},border:{display:false},ticks:{callback:v=>money(v,true)}}}}});
-  state.charts.push(c);installChartMotion(c);
-  const max=p.supervisors?.[0]?.meta||1;
-  $('#metaSup').innerHTML=(p.supervisors||[]).map(x=>`<div class="metric-line"><div><div class="name">${esc(x.name)}</div><div class="progress"><i style="width:${x.meta/max*100}%"></i></div></div><div class="value">${money(x.meta,true)}</div></div>`).join('');
+  </details>`;
+  bindTeamsSupervisors();
+  $('#mtRca').onchange=e=>{const v=e.target.value;if(v==='__multi')return;state.filters.rca=v?[v]:[];syncUiFromFilters();queryPage();};
+  const ct=$('#mtCreateTab');if(ct)ct.onclick=async e=>{e.currentTarget.disabled=true;$('#mtCheckNote').textContent='Criando…';try{await api('/api/createIndicatorGoalsTab',{method:'POST'});$('#mtCheckNote').textContent='Aba criada, só com os títulos e a linha de instruções.';MT.ctx.clear();}catch(err){$('#mtCheckNote').textContent='Não foi possível: '+(err?.message||err);}};
+  mtDrawTable();mtDrawChart();
+}
+function mtGroupTable(rows,label){
+  return `<div class="ov-table-wrap"><table class="ov-table mp-table mt-group"><thead><tr><th data-sort-ready="1">${esc(label)}</th><th data-sort-ready="1" class="num">Meta</th><th data-sort-ready="1" class="num">Faturado</th><th data-sort-ready="1" class="num">Atingido</th><th data-sort-ready="1" class="num">Falta</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td class="num">${r.meta?money(r.meta,true):'<span class="ov-s">sem meta</span>'}</td><td class="num">${money(r.revenue,true)}</td><td class="num">${r.attainment==null?'—':`<b class="mt-att ${mtTone(r.attainment)}">${pct(r.attainment)}</b>`}</td><td class="num">${r.missing==null?'—':r.missing>0?money(r.missing,true):'Meta batida'}</td></tr>`).join('')||'<tr><td colspan="5">Nada neste recorte.</td></tr>'}</tbody></table></div>`;
+}
+function mtDrawTable(){
+  const g=MT.p?.goals,host=$('#mtTable');if(!g||!host)return;
+  const inds=MT_IND.filter(([k])=>k!=='margin'||g.canMargin);
+  const val=(r,k)=>k==='name'||k==='supervisor'?r[k]:r.values[k];
+  const rows=g.rows.slice().sort((a,b)=>{const x=val(a,MT.sort),y=val(b,MT.sort);if(typeof x==='string'||typeof y==='string')return String(x??'').localeCompare(String(y??''),'pt-BR')*MT.dir;return ((x??-Infinity)-(y??-Infinity))*MT.dir;});
+  const head=[['name','RCA'],['supervisor','Supervisão'],...inds.map(([k,l])=>[k,l])];
+  const line=(r,cls,first,second)=>`<tr class="${cls}"><td>${first}</td><td class="ov-s">${second}</td>${inds.map(([k,,fmt])=>`<td class="num mt-cell">${mtCell(r,k,fmt,g.running)}</td>`).join('')}</tr>`;
+  host.innerHTML=`<table class="ov-table mp-table mt-table"><thead><tr>${head.map(([k,l],i)=>`<th data-sort-ready="1" class="${i>1?'num':''}"><button type="button" class="ct-sort ${MT.sort===k?'on':''}" data-mt-sort="${k}">${esc(l)}${MT.sort===k?(MT.dir<0?' ▼':' ▲'):''}</button></th>`).join('')}</tr></thead>
+  <tbody>${rows.map(r=>line(r,'','<b>'+esc(r.name)+'</b>',esc(r.supervisor))).join('')||`<tr><td colspan="${head.length}">Nenhum RCA ativo neste recorte.</td></tr>`}</tbody>
+  <tfoot>${g.sups.map(s=>line(s,'mt-sup','<b>Total '+esc(s.name)+'</b>',integer(s.count)+' RCAs')).join('')}${line(g.company,'mt-co','<b>Empresa</b>',integer(g.company.count)+' RCAs')}</tfoot></table>`;
+  $$('[data-mt-sort]').forEach(b=>b.onclick=()=>{const k=b.dataset.mtSort;if(MT.sort===k)MT.dir*=-1;else{MT.sort=k;MT.dir=k==='name'||k==='supervisor'?1:-1;}mtDrawTable();});
+}
+function mtDrawChart(){
+  const g=MT.p?.goals,canvas=$('#mtMonthly');if(!g||!canvas)return;
+  const data=g.monthly,labels=data.map(x=>MONTH_NAMES[x.month-1].slice(0,3)+(x.running?'*':''));
+  const top={id:'mtTop',afterDatasetsDraw(ch){
+    const ctx=ch.ctx,bars=ch.getDatasetMeta(0),line=ch.getDatasetMeta(1);ctx.save();ctx.textAlign='center';ctx.textBaseline='bottom';
+    data.forEach((x,i)=>{if(x.future)return;const b=bars.data[i],l=line.data[i];const yTop=Math.min(b?.y??Infinity,x.meta!=null&&l?l.y:Infinity)-6;
+      if(x.attainment!=null){ctx.font='700 11px Inter,system-ui,sans-serif';ctx.fillStyle=x.attainment>=100?'#1f8a5b':x.attainment>=90?'#9a6b00':'#c2453f';ctx.fillText(pct(x.attainment),b.x,yTop);}
+      else if(x.revenue!=null){ctx.font='600 10px Inter,system-ui,sans-serif';ctx.fillStyle='#5b6785';ctx.fillText('sem meta',b.x,yTop);}});
+    ctx.restore();}};
+  chart(canvas,'bar',{labels,datasets:[
+    {type:'bar',label:'Faturado',data:data.map(x=>x.revenue),backgroundColor:data.map(x=>x.running?'#7f97cf':'#14275c'),borderRadius:6,order:2},
+    {type:'line',label:'Meta',data:data.map(x=>x.meta),borderColor:'#e0731e',backgroundColor:'#e0731e',borderWidth:3,pointRadius:4,pointHoverRadius:6,spanGaps:false,tension:0,order:1}
+  ]},{layout:{padding:{top:22}},plugins:{legend:{display:true,position:'top',align:'start',labels:{boxWidth:10,usePointStyle:true,font:{size:11}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw==null?'sem meta':money(ctx.raw,true)}`}}},
+    scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#5b6785',font:{size:11}}},y:{beginAtZero:true,grace:'12%',grid:{color:'#EEF0F5'},border:{display:false},ticks:{color:'#7A8294',font:{size:10},callback:v=>money(v,true)}}}},[top]);
 }
 
 bootstrap();
