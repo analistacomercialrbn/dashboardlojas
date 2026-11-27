@@ -305,9 +305,10 @@ function createInlineDataEngine(source){
   return engine;
 }
 function initData(force=false,{preserveFilters=false,background=false,preferFresh=false}={}){
-  state.loadingData=true;
-  if(!background)destroyCharts();
-  if(state.worker)state.worker.terminate();
+  // Em segundo plano, o processador atual continua respondendo às páginas; o novo só assume quando terminar.
+  if(!background){state.loadingData=true;destroyCharts();if(state.worker)state.worker.terminate();}
+  else{if(state.backgroundWorker)try{state.backgroundWorker.terminate();}catch{}state.updatingInBackground=true;renderBaseUpdate({updatedAt:state.serverUpdatedAt,background:true});}
+  let myWorker=null;
   if(!background)setStatus(force?'Atualizando bases no Apps Script…':'Carregando bases comerciais…',true);
   const workerSource=document.getElementById('workerSource')?.textContent||'';
   if(!workerSource.trim()) throw new Error('O processador local não foi carregado.');
@@ -315,7 +316,7 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
   const handleMessage=e=>{
     const m=e.data||{};
     if(m.type==='serverRequest'){
-      const activeWorker=state.worker;
+      const activeWorker=myWorker||state.worker;
       let settled=false;
       const warningTimer=setTimeout(()=>{
         if(settled||background)return;
@@ -333,7 +334,9 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
       return;
     }
     if(m.type==='stage'){if(!background)setStatus(m.text,true);}
+    else if(m.type==='serverDataReady'){if(myWorker===state.worker&&state.module==='commercial'&&state.page===m.page)queryPage();}
     else if(m.type==='ready'){
+      if(background){const old=state.worker;state.worker=myWorker;state.backgroundWorker=null;state.updatingInBackground=false;if(old&&old!==myWorker)try{old.terminate();}catch{}}
       const retainedFilters=preserveFilters?{...state.filters}:null;
       state.dimensions=m.dimensions;
       setupFilters();
@@ -342,9 +345,10 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
       state.serverUpdatedAt=m.serverUpdatedAt||null;
       renderBaseUpdate(m.updateInfo||{updatedAt:state.serverUpdatedAt});
       beginAutomaticUpdates();
-      setStatus('',false);
+      if(!background)setStatus('',false);
       queryPage();
       if(m.fromLocal)setTimeout(checkAutomaticUpdate,0);
+      setTimeout(prefetchPages,background?0:1500);
     }else if(m.type==='historyStudy'){
       state.historyStudyReceive?.(m);
     }else if(m.type==='openTotals'){
@@ -358,6 +362,7 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
         $('#content').innerHTML=`<div class="empty"><strong>Não foi possível exibir esta tela.</strong><br><br>${esc(error?.message||'Ocorreu uma falha ao montar os gráficos e informações.')}</div>`;
       }
     }else if(m.type==='error'||m.type==='queryError'){
+      if(background&&m.type==='error'){state.updatingInBackground=false;state.backgroundWorker=null;try{myWorker?.terminate();}catch{}renderBaseUpdate({updatedAt:state.serverUpdatedAt});console.warn('Atualização em segundo plano falhou; a tela continua com a base anterior.',m.message);return;}
       if(state.module&&state.module!=='commercial')return;
       state.loadingData=false;
       setStatus('',false);
@@ -367,11 +372,11 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
   const startFallback=error=>{
     if(usingFallback)return;
     usingFallback=true;clearTimeout(fallbackTimer);
-    try{state.worker?.terminate();}catch{}
+    try{(background?myWorker:state.worker)?.terminate();}catch{}
     if(workerUrl){URL.revokeObjectURL(workerUrl);workerUrl=null;}
     try{
       const fallback=createInlineDataEngine(workerSource);
-      state.worker=fallback;fallback.onmessage=handleMessage;
+      myWorker=fallback;if(background)state.backgroundWorker=fallback;else state.worker=fallback;fallback.onmessage=handleMessage;
       if(!background)setStatus('Iniciando processador compatível com o Apps Script…',true);
       fallback.postMessage({type:'init',force,preferFresh,userScope:state.user?.login+'|'+(state.user?.accessVersion||'')});
     }catch(fallbackError){
@@ -382,7 +387,7 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
   try{
     workerUrl=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
     const worker=new Worker(workerUrl);
-    state.worker=worker;
+    myWorker=worker;if(background)state.backgroundWorker=worker;else state.worker=worker;
     worker.addEventListener('error',e=>{
       if(!firstWorkerMessage){startFallback(e);return;}
       setStatus('',false);
@@ -396,17 +401,29 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
     worker.postMessage({type:'init',force,preferFresh,userScope:state.user?.login+'|'+(state.user?.accessVersion||'')});
   }catch(error){startFallback(error);}
 }
+function prefetchPages(){
+  if(state.module!=='commercial'||!state.worker)return;
+  try{
+    const {current}=mtMonthKey();
+    state.worker.postMessage({type:'prefetch',productsMonth:current});
+    mtEnsureContext().catch(()=>{});
+    cdEnsureContext().catch(()=>{});
+    if(typeof teamsFilters==='function'&&/^20\d{2}$/.test(String(state.filters.year))&&/^([1-9]|1[0-2])$/.test(String(state.filters.month))&&!(TEAMS.payload&&TEAMS.key===teamsKey())){
+      const key=teamsKey();api('/api/teamsView',{body:JSON.stringify({filters:teamsFilters()})}).then(p=>projAdjustTeams(p,teamsFilters())).then(p=>{if(!TEAMS.payload||TEAMS.key!==key){TEAMS.payload=p;TEAMS.key=key;TEAMS.loadedAt=Date.now();}}).catch(()=>{});
+    }
+  }catch(err){console.warn('Pré-carregamento indisponível:',err?.message||err);}
+}
 function renderBaseUpdate(info={}){
  if(state.module&&state.module!=='commercial')return;
   const node=$('#lastBaseUpdate');if(!node)return;
   const date=info.updatedAt||state.serverUpdatedAt;
   const stamp=date?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(date)):'';
-  const status=info.updateError?' · Atualização com pendência':info.updating?' · Atualizando automaticamente…':'';
+  const status=info.background||state.updatingInBackground?' · atualizando em segundo plano…':info.updateError?' · Atualização com pendência':info.updating?' · Atualizando automaticamente…':'';
   node.textContent=(stamp?'Última atualização: '+stamp:'')+status;node.dateTime=date||'';node.title=info.updateError||info.updateStage||'';
 }
 async function checkAutomaticUpdate(){
  if(state.module&&state.module!=='commercial')return;
-  if(document.hidden||state.loadingData||state.checkingForUpdates||!state.user||!state.serverUpdatedAt)return;
+  if(document.hidden||state.loadingData||state.updatingInBackground||state.checkingForUpdates||!state.user||!state.serverUpdatedAt)return;
   state.checkingForUpdates=true;
   try{
     const info=await api('/api/info');
@@ -593,7 +610,7 @@ function queryPage(){
   setStatus('Atualizando indicadores…',true);
   const requestId=++state.requestId;
   if(state.page==='teams'){queryTeams(requestId);return;}
-  if(state.page==='metas'){const ready=(()=>{const {selected,current}=mtMonthKey();return MT.ctx.has(selected)&&MT.ctx.has(current);})();if(!ready){renderMetas({});mtEnsureContext().then(()=>{if(state.page==='metas'&&requestId===state.requestId)queryPage();});return;}}
+  if(state.page==='metas'){const ready=(()=>{const {selected,current}=mtMonthKey();return MT.ctx.has(selected)&&MT.ctx.has(current);})();if(!ready){MT.pending=true;mtEnsureContext().then(()=>{MT.pending=false;if(state.page==='metas')queryPage();});}else MT.pending=false;}
   if(state.page==='cidades'&&!(state.coverage&&CD.context)){renderCidades({});cdEnsureContext().then(()=>{if(state.page==='cidades'&&requestId===state.requestId)queryPage();});return;}
   state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),...(state.page==='cidades'?cdFilters():{}),...(state.page==='metas'?mtFilters():{}),projOpen:PROJ.open,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,cityContext:state.page==='cidades'?cdContext():null,metasContext:state.page==='metas'?mtContext():null,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
@@ -1352,7 +1369,7 @@ function renderProdutos(p){
   const period=mpMonth(ex.month)+(ex.running?' até dia '+ex.cutDay:'');
   const cmp=ex.running?'até o mesmo dia':'mês inteiro';
   $('#content').innerHTML=`<div class="tv-toolbar mp-toolbar">${sup}${dep}<span class="ov-s mp-period">${esc(period)}${ex.fallback?' · “Todos os meses” não se aplica aqui: mostrando o mês mais recente':''}</span></div>
-  ${ex.serverError?`<p class="mp-warn">Margem, desconto, quantidade e fornecedor não carregaram agora (${esc(ex.serverError)}). Os demais números estão corretos; tente “Atualizar bases” ou recarregue a página.</p>`:''}
+  ${ex.serverPending?'<p class="ov-s mt-loading">Carregando margem, desconto, quantidade e fornecedor do Apps Script… aparecem aqui assim que chegarem.</p>':''}${ex.serverError?`<p class="mp-warn">Margem, desconto, quantidade e fornecedor não carregaram agora (${esc(ex.serverError)}). Os demais números estão corretos; tente “Atualizar bases” ou recarregue a página.</p>`:''}
   <section class="ov-hero mp-hero" aria-label="Mix e Produtos">
     <div class="mp-hero-grid">
       <div><p class="ov-k">Faturamento · ${esc(period)}</p><p class="mp-hv-lg">${money(k.revenue,true)}</p><p class="ov-hs">${money(k.revenue)}</p></div>
@@ -1818,9 +1835,11 @@ function mtEnsureContext(){
   const {selected,current}=mtMonthKey();
   if(MT.ctx.has(selected)&&MT.ctx.has(current))return Promise.resolve(true);
   if(!MT.loading){
-    const load=month=>Promise.all([api('/api/metasContext',{body:JSON.stringify({month})}).catch(e=>({error:e?.message||String(e)})),
-      month===selected?api('/api/productsView',{body:JSON.stringify({month})}).catch(()=>null):Promise.resolve(null)]).then(([c,p])=>MT.ctx.set(month,{...c,products:p}));
-    MT.loading=Promise.all([...new Set([selected,current])].filter(x=>!MT.ctx.has(x)).map(load)).finally(()=>{MT.loading=null;});
+    const months=[...new Set([selected,current])].filter(x=>!MT.ctx.has(x));
+    MT.loading=Promise.all([api('/api/metasContext',{body:JSON.stringify({month:months[0],months})}).catch(e=>({error:e?.message||String(e)})),
+      Promise.all(months.map(m=>api('/api/productsView',{body:JSON.stringify({month:m})}).catch(()=>null)))]).then(([c,prods])=>{
+        months.forEach((m,i)=>MT.ctx.set(m,{...c,calendar:c.calendars?.[m]||(m===months[0]?c.calendar:null),products:prods[i]}));
+      }).finally(()=>{MT.loading=null;});
   }
   return MT.loading.then(()=>false);
 }
@@ -1864,7 +1883,7 @@ function renderMetas(p){
   };
   const acc=g.acc,period=mtPeriod(acc.months);
   $('#content').innerHTML=`<div class="tv-toolbar mt-toolbar">${sup}${rcaSel}<span class="ov-s mt-period">${esc(mName)}${g.running?' até dia '+g.cutDay+' · '+esc(days):''}${g.fallback?' · “Todos os meses”: mostrando o mês mais recente':''}</span></div>
-  ${MT.error?`<p class="mp-warn">${esc(MT.error)}</p>`:''}
+  ${MT.error?`<p class="mp-warn">${esc(MT.error)}</p>`:''}${MT.pending?'<p class="ov-s mt-loading">Carregando dias úteis, metas dos indicadores e margem do Apps Script… os números aparecem aqui assim que chegarem.</p>':''}
   <section class="ov-hero mt-hero" aria-label="Metas do mês">
     <div class="mt-hero-grid">${MT_IND.map(heroBlock).join('')}</div>
     <p class="ov-hs mt-hero-note">${integer(c.count)} RCAs ativos · sem Cecé${normalizeMulti(state.filters.supervisor).length?'':' · sem Balcão Rebanho'} · cores: verde ≥ 100%, amarelo 90% a 99,9%, vermelho &lt; 90%${g.running?' (no mês em andamento, o faturamento é colorido pela projeção: '+(g.projOpen?'faturado + pedidos em aberto':'ritmo de dias úteis')+')':''}.</p>
