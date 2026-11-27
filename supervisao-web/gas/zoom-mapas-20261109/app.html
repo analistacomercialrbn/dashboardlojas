@@ -1383,7 +1383,7 @@ body.ov-exporting .cd-map .leaflet-control-container{display:none}.cd-owner-tabl
 @media(max-width:1199px){.mt-hero-grid{grid-template-columns:1fr 1fr 1fr}.mt-hero-grid>.is-main{grid-column:1/-1}.mt-two{grid-template-columns:1fr}.mt-acc-row{grid-template-columns:1fr 1fr 1fr}}
 @media(max-width:560px){.mt-hv-lg{font-size:32px}.mt-hero-grid{grid-template-columns:1fr 1fr;gap:14px}.mt-acc-row{grid-template-columns:1fr 1fr}.mt-acc-row>div{border-left:0;padding-left:0}.mt-chart{height:260px}.mt-period{margin-left:0}}
 </style>
-</head>
+<style id="proj-open-style">.proj-open-toggle{white-space:nowrap}body.ct-page .proj-open-toggle,body.mp-page .proj-open-toggle,body.cd-page .proj-open-toggle{display:none!important}</style></head>
 <body>
   <div id="loginView" class="login-shell hidden">
     <div class="login-card">
@@ -2057,6 +2057,11 @@ function overview(filters){
   const departments=groupRevenue(rows,s=>s.department).map(x=>({...x,meta:metaRows.filter(m=>String(m.department)===String(x.key)).reduce((sum,m)=>sum+(Number(m.value)||0),0)})).sort((a,b)=>b.revenue-a.revenue);
   return {kpis:{...k,meta,attainment:meta?k.revenue/meta*100:null},pipeline,daily,updatedAt:SERVER_UPDATED_AT,monthly:monthSeries(yearRows),rca,departments,insights:compactInsights(filters,rows)};
 }
+function openAllTotals(filters){
+  const byRca=new Map();let total=0;
+  for(const o of filterOpenOrders({...filters,year:'Todos',month:'Todos'})){const v=Number(o.value)||0;total+=v;byRca.set(String(o.rca),(byRca.get(String(o.rca))||0)+v);}
+  return {byRca,total};
+}
 function ordersPage(filters){
   const rows=filterOpenOrders(filters);
   const revenue=metrics(filterSales(filters)).revenue;
@@ -2590,6 +2595,8 @@ async function metasV2(f,ctx){
     if(g.month===m)metaBy.set(g.rca,(metaBy.get(g.rca)||0)+g.value);
   }
   const factor=ctx.calendar&&ctx.calendar.factor!=null?Number(ctx.calendar.factor):(running?null:1);
+  const projOpen=!!f.projOpen&&running,openBy=new Map();
+  if(f.projOpen){const t=openAllTotals({...f,supervisor:[],rca:[],excludeSupervisors:[]});for(const [k,v] of t.byRca)if(teamSet.has(Number(k))||teamSet.has(k))openBy.set(String(k),v);}
   // Metas dos outros indicadores (aba METAS_INDICADORES).
   const goalsMonth=(ctx.goals||[]).filter(g=>g.month===monthKey);
   const goalRca=(code,ind)=>goalsMonth.find(g=>g.level==='RCA'&&String(g.code)===String(code)&&g.indicator===ind)?.value??null;
@@ -2600,10 +2607,10 @@ async function metasV2(f,ctx){
     const revenue=sum('revenue'),clients=sum('clients'),pairs=sum('pairs'),active=sum('active'),bought=sum('bought'),profit=sum('profit'),base=sum('base'),meta=parts.some(p=>p.meta>0)?sum('meta'):null;
     return {name,...extra,raw:{revenue,clients,pairs,active,bought,profit,base},
       values:{revenue,clients,coverage:active?bought/active*100:null,mix:clients?pairs/clients:null,margin:canMargin&&base>0?profit/base*100:null,ticket:clients?revenue/clients:null},
-      goals:{revenue:meta},projected:{revenue:factor!=null?revenue*factor:null}};
+      goals:{revenue:meta},projected:{revenue:projOpen?revenue+sum('open'):factor!=null?revenue*factor:null}};
   };
   const rows=team.map(r=>{const g=mon.get(r.code),cv=cover.get(r.code),mg=marginBy.get(r.code)||{profit:0,base:0};
-    const part={revenue:g.revenue,clients:g.clients.size,pairs:g.pairs.size,active:cv.active,bought:cv.bought,profit:mg.profit,base:mg.base,meta:metaBy.get(r.code)||0};
+    const part={open:openBy.get(String(r.code))||0,revenue:g.revenue,clients:g.clients.size,pairs:g.pairs.size,active:cv.active,bought:cv.bought,profit:mg.profit,base:mg.base,meta:metaBy.get(r.code)||0};
     const row=build(r.name,[part],{code:String(r.code),supervisor:r.supervisor||'Sem supervisor',part});
     for(const k of MT_KEYS.slice(1)){const v=goalRca(r.code,k);if(v!=null)row.goals[k]=v;}
     return row;});
@@ -2620,7 +2627,8 @@ async function metasV2(f,ctx){
   const monthly=Array.from({length:12},(_,i)=>{const mm=i+1,meta=metaYear.get(mm)||null,rev=mm<=lastMonth?monthRev(mm):null;return {month:mm,revenue:rev,meta,attainment:meta&&rev!=null?rev/meta*100:null,running:y===ly&&mm===lm,future:mm>lastMonth};});
   const accMeta=goalMonths.reduce((a,mm)=>a+metaYear.get(mm),0),accRev=goalMonths.reduce((a,mm)=>a+monthRev(mm),0);
   const curInAcc=goalMonths.includes(lm)&&y===ly,curRev=curInAcc?monthRev(lm):0,curFactor=curInAcc?(ctx.calendarCurrent?.factor??(m===lm?factor:null)):null;
-  const accProj=curInAcc&&curFactor!=null?accRev-curRev+curRev*curFactor:null;
+  const openNow=f.projOpen&&curInAcc?[...openBy.values()].reduce((a,b)=>a+b,0):0;
+  const accProj=curInAcc&&f.projOpen?accRev+openNow:curInAcc&&curFactor!=null?accRev-curRev+curRev*curFactor:null;
   const groupAcc=(keysOf,metaMap,revOf)=>keysOf.map(k=>{const meta=goalMonths.reduce((a,mm)=>a+(metaMap.get(k+'|'+mm)||0),0),rev=goalMonths.reduce((a,mm)=>a+revOf(k,mm),0);return {name:k,meta:meta||null,revenue:rev,attainment:meta?rev/meta*100:null,missing:meta?Math.max(0,meta-rev):null};});
   const supAcc=[...new Set(team.map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>{const list=team.filter(r=>(r.supervisor||'Sem supervisor')===name);const meta=goalMonths.reduce((a,mm)=>a+list.reduce((b,r)=>b+(metaRcaYear.get(r.code+'|'+mm)||0),0),0),rev=goalMonths.reduce((a,mm)=>a+list.reduce((b,r)=>b+(yearRev.get(r.code+'|'+mm)||0),0),0);return {name,meta:meta||null,revenue:rev,attainment:meta?rev/meta*100:null,missing:meta?Math.max(0,meta-rev):null};});
   const depNames=[...new Set([...metaDepYear.keys(),...depYear.keys()].map(k=>k.split('|')[0]))];
@@ -2632,7 +2640,7 @@ async function metasV2(f,ctx){
   const outside=[...metaOutside.reduce((acc,x)=>{const k=x.rca+'|'+x.month;const o=acc.get(k)||{...x,value:0};o.value+=x.value;acc.set(k,o);return acc;},new Map()).values()].sort((a,b)=>a.month-b.month||a.name.localeCompare(b.name,'pt-BR'));
   const supervisorOptions=[...new Set([...RCA_BY_CODE.values()].filter(r=>r.active!==false&&!nameOut(r)).map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&!nameOut(r)&&(r.supervisor||'Sem supervisor')===name).length}));
   const rcaOptions=[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&!nameOut(r)).map(r=>({code:String(r.code),name:r.name})).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
-  return {year:y,month:m,monthKey,fallback,running,cutDay,latest:latest.toISOString(),factor,calendar:ctx.calendar||null,canMargin,
+  return {projOpen,year:y,month:m,monthKey,fallback,running,cutDay,latest:latest.toISOString(),factor,calendar:ctx.calendar||null,canMargin,
     rows,sups,company,monthly,acc:{months:goalMonths,meta:accMeta||null,revenue:accRev,attainment:accMeta?accRev/accMeta*100:null,missing:accMeta?Math.max(0,accMeta-accRev):null,projected:accProj,projectedAttainment:accProj!=null&&accMeta?accProj/accMeta*100:null,includesRunning:curInAcc},
     supAcc,depAcc,check:{noMeta,outside,monthsNoMeta,indicatorsNoGoal,goalsTab:!!ctx.goalsTab,goalsError:ctx.goalsError||'',goalsCount:(ctx.goals||[]).length},
     supervisorOptions,rcaOptions};
@@ -3070,6 +3078,11 @@ onmessage=async(e)=>{
     return;
   }
   if(msg.type==='init'){CACHE_KEY='server-daily-all-orders-v2|'+String(msg.userScope||'');FORCE_REFRESH=!!msg.force;PREFER_FRESH=!!msg.preferFresh;return init();}
+  if(msg.type==='openTotals'){
+    try{const t=openAllTotals(msg.filters||{});postMessage({type:'openTotals',requestId:msg.requestId,byRca:[...t.byRca],total:t.total});}
+    catch(err){postMessage({type:'openTotals',requestId:msg.requestId,byRca:[],total:0});}
+    return;
+  }
   if(msg.type==='historyStudy'){
     try{
       postMessage({type:'historyStudy',requestId:msg.requestId,result:commercialHistoryStudy(msg.study,await loadPortfolioLinks())});
@@ -3083,12 +3096,12 @@ onmessage=async(e)=>{
       const f=msg.filters||{};
       let payload;
       if(msg.page==='history')payload=macroHistoryCurrent();
-      else if(msg.page==='overview')payload=overview(f);
+      else if(msg.page==='overview'){payload=overview(f);payload.openAll=openAllTotals(f).total;}
       else if(msg.page==='carteira')payload=portfolioGrouped(f,await loadPortfolioLinks());
       else if(msg.page==='produtos')payload=produtos(f);
       else if(msg.page==='cidades')payload={city:await cidadesV2(f,msg.cityContext)};
       else if(msg.page==='metas')payload={goals:await metasV2(f,msg.metasContext)};
-      else if(msg.page==='pedidos')payload=ordersPage(f);
+      else if(msg.page==='pedidos'){payload=ordersPage(f);if(f.projOpen){const all=openAllTotals(f).total;payload.projected=payload.revenue+all;payload.projectedAttainment=payload.meta?payload.projected/payload.meta*100:null;payload.projMode='open';}}
       else payload={};
       if(!msg.coverageContext){try{payload.extras=await pageExtras(msg.page,f);}catch(err){payload.extras={error:err?.message||String(err)};}}
       payload.bi=biComponents_(f,msg.biWidgets||[],msg.page==='carteira'?payload:null);
@@ -3097,6 +3110,6 @@ onmessage=async(e)=>{
   }
 };
 </script>
-  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@af28b4069ee4c32e9979ef21c98d3e14eb9817b3/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/analistacomercialrbn/dashboardlojas@7c0cb09b9d85a1e6b7e44696e5c6cdaf4577f89e/supervisao-web/gas/zoom-mapas-20261109/app.js"></script>
 </body>
 </html>

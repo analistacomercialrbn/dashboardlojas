@@ -347,6 +347,8 @@ function initData(force=false,{preserveFilters=false,background=false,preferFres
       if(m.fromLocal)setTimeout(checkAutomaticUpdate,0);
     }else if(m.type==='historyStudy'){
       state.historyStudyReceive?.(m);
+    }else if(m.type==='openTotals'){
+      const done=PROJ.pending.get(m.requestId);if(done){PROJ.pending.delete(m.requestId);done({byRca:new Map(m.byRca||[]),total:Number(m.total)||0});}
     }else if(m.type==='result'){
       if((state.module&&state.module!=='commercial')||m.requestId!==state.requestId)return;
       setStatus('',false);
@@ -593,7 +595,7 @@ function queryPage(){
   if(state.page==='teams'){queryTeams(requestId);return;}
   if(state.page==='metas'){const ready=(()=>{const {selected,current}=mtMonthKey();return MT.ctx.has(selected)&&MT.ctx.has(current);})();if(!ready){renderMetas({});mtEnsureContext().then(()=>{if(state.page==='metas'&&requestId===state.requestId)queryPage();});return;}}
   if(state.page==='cidades'&&!(state.coverage&&CD.context)){renderCidades({});cdEnsureContext().then(()=>{if(state.page==='cidades'&&requestId===state.requestId)queryPage();});return;}
-  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),...(state.page==='cidades'?cdFilters():{}),...(state.page==='metas'?mtFilters():{}),dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,cityContext:state.page==='cidades'?cdContext():null,metasContext:state.page==='metas'?mtContext():null,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
+  state.worker.postMessage({type:'query',requestId,page:state.page,biWidgets:biConfig()?.widgets.filter(w=>w.page===state.page)||[],filters:{...state.filters,...((state.page==='pedidos'||state.page==='carteira')&&!normalizeMulti(state.filters.supervisor).length?{excludeSupervisors:TV_SUPERVISOES_FORA_POR_PADRAO}:{}),...(state.page==='carteira'?{fallPct:CARTEIRA_QUEDA_PERCENTUAL}:{}),...(state.page==='produtos'?mpFilters():{}),...(state.page==='cidades'?cdFilters():{}),...(state.page==='metas'?mtFilters():{}),projOpen:PROJ.open,dailyMode:state.dailyMode,dailyDate:state.dailyDate},selectedCity:state.selectedCity,cityContext:state.page==='cidades'?cdContext():null,metasContext:state.page==='metas'?mtContext():null,coverageContext:state.page==='cidades'&&state.cityView==='coverage'&&state.coverage?{cities:coverageFilteredRows().map(row=>({...row,areaKey:aliasCity(row.city)+'|'+row.uf,confirmed:!coveragePending(row,state.coverageFilters.department)})),scope:state.areaScope,city:state.areaCity}:null});
 }
 function updateHeader(){
   if(state.page==='history'){$('#pageTitle').textContent='Histórico comercial';$('#pageSubtitle').textContent='Evolução e comparação de indicadores';$('#periodChip').textContent='Desde jun/2017';return;}
@@ -676,7 +678,7 @@ const TEAM_INDICATORS={
 };
 const TEAMS={indicator:'revenue',group:'all',search:'',payload:null,key:'',loadedAt:0,paused:false,model:null};
 
-function teamsKey(){return JSON.stringify([state.user?.login,state.user?.accessVersion,teamsFilters(),state.serverUpdatedAt]);}
+function teamsKey(){return JSON.stringify([state.user?.login,state.user?.accessVersion,teamsFilters(),state.serverUpdatedAt,PROJ.open]);}
 function teamsGroupLabel(group){return group==='health'?'Equipe Saúde':'Demais equipes';}
 
 function teamsValue(value,indicator){
@@ -729,7 +731,7 @@ async function queryTeams(requestId){
   $('#content').innerHTML=teamsTabs(TEAMS.payload)+'<section class="panel teams-empty" aria-live="polite"><h2>Conferindo os resultados da equipe…</h2><p>Faturamento, clientes principais, produtos e lucro da base comercial.</p></section>';
   bindTeamsTabs();
   try{
-    const payload=await api('/api/teamsView',{body:JSON.stringify({filters:teamsFilters()})});
+    const payload=await projAdjustTeams(await api('/api/teamsView',{body:JSON.stringify({filters:teamsFilters()})}),teamsFilters());
     if(!current())return;
     TEAMS.payload=payload;TEAMS.key=key;TEAMS.loadedAt=Date.now();
     setStatus('',false);renderTeams(payload);
@@ -839,10 +841,10 @@ function renderTeams(payload){
   for(const [key,name] of [['rca','RCA'],['department','Departamento'],['uf','UF'],['region','Região'],['city','Cidade']]){const v=normalizeMulti(state.filters[key]);if(v.length)scopeParts.push(name+': '+v.join(', '));}
   const top=eligible.slice(0,3),rest=ranked.filter(r=>!top.includes(r)),scale=tvScale(model);
   const medals=['gold','silver','bronze'];
-  const facts=revenue?[['Da meta',pct(attainment),'faturado de '+integer(withGoal.length)+' RCAs com meta'],['Projeção',pct(projection),cal.closed?'mês encerrado':'pelo ritmo de dias úteis']]
+  const facts=revenue?[['Da meta',pct(attainment),'faturado de '+integer(withGoal.length)+' RCAs com meta'],['Projeção',pct(projection),cal.closed?'mês encerrado':projLabel()]]
     :[[config.label+' da equipe',teamsValue(payload.summary?.[indicator],indicator),config.unit],...(indicatorGoals?[['Com meta',integer(indicatorGoals)+' RCAs','meta cadastrada no indicador']]:[])];
   const read=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Fortaleza',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(payload.updatedAt));
-  const legend=revenue?'Barra escura: faturado · barra clara: projeção até o fim do mês · risco: meta (100%).':'Barra: resultado comparado com o maior do recorte'+(indicatorGoals?' · risco: meta do RCA.':'.');
+  const legend=revenue?'Barra escura: faturado · barra clara: projeção ('+projLabel()+') · risco: meta (100%).':'Barra: resultado comparado com o maior do recorte'+(indicatorGoals?' · risco: meta do RCA.':'.');
   const outs=['Somente RCAs ativos',outSups.length?outSups.join(', ')+' fora do ranking':'',TV_FORA_DA_PAGINA.length?TV_FORA_DA_PAGINA.join(', ')+' fora da página':''].filter(Boolean).join('; ');
   $('#content').className='teams-view tv-report';
   $('#content').innerHTML=`${teamsTabs(payload)}
@@ -896,6 +898,24 @@ function teamsScopeText(model){
 // A página inteira vira um relatório no mesmo visual, pronto para virar imagem e ir aos supervisores.
 // Números do processamento das bases (faturamento, meta, pedidos, clientes principais, departamentos)
 // + números da Visão equipes somados para a empresa (projeção por dias úteis, RCAs, equipes e supervisões).
+// ===== Chave geral: projeção com pedidos em aberto =====
+// Desligada: projeção pelo ritmo de dias úteis. Ligada: faturado no mês + todos os pedidos em aberto hoje
+// (pendentes, liberados e bloqueados, inclusive de meses anteriores), com os filtros da página. Só no mês em andamento.
+const PROJ={open:false,pending:new Map(),seq:0};
+try{PROJ.open=localStorage.getItem('projComAbertos')==='1';}catch{}
+function projLabel(){return PROJ.open?'faturado + pedidos em aberto':'pelo ritmo de dias úteis';}
+function projOpenByRca(filters){
+  if(!state.worker)return Promise.resolve({byRca:new Map(),total:0});
+  const requestId=++PROJ.seq;
+  return new Promise(resolve=>{PROJ.pending.set(requestId,resolve);state.worker.postMessage({type:'openTotals',requestId,filters});setTimeout(()=>{if(PROJ.pending.has(requestId)){PROJ.pending.delete(requestId);resolve({byRca:new Map(),total:0});}},15000);});
+}
+// Ajusta o resultado da Visão equipes: projeção de cada RCA = faturado + pedidos em aberto do RCA.
+async function projAdjustTeams(payload,filters){
+  const cal=payload?.calendar;
+  if(!PROJ.open||!cal||cal.closed||cal.future)return payload;
+  const {byRca}=await projOpenByRca(filters);
+  return {...payload,calendar:{...cal,projOpen:true},rows:(payload.rows||[]).map(r=>{const open=byRca.get(String(r.code))||0,projected=(Number(r.revenue)||0)+open;return {...r,open,projected,projectedAttainment:r.goals?.revenue?projected/r.goals.revenue*100:null};})};
+}
 const COMPANY={payload:null,key:'',loadedAt:0,showMargin:false};
 try{COMPANY.showMargin=localStorage.getItem('companyShowMargin')==='1';}catch{}
 const MONTH_NAMES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -921,9 +941,11 @@ function ovMonthReady(){return /^20\d{2}$/.test(String(state.filters.year))&&/^(
 // Ferramentas do topo (só aparecem na Visão Geral): data de corte, margem e imagem.
 function ovEnsureTopTools(){
   const right=$('.topbar-right');if(!right||$('#ovTopTools'))return;
-  right.insertAdjacentHTML('afterbegin',`<div id="ovTopTools" class="ov-only ov-top-tools"><span id="ovCutoff" class="ov-cutoff">Corte dos dados: <b>—</b></span><label id="ovMarginToggle" class="ov-margin-toggle ov-noprint" hidden><input type="checkbox" id="companyShowMargin"> Mostrar margem</label></div>`);
+  right.insertAdjacentHTML('afterbegin',`<div id="ovTopTools" class="ov-only ov-top-tools"><span id="ovCutoff" class="ov-cutoff">Corte dos dados: <b>—</b></span><label id="ovMarginToggle" class="ov-margin-toggle ov-noprint" hidden><input type="checkbox" id="companyShowMargin"> Mostrar margem</label><label id="projOpenToggle" class="ov-margin-toggle proj-open-toggle ov-noprint" title="Ligada: projeção = faturado no mês + todos os pedidos em aberto (inclusive bloqueados). Desligada: ritmo de dias úteis."><input type="checkbox" id="projOpenBox"> Projeção com pedidos em aberto</label></div>`);
   right.insertAdjacentHTML('beforeend',`<button type="button" class="btn ov-only ov-noprint" id="ovCopy">Copiar imagem</button><button type="button" class="btn primary ov-only ov-noprint" id="ovDownload">Baixar imagem</button>`);
   $('#ovCopy').onclick=()=>ovExport('copy');$('#ovDownload').onclick=()=>ovExport('download');
+  $('#projOpenBox').checked=PROJ.open;
+  $('#projOpenBox').onchange=e=>{PROJ.open=e.target.checked;try{localStorage.setItem('projComAbertos',PROJ.open?'1':'0');}catch{}COMPANY.payload=null;TEAMS.payload=null;queryPage();};
   $('#companyShowMargin').onchange=e=>{COMPANY.showMargin=e.target.checked;try{localStorage.setItem('companyShowMargin',e.target.checked?'1':'0');}catch{}if(OV.p)renderOverview(OV.p);};
 }
 
@@ -1016,7 +1038,7 @@ function ovDrawChart(p,calendar){
   // Projeção do mês em andamento: mesmo ritmo por dias úteis da faixa azul.
   if(calendar&&calendar.factor&&calendar.factor>1){
     const m=Number(String(calendar.month||'').slice(5,7)),i=monthly.findIndex(x=>x.month===m);
-    if(i>0){const projected=monthly[i].revenue*calendar.factor;sets.push({label:'Projeção',data:monthly.map((x,j)=>j===i?projected:j===i-1?x.revenue:null),borderColor:'#4a72d1',backgroundColor:'#4a72d1',borderDash:[2,6],fill:false,cubicInterpolationMode:'monotone',tension:.4,pointRadius:ctx=>ctx.dataIndex===i?5:0,borderWidth:3,spanGaps:false});}
+    if(i>0){const projected=calendar.projOpen?monthly[i].revenue+(Number(p.openAll)||0):monthly[i].revenue*calendar.factor;sets.push({label:'Projeção',data:monthly.map((x,j)=>j===i?projected:j===i-1?x.revenue:null),borderColor:'#4a72d1',backgroundColor:'#4a72d1',borderDash:[2,6],fill:false,cubicInterpolationMode:'monotone',tension:.4,pointRadius:ctx=>ctx.dataIndex===i?5:0,borderWidth:3,spanGaps:false});}
   }
   if(OV.chart){try{OV.chart.destroy();}catch{}state.charts=state.charts.filter(x=>x!==OV.chart);}
   const canvas=$('#overviewMonthly');if(!canvas)return;
@@ -1026,7 +1048,7 @@ function ovDrawChart(p,calendar){
 // Agrupamentos da tabela: % da meta conta TODO o faturamento do grupo (não só de quem tem meta).
 function ovGroupStats(rows,calendar){
   const goal=rows.reduce((s,r)=>s+(r.goals?.revenue>0?r.goals.revenue:0),0),actual=rows.reduce((s,r)=>s+(Number(r.revenue)||0),0);
-  const factor=calendar?.factor,projected=factor==null?null:actual*factor;
+  const factor=calendar?.factor,projected=calendar?.projOpen?actual+rows.reduce((s,r)=>s+(Number(r.open)||0),0):factor==null?null:actual*factor;
   const ranked=teamsRanking(rows,'revenue'),tones={green:0,yellow:0,red:0,muted:0};ranked.forEach(r=>{tones[r.tone in tones?r.tone:'muted']++;});
   return {count:rows.length,goal,actual,attainment:goal?actual/goal*100:null,projection:goal&&projected!=null?projected/goal*100:null,tones};
 }
@@ -1036,8 +1058,8 @@ async function ovLoadTeams(){
   if(!ovMonthReady()){ovApplyTeams(null);return;}
   const requestId=state.requestId,key=companyKey();
   try{
-    let payload=COMPANY.payload&&COMPANY.key===key&&Date.now()-COMPANY.loadedAt<180000?COMPANY.payload:null;
-    if(!payload){payload=await api('/api/teamsView',{body:JSON.stringify({filters:companyFilters()})});COMPANY.payload=payload;COMPANY.key=key;COMPANY.loadedAt=Date.now();}
+    let payload=COMPANY.payload&&COMPANY.key===key+'|'+PROJ.open&&Date.now()-COMPANY.loadedAt<180000?COMPANY.payload:null;
+    if(!payload){payload=await projAdjustTeams(await api('/api/teamsView',{body:JSON.stringify({filters:companyFilters()})}),companyFilters());COMPANY.payload=payload;COMPANY.key=key+'|'+PROJ.open;COMPANY.loadedAt=Date.now();}
     if(state.page!=='overview'||state.requestId!==requestId||!$('#ovRcas'))return;
     ovApplyTeams(payload);
   }catch(error){
@@ -1052,8 +1074,8 @@ function ovApplyTeams(payload){
   const cal=payload?.calendar||null,setText=(s,t)=>{const el=$(s);if(el)el.textContent=t;};
   // Projeção e ritmo: os mesmos dias úteis (com feriados) da Visão equipes.
   let projection=null;
-  if(cal&&meta){projection=cal.closed?attainment:cal.factor!=null?revenue*cal.factor/meta*100:null;}
-  setText('#ovProj',cal?.future?'—':pct(projection));setText('#ovProjSub',cal?.closed?'mês encerrado':cal?.future?'mês futuro':'pelo ritmo de dias úteis');
+  if(cal&&meta){projection=cal.closed?attainment:cal.projOpen?(revenue+(Number(p.openAll)||0))/meta*100:cal.factor!=null?revenue*cal.factor/meta*100:null;}
+  setText('#ovProj',cal?.future?'—':pct(projection));setText('#ovProjSub',cal?.closed?'mês encerrado':cal?.future?'mês futuro':projLabel());
   if(cal&&!cal.closed&&!cal.future&&cal.elapsed>0&&cal.remaining>0&&attainment!=null){
     setText('#ovPace',pct(attainment/cal.elapsed).replace('%','%/dia'));
     setText('#ovPaceSub',attainment>=100?'meta já batida':'precisa de '+pct((100-attainment)/cal.remaining).replace('%','%/dia'));
@@ -1687,9 +1709,9 @@ function renderOrders(p){
       <div><p class="ov-k">Carteira total</p><p class="pd-hv-lg">${money(total,true)}</p><p class="ov-hs">${money(total)} · todas as posições, inclusive bloqueados</p></div>
       <div><p class="ov-k">Pedidos em aberto</p><p class="ov-hv">${integer(count)}</p><p class="ov-hs">${integer(byStatus.get('BLOQUEADO')?.count||0)} bloqueados</p></div>
       <div><p class="ov-k">Sobre o faturado</p><p class="ov-hv">${pct(p.shareRevenue)}</p><p class="ov-hs">carteira ÷ faturado no período</p></div>
-      <div><p class="ov-k">Faturado + carteira liberável</p><p class="ov-hv">${money(p.projected,true)}</p><p class="ov-hs">${pct(p.projectedAttainment)} da meta · o que já foi faturado no mês mais os pedidos liberados e pendentes; não é garantia de faturamento</p></div>
+      <div><p class="ov-k">${p.projMode==='open'?'Faturado + pedidos em aberto':'Faturado + carteira liberável'}</p><p class="ov-hv">${money(p.projected,true)}</p><p class="ov-hs">${pct(p.projectedAttainment)} da meta · ${p.projMode==='open'?'o que já foi faturado no mês mais todos os pedidos em aberto (inclusive bloqueados e de meses anteriores)':'o que já foi faturado no mês mais os pedidos liberados e pendentes'}; não é garantia de faturamento</p></div>
     </div>
-    <p class="ov-hs pd-hero-note">Diferente da projeção oficial da Visão Geral, que usa o ritmo de faturamento por dias úteis.</p>
+    <p class="ov-hs pd-hero-note">${p.projMode==='open'?'Com a chave “Projeção com pedidos em aberto” ligada, as outras páginas usam esta mesma regra.':'Diferente da projeção oficial da Visão Geral, que usa o ritmo de faturamento por dias úteis.'}</p>
   </section>
   <div class="ov-row">
     <section class="ov-card pd-positions"><div class="ov-head"><p class="ov-k">Posições</p><p class="ov-s">clique para filtrar clientes e pedidos</p></div>
@@ -1845,7 +1867,7 @@ function renderMetas(p){
   ${MT.error?`<p class="mp-warn">${esc(MT.error)}</p>`:''}
   <section class="ov-hero mt-hero" aria-label="Metas do mês">
     <div class="mt-hero-grid">${MT_IND.map(heroBlock).join('')}</div>
-    <p class="ov-hs mt-hero-note">${integer(c.count)} RCAs ativos · sem Cecé${normalizeMulti(state.filters.supervisor).length?'':' · sem Balcão Rebanho'} · cores: verde ≥ 100%, amarelo 90% a 99,9%, vermelho &lt; 90%${g.running?' (no mês em andamento, o faturamento é colorido pela projeção)':''}.</p>
+    <p class="ov-hs mt-hero-note">${integer(c.count)} RCAs ativos · sem Cecé${normalizeMulti(state.filters.supervisor).length?'':' · sem Balcão Rebanho'} · cores: verde ≥ 100%, amarelo 90% a 99,9%, vermelho &lt; 90%${g.running?' (no mês em andamento, o faturamento é colorido pela projeção: '+(g.projOpen?'faturado + pedidos em aberto':'ritmo de dias úteis')+')':''}.</p>
   </section>
   <section class="ov-card mt-panel"><div class="ov-head"><p class="ov-k">Painel por RCA · ${esc(mName)}</p><p class="ov-s">clique no título da coluna para ordenar · com meta, mostra o % atingido; sem meta, só o realizado</p></div><div class="ov-table-wrap" id="mtTable"></div></section>
   <section class="ov-card mt-acc"><div class="ov-head"><p class="ov-k">Acumulado ${esc(String(g.year))} · só meses com meta</p><p class="ov-s">${period?esc(period)+(acc.includesRunning?' (mês atual até hoje)':''):'nenhum mês com meta cadastrada'}</p></div>
