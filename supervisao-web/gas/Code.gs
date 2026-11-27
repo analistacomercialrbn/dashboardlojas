@@ -250,7 +250,10 @@ function refreshDataset_() {
 
 function datasetInfo_() {
   const p = PropertiesService.getScriptProperties(), updatedAt = p.getProperty('SNAPSHOT_UPDATED_AT'), recordCount = Number(p.getProperty('SNAPSHOT_RECORD_COUNT') || 0);
-  return { ok: true, exists: !!updatedAt && recordCount > 0, updatedAt: updatedAt, latest: p.getProperty('SNAPSHOT_LATEST_DATE'), salesCount: Number(p.getProperty('SNAPSHOT_SALES_COUNT') || 0), recordCount: recordCount, updating: p.getProperty('VENDAS_RBN_CACHE_PENDENTE')==='1'||!!p.getProperty('RBN_SALES_JOB_N'), updateStage:p.getProperty('RBN_UPDATE_STAGE')||'',updateError:p.getProperty('RBN_UPDATE_ERROR')||'' };
+  // Onde começam os meses recentes na base publicada: o navegador guarda o histórico e baixa só o resto.
+  let layout = null;
+  try { const l = JSON.parse(p.getProperty('RBN_CACHE_LAYOUT') || 'null'); if (l && l.sheet === (p.getProperty('SNAPSHOT_SHEET_NAME') || 'DATASET') && Number(l.recordCount) === recordCount) layout = { fromMonth: l.fromMonth, headLength: Number(l.headLength) || 0, historyCount: Number(l.historyCount) || 0, historyLatest: l.historyLatest || null }; } catch (e) {}
+  return { layout: layout, ok: true, exists: !!updatedAt && recordCount > 0, updatedAt: updatedAt, latest: p.getProperty('SNAPSHOT_LATEST_DATE'), salesCount: Number(p.getProperty('SNAPSHOT_SALES_COUNT') || 0), recordCount: recordCount, updating: p.getProperty('VENDAS_RBN_CACHE_PENDENTE')==='1'||!!p.getProperty('RBN_SALES_JOB_N'), updateStage:p.getProperty('RBN_UPDATE_STAGE')||'',updateError:p.getProperty('RBN_UPDATE_ERROR')||'' };
 }
 
 function compactSnapshotRecord_(raw) {
@@ -272,7 +275,7 @@ function datasetPage_(offset, limit) {
   if (start >= info.recordCount) return { ok: true, offset: start, nextOffset: start, done: true, records: [] };
   const count = Math.min(size, info.recordCount - start), sheet = SpreadsheetApp.openById(CFG.cacheSpreadsheetId).getSheetByName(CFG.cacheSheetName);
   const records = sheet.getRange(start + 2, 1, count, 1).getValues().map(row => compactSnapshotRecord_(row[0])).filter(Boolean), nextOffset = start + count;
-  return { ok: true, offset: start, nextOffset: nextOffset, done: nextOffset >= info.recordCount, records: records };
+  return { ok: true, offset: start, nextOffset: nextOffset, done: nextOffset >= info.recordCount, records: records, updatedAt: info.updatedAt };
 }
 
 function validateSources_() {
@@ -5531,7 +5534,11 @@ function metasContext_(user,payload) {
   const today=centralToday_('America/Fortaleza'),lastBilled=/^\d{4}-\d{2}-\d{2}$/.test(String(payload.lastBilled||''))?String(payload.lastBilled):'';
   let holidays=[];try{holidays=teamsReference_(month).holidays;}catch(e){}
   const goals=indicatorGoals_();
-  return {ok:true,calendar:teamsCalendar_(month,lastBilled,today,holidays),goals:goals.goals,goalsTab:goals.exists,goalsError:goals.error||''};
+  // Pode pedir vários meses de uma vez (mês escolhido e mês atual): um calendário para cada.
+  const extra=(Array.isArray(payload.months)?payload.months:[]).map(String).filter(m=>/^20\d{2}-(0[1-9]|1[0-2])$/.test(m)&&m!==month).slice(0,3);
+  const calendars={};calendars[month]=teamsCalendar_(month,lastBilled,today,holidays);
+  for(const m of extra){let h=[];try{h=teamsReference_(m).holidays;}catch(e){}calendars[m]=teamsCalendar_(m,lastBilled,today,h);}
+  return {ok:true,calendar:calendars[month],calendars,goals:goals.goals,goalsTab:goals.exists,goalsError:goals.error||''};
 }
 function createIndicatorGoalsTab_(user) {
   if(user.perfil!=='ADMIN')throw new Error('Somente o administrador pode criar a aba de metas dos indicadores.');

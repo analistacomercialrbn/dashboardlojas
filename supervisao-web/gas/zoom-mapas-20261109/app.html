@@ -1553,6 +1553,7 @@ async function saveLocalCache(){
     const snapshot={
       savedAt:Date.now(),
       serverUpdatedAt:SERVER_UPDATED_AT,
+      layout:SERVER_INFO?.layout||null,
       sales:SALES,
       openOrders:OPEN_ORDERS,
       orderEntries:ORDER_ENTRIES,
@@ -1667,7 +1668,7 @@ function serverRequest(action,payload={}){
 async function fetchServerDatasetInfo(){
   return await serverRequest('info');
 }
-async function fetchServerDataset(force,knownInfo=null){
+async function fetchServerDataset(force,knownInfo=null,ranges=null){
   if(force){
     postStage('Atualizando as bases no Apps Script…',10);
     const result=await serverRequest('refresh');
@@ -1682,7 +1683,7 @@ async function fetchServerDataset(force,knownInfo=null){
   SERVER_UPDATED_AT=SERVER_INFO.updatedAt||null;
   SALES=[];OPEN_ORDERS=[];ORDER_ENTRIES=[];METAS=[];RCAS=[];CLIENTS=new Map();LATEST_DATE=null;
   const pendingOpenOrders=serverRequest('openOrders').catch(()=>null);
-  let received=0,expected=Number(SERVER_INFO.recordCount)||0;
+  let received=0,expected=ranges?ranges.reduce((a,[x,y])=>a+Math.max(0,y-x),0):(Number(SERVER_INFO.recordCount)||0);
   let compressed=typeof DecompressionStream==='function'&&typeof Response==='function'&&typeof Blob==='function';
 const pageSize=10000;
 const concurrency=4;
@@ -1714,16 +1715,18 @@ const concurrency=4;
       received++;
     }
   };
-  const offsets=Array.from({length:Math.ceil(expected/pageSize)},(_,i)=>i*pageSize);
+  // Páginas a buscar: a base inteira ou só os trechos pedidos (cadastros + meses recentes).
+  const offsets=ranges?ranges.flatMap(([a,b])=>{const out=[];for(let o=a;o<b;o+=pageSize)out.push({offset:o,limit:Math.min(pageSize,b-o)});return out;}):Array.from({length:Math.ceil(expected/pageSize)},(_,i)=>({offset:i*pageSize,limit:pageSize}));
   for(let start=0;start<offsets.length;start+=concurrency){
     const batch=offsets.slice(start,start+concurrency);
     postStage('Recebendo dados em lote '+(start+1)+'–'+Math.min(start+batch.length,offsets.length)+' de '+offsets.length+'…',30+Math.min(60,received/Math.max(expected,1)*60));
-    const pages=await Promise.all(batch.map(async offset=>{
+    const pages=await Promise.all(batch.map(async ({offset,limit})=>{
       let lastError=null;
       for(let attempt=0;attempt<3;attempt++){
         try{
-          const page=await serverRequest('page',{offset,limit:pageSize,compressed});
+          const page=await serverRequest('page',{offset,limit,compressed});
           if(!page?.ok)throw new Error(page?.message||'Falha ao ler uma página do cache.');
+          if(ranges&&page.updatedAt&&page.updatedAt!==SERVER_INFO.updatedAt)throw Object.assign(new Error('A base mudou durante o carregamento.'),{baseChanged:true});
           if(page.gzip){
             try{
               const bytes=Uint8Array.from(atob(page.gzip),value=>value.charCodeAt(0));
@@ -1744,6 +1747,7 @@ const concurrency=4;
     pages.sort((a,b)=>a.offset-b.offset).forEach(page=>consume(page.records));
     postStage('Dados recebidos: '+Math.min(received,expected).toLocaleString('pt-BR')+' de '+expected.toLocaleString('pt-BR')+' registros',30+Math.min(60,received/Math.max(expected,1)*60));
   }
+  if(ranges)return;
   if(!SALES.length)throw new Error('A base preparada não contém vendas fechadas.');
   if(SALES.length!==Number(SERVER_INFO.salesCount))throw new Error('O cache chegou incompleto ('+SALES.length.toLocaleString('pt-BR')+' vendas). Clique em “Atualizar bases” e tente novamente.');
   RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
@@ -1757,6 +1761,22 @@ async function fetchOpenOrders(result=undefined){
     const r=RCA_BY_CODE.get(Number(value.rca))||RCA_BY_CODE.get(value.rca)||{};
     return {...value,date:value.date?new Date(value.date):null,rcaName:r.name||value.rcaName||String(value.rca??''),supervisor:r.supervisor||value.supervisor||''};
   });
+}
+// Atualização leve: guarda no navegador os meses antigos (que não mudam) e baixa só cadastros e meses recentes.
+async function fetchIncremental(cached,info){
+  const L=info?.layout;if(!L||!cached?.sales?.length||!L.fromMonth)return false;
+  const from=String(L.fromMonth),history=cached.sales.filter(s=>s.monthKey<from);
+  if(history.length!==Number(L.historyCount))return false;
+  if(L.historyCount){let maxDay='';for(const s of history){const d=(s.date instanceof Date?s.date.toISOString():String(s.date)).slice(0,10);if(d>maxDay)maxDay=d;}if(maxDay!==String(L.historyLatest||'').slice(0,10))return false;}
+  const start=Number(L.headLength)+Number(L.historyCount);
+  if(!(start<=Number(info.recordCount)))return false;
+  postStage('Atualizando só os meses recentes…',20);
+  await fetchServerDataset(false,info,[[0,Number(L.headLength)],[start,Number(info.recordCount)]]);
+  SALES=history.concat(SALES);
+  if(SALES.length!==Number(info.salesCount))return false;
+  RCA_BY_CODE=new Map(RCAS.map(r=>[r.code,r]));
+  for(const sale of SALES){const r=RCA_BY_CODE.get(sale.rca)||{};sale.rcaName=r.name||String(sale.rca??'');sale.supervisor=r.supervisor||'';}
+  return true;
 }
 async function init(){
   try{
@@ -1781,6 +1801,9 @@ async function init(){
         const matchesServer=!!info?.updatedAt&&cached.serverUpdatedAt===info.updatedAt;
         const recentFallback=!info&&cacheAge<LOCAL_CACHE_FALLBACK_MS;
         if(matchesServer||recentFallback){restoreLocalCache(cached);try{await fetchOpenOrders();}catch{}emitReady();return;}
+        try{
+          if(await fetchIncremental(cached,info)){buildHistory();emitReady();saveLocalCache();return;}
+        }catch(err){console.warn('Atualização leve indisponível; baixando a base completa.',err?.message||err);}
       }
     }
     postStage('Conectando ao serviço de dados…',8);
@@ -2878,9 +2901,9 @@ function exPrevious(f){
 }
 // ===== Mix e Produtos (página nova) =====
 // Um mês por vez. Comparações: mês anterior e mesmo mês do ano anterior, até o mesmo dia quando o mês está em andamento.
-const PRODUCTS_SERVER=new Map();
+const PRODUCTS_SERVER=new Map(),PRODUCTS_READY=new Map();
 async function productsServer(month){
-  if(!PRODUCTS_SERVER.has(month))PRODUCTS_SERVER.set(month,serverRequest('productsView',{month}).catch(err=>{PRODUCTS_SERVER.delete(month);throw err;}));
+  if(!PRODUCTS_SERVER.has(month))PRODUCTS_SERVER.set(month,serverRequest('productsView',{month}).then(data=>{PRODUCTS_READY.set(month,data);postMessage({type:'serverDataReady',page:'produtos',month});return data;}).catch(err=>{PRODUCTS_SERVER.delete(month);throw err;}));
   return await PRODUCTS_SERVER.get(month);
 }
 function productsFirstWords(name){return norm(String(name||'').replace(/^\s*\d+\s*-\s*/,'')).replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(Boolean).slice(0,2).join(' ');}
@@ -2909,8 +2932,9 @@ async function produtosV2(f){
   const upTo=rows=>running?rows.filter(s=>s.date.getUTCDate()<=cutDay):rows;
   const cur=byMonth.get(monthKey),prevCut=upTo(byMonth.get(prevKey)),lyCut=upTo(byMonth.get(lyKey)),prevFull=byMonth.get(prevKey);
   // Servidor: lucro, desconto, quantidade e fornecedor do mês.
-  let server=null,serverError='';
-  try{server=await productsServer(monthKey);}catch(err){serverError=err?.message||String(err);}
+  // Margem, desconto, quantidade e fornecedor vêm do Apps Script: a página abre sem esperar e completa quando chegam.
+  let server=PRODUCTS_READY.get(monthKey)||null,serverError='',serverPending=false;
+  if(!server){serverPending=true;productsServer(monthKey).catch(err=>{postMessage({type:'serverDataReady',page:'produtos',month:monthKey,error:err?.message||String(err)});});}
   const supplierOf=new Map((server?.catalog||[]).map(([p,s])=>[String(p),s]));
   const srows=[];
   if(server){
@@ -3016,7 +3040,7 @@ async function produtosV2(f){
   });
   const depOptions=[...new Set(SALES.filter(s=>s.year>=y-1).map(s=>s.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const supervisorOptions=[...new Set([...RCA_BY_CODE.values()].filter(r=>r.active!==false).map(r=>r.supervisor||'Sem supervisor'))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(name=>({name,count:[...RCA_BY_CODE.values()].filter(r=>r.active!==false&&(r.supervisor||'Sem supervisor')===name).length}));
-  return {month:monthKey,previousMonth:prevKey,lastYearMonth:lyKey,running,cutDay,fallback,latest:latest.toISOString(),updatedAt:SERVER_UPDATED_AT,minPrev,serverError,canMargin,hasServer:!!server,
+  return {serverPending,month:monthKey,previousMonth:prevKey,lastYearMonth:lyKey,running,cutDay,fallback,latest:latest.toISOString(),updatedAt:SERVER_UPDATED_AT,minPrev,serverError,canMargin,hasServer:!!server,
     kpis:{revenue:total,margin,products:list.length,mix:clientsAll.size?pairsOfClients/clientsAll.size:null,clients:clientsAll.size,to80,discount:discOf(finTotal),qty:server?finTotal.qty:null},
     departments,suppliers,ranking,moves:{up,down,started,stopped},matrix,rcas,depList,cross:crossPairs,depOptions,supervisorOptions};
 }
@@ -3078,6 +3102,7 @@ onmessage=async(e)=>{
     return;
   }
   if(msg.type==='init'){CACHE_KEY='server-daily-all-orders-v2|'+String(msg.userScope||'');FORCE_REFRESH=!!msg.force;PREFER_FRESH=!!msg.preferFresh;return init();}
+  if(msg.type==='prefetch'){if(msg.productsMonth)productsServer(msg.productsMonth).catch(()=>{});return;}
   if(msg.type==='openTotals'){
     try{const t=openAllTotals(msg.filters||{});postMessage({type:'openTotals',requestId:msg.requestId,byRca:[...t.byRca],total:t.total});}
     catch(err){postMessage({type:'openTotals',requestId:msg.requestId,byRca:[],total:0});}
