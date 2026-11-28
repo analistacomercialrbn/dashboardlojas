@@ -5553,3 +5553,75 @@ function createIndicatorGoalsTab_(user) {
   sheet.setFrozenRows(1);
   return {ok:true,created:true};
 }
+
+// ===== Sugestões da IA → plataforma oficial (app Força de Vendas) =====
+// Cópia de docs/apps-script-ia-oficial.gs do repositório rebanhoforcadevendas, ajustada para usar
+// as mesmas Propriedades do Script da sincronização de vendas: VENDAS_SYNC_URL e VENDAS_SYNC_SECRET.
+//
+// O que faz: acha a planilha IA_OFICIAL_<data> mais recente do Drive, lê as linhas e envia para
+// a plataforma. Se a planilha não mudou desde o último envio, não manda de novo.
+// Não altera nem apaga nada no Drive.
+//
+// Instalação (uma vez): rode instalarGatilhoSugestoesIA() pelo editor e autorize.
+// Teste manual: rode enviarSugestoesIA() e veja o resultado em "Execuções".
+
+function enviarSugestoesIA() {
+  var p = PropertiesService.getScriptProperties();
+  var base = p.getProperty('VENDAS_SYNC_URL');
+  var segredo = p.getProperty('VENDAS_SYNC_SECRET');
+  if (!base || !segredo) throw new Error('Faltam as propriedades VENDAS_SYNC_URL e VENDAS_SYNC_SECRET.');
+  var url = base.replace(/\/api\/public\/vendas-sync.*$/, '/api/public/ia-sync');
+  var h = { 'x-sync-secret': segredo };
+
+  var arquivo = ultimaPlanilhaIaOficial_();
+  if (!arquivo) { console.log('Nenhuma planilha IA_OFICIAL encontrada.'); return; }
+
+  var valores = SpreadsheetApp.openById(arquivo.getId()).getSheets()[0].getDataRange().getDisplayValues();
+  var cabecalho = (valores.shift() || []).map(function (c) { return String(c).trim(); });
+  var linhas = valores
+    .filter(function (l) { return l.some(function (v) { return String(v).trim() !== ''; }); })
+    .map(function (l) {
+      var o = {};
+      cabecalho.forEach(function (c, i) { if (c) o[c] = String(l[i] == null ? '' : l[i]); });
+      return o;
+    });
+  if (!linhas.length) { console.log('Planilha ' + arquivo.getName() + ' está vazia.'); return; }
+
+  var dataBase = arquivo.getName().replace('IA_OFICIAL_', '');
+  var corpo = JSON.stringify(linhas);
+  var assinatura = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, arquivo.getName() + corpo)
+    .map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+
+  var estado = UrlFetchApp.fetch(url + '?acao=estado', { headers: h, muteHttpExceptions: true });
+  if (estado.getResponseCode() !== 200) throw new Error('Plataforma respondeu ' + estado.getResponseCode() + ': ' + estado.getContentText());
+  var carga = JSON.parse(estado.getContentText()).carga;
+  if (carga && carga.assinatura === assinatura) { console.log('Sem mudança: ' + arquivo.getName() + ' já foi enviada.'); return; }
+
+  var r = UrlFetchApp.fetch(url, {
+    method: 'post', headers: h, contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ acao: 'carregar', data_base: dataBase, arquivo: arquivo.getName(), assinatura: assinatura, linhas: linhas }),
+  });
+  if (r.getResponseCode() !== 200) throw new Error('Envio recusado (' + r.getResponseCode() + '): ' + r.getContentText());
+  console.log('Enviada ' + arquivo.getName() + ': ' + r.getContentText());
+}
+
+// Planilha Google com nome IA_OFICIAL_AAAA-MM-DD de data maior (as IA_SUGESTOES são ignoradas).
+function ultimaPlanilhaIaOficial_() {
+  var it = DriveApp.searchFiles("title contains 'IA_OFICIAL_' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false");
+  var melhor = null;
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!/^IA_OFICIAL_\d{4}-\d{2}-\d{2}$/.test(f.getName())) continue;
+    if (!melhor || f.getName() > melhor.getName()) melhor = f;
+  }
+  return melhor;
+}
+
+// Cria o horário automático: roda de hora em hora (só envia quando há planilha nova).
+function instalarGatilhoSugestoesIA() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'enviarSugestoesIA') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('enviarSugestoesIA').timeBased().everyHours(1).create();
+  return 'Horário automático criado: enviarSugestoesIA de hora em hora.';
+}
